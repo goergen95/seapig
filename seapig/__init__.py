@@ -1,0 +1,23 @@
+# Copyright (c) seapig Contributors. All rights reserved.
+# Licensed under the MIT License.
+
+"""seapig: Confidence based selection of compatible inputs.
+
+This library supplies classes and methods for latent-space analysis used
+to derive confidence scores to be applied for selective prediction systems.
+"""
+
+__author__ = "Darius A. Görgen"
+__version__ = "0.0.1"
+
+from seapig.scores.base import RandomScore
+from seapig.scores.dist import MahalanobisScore
+from seapig.scores.knn import CosineScore, EuclideanScore, PNormScore
+
+__all__ = [
+    "RandomScore",
+    "EuclideanScore",
+    "CosineScore",
+    "PNormScore",
+    "MahalanobisScore",
+]

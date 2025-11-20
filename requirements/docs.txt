@@ -1,0 +1,6 @@
+quarto-cli
+quartodoc
+ipykernel
+ipywidgets
+importlib_metadata
+griffe-inherited-docstrings

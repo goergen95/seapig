@@ -1,0 +1,120 @@
+project:
+  type: website
+  pre-render: docs/version_config.py
+  output-dir: _site
+
+metadata-files:
+  - docs/reference/_sidebar.yml
+
+format:
+  html:
+    code-link: true
+    theme: docs/assets/theme.scss
+    css:
+      - docs/assets/_styles-quartodoc.css
+
+website:
+  title: seapig
+  description: Confidence based selection of compatible inputs
+  repo-url: https://github.com/goergen95/seapig
+  page-navigation: true
+  favicon: docs/assets/logo.png
+  bread-crumbs: true
+  navbar:
+    background: "#003661"
+    pinned: true
+    logo: docs/assets/logo.png
+    logo-alt: seapig-home
+    search: true
+    left:
+      - text: Reference
+        file: docs/reference/index.qmd
+      - text: Changelog
+        file: NEWS.md
+    right:
+      - icon: github
+        href: https://github.com/goergen95/seapig
+        aria-label: seapig python GitHub
+        
+quartodoc:
+  package: seapig
+  style: pkgdown
+  parser: numpy
+  title: "seapig:v{{< env VERSION >}}"
+  dir: docs/reference
+  renderer:
+    style: markdown
+    table_style: description-list
+    show_signature_annotations: true
+    display_name: relative
+  sidebar: docs/reference/_sidebar.yml
+  sections:
+    - title: Selective Models
+      desc: ""
+    - title: Confidence Scores
+      desc: ""
+      contents:
+        - name: RandomScore
+          members:
+            - score
+            - select
+            - set_threshold
+        - name: EuclideanScore
+          members:
+            - score
+            - select
+            - train
+            - calibrate
+            - is_trained
+            - is_calibrated
+            - set_threshold
+        - name: CosineScore
+          members:
+            - score
+            - select
+            - train
+            - calibrate
+            - is_trained
+            - is_calibrated
+            - set_threshold
+        - name: PNormScore
+          members:
+            - score
+            - select
+            - train
+            - calibrate
+            - is_trained
+            - is_calibrated
+            - set_threshold
+        - name: MahalanobisScore
+          members:
+            - score
+            - select
+            - train
+            - calibrate
+            - is_trained
+            - is_calibrated
+            - set_threshold
+    - title: Abstract Base Classes
+      desc: ""
+      contents:
+        - name: scores.ConfidenceScore
+        - name: scores.EmbeddingScore
+          include_inherited: true
+        - name: scores.KNNScore
+          include_inherited: true
+
+filters:
+  - interlinks
+interlinks:
+  autolink: true
+  aliases:
+    seapig = [null, ld]
+  sources:
+    python:
+      url: https://docs.python.org/3/
+    torch:
+      url: https://docs.pytorch.org/docs/stable/
+    pathlib:
+      url: https://pathlib.readthedocs.io/en/pep428/
+render_interlinks: true

@@ -1,0 +1,111 @@
+[build-system]
+requires = [
+    "setuptools>=61",
+]
+build-backend = "setuptools.build_meta"
+
+# https://packaging.python.org/en/latest/specifications/declaring-project-metadata/
+[project]
+name = "seapig"
+description = "Selective prediction based on confidence scores"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Darius A. Görgen", email = "info@dariusgoergen.com"},
+]
+maintainers = [
+    {name = "Darius A. Görgen", email = "info@dariusgoergen.com"},
+]
+keywords = ["pytorch", "remote sensing", "area of applicability", "confidence scoring", "selective prediction"]
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dynamic = ["version", "dependencies", "optional-dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements/required.txt"] }
+version = {attr = "seapig.__version__"}
+
+[tool.setuptools.dynamic.optional-dependencies]
+dev = { file = ["requirements/dev.txt"] }
+docs = { file = ["requirements/docs.txt"] }
+
+[tool.setuptools.package-data]
+seapig = ["py.typed"]
+
+[tool.setuptools.packages.find]
+include = ["seapig*"]
+exclude = ["tests*", "docs", "_extensions"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "."]
+python_files = ["test_*.py", "*_test.py"]
+
+[tool.ruff]
+extend-include = ["*.ipynb"]
+fix = true
+line-length = 80
+
+[tool.ruff.lint]
+extend-select = ["D", "I", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"docs/**" = ["ANN", "D"]
+"tests/**" = ["D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.format]
+quote-style = "double"
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
+
+[tool.mypy]
+ignore_missing_imports = true
+exclude = "(build|data|dist|tests|docs/.*|images|logo|.*logs|output|requirements|_extensions|_site|env|README_files|typings)/"
+
+# Disallow dynamic typing
+disallow_any_unimported = true
+disallow_any_expr = false
+disallow_any_decorated = true
+disallow_any_explicit = true
+disallow_any_generics = true
+disallow_subclassing_any = true
+
+# Untyped definitions and calls
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_decorators = true
+
+# Configuring warnings
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_return_any = true
+warn_unreachable = true
+
+# Miscellaneous strictness flags
+strict_equality = true
+strict = true
+
+# Configuring error messages
+pretty = true
+
+# Miscellaneous
+warn_unused_configs = true
+

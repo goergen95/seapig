@@ -1,0 +1,8 @@
+pytest
+ruff
+nbmake
+build
+mypy
+types-tqdm
+pytest-cov
+torchgeo

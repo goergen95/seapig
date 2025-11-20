@@ -1,0 +1,75 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+typings
+
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+test
+
+# Environments
+.env
+.venv
+env/
+venv/
+
+
+# Quartodoc
+/.quarto/
+**/*.quarto_ipynb
+/_site/
+/objects.json
+/_sidebar.yml
+/reference
+/latest
+/stable
+/_environment
+/env/
+README_files
+README.html
+/_inv
+/site_libs
+/_templates
+/_static
+/index.html
+/NEWS.html
+/README.html
+
+# Other
+.ruff_cache
+.mypy_cache

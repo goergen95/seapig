@@ -1,0 +1,12 @@
+# https://github.com/citation-file-format/citation-file-format/blob/main/schema-guide.md
+# Can be validated using `cffconvert --validate`
+authors:
+  - family-names: 'Görgen'
+    given-names: 'Darius Andreas'
+cff-version: '1.2.0'
+message: 'If you use this software, please cite it using the metadata from this file.'
+preferred-citation:
+  authors:
+  - family-names: 'Görgen'
+    given-names: 'Darius Andreas'
+title: 'Deep Latent Space Understanding for Confident Decisions'

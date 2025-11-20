@@ -1,0 +1,24 @@
+{
+    "cSpell.words": [
+        "cdist",
+        "htmlcov",
+        "ipynb",
+        "isort",
+        "linalg",
+        "machow",
+        "mypy",
+        "nosetests",
+        "pathlib",
+        "pbar",
+        "pycache",
+        "pydocstyle",
+        "pytest",
+        "sdist",
+        "seapig",
+        "setuptools",
+        "subclassing",
+        "testpaths",
+        "venv",
+        "virtualenv"
+    ]
+}
