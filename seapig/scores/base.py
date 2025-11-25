@@ -64,7 +64,7 @@ class ConfidenceScore(ABC):
         """Set a boolean that the score is already calibrated."""
         self.calibrated = True
 
-    def set_threshold(self, q: float = 0.99) -> None:
+    def set_threshold(self) -> None:
         """Set a threshold based on a specific quantile on the available scores."""
         ...
 
@@ -87,7 +87,7 @@ class ConfidenceScore(ABC):
         model: torch.nn.Module,
         loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
     ) -> None:
-        """Train a confidence score based on training samples."""
+        """Train a confidence score based on samples from a `torch.utils.data.DataLoader`."""
         pass
 
     def calibrate(
@@ -124,7 +124,7 @@ class ConfidenceScore(ABC):
         if not self.requires_calibration():
             pass
         check_model(model)
-        scores_list = []
+        scores_list: list[torch.Tensor] = []
         for batch in loader:
             scores_list.append(self.score(batch=batch, model=model))
         self.scores = torch.cat(scores_list, dim=0)
@@ -136,9 +136,11 @@ class ConfidenceScore(ABC):
         batch: torch.Tensor | dict[str, torch.Tensor],
         model: torch.nn.Module | None = None,
     ) -> dict[str, torch.Tensor]:
-        """Select samples based on their confidence score compared to a threshold.
+        """Select samples for prediction based on their confidence score.
 
-        It is required that the threshold attribute is set, e.g. `.calibrate()`.
+        Samples are selected for prediction based on their confidence score compared
+        to a threshold. It is expected that the threshold was previously
+        calibrated on, e.g. validation samples.
 
         ```python
         my_score = ConfidenceScore()
@@ -150,8 +152,9 @@ class ConfidenceScore(ABC):
         model:
             A `torch.nn.Module` representing a trained model instance. It is
             required to have an `.embed()` method.
-        loader:
-            A `DataLoader` returning a `torch.Tensor` or a `dict` of `torch.Tensor`s.
+        batch:
+            A batch of samples in the form of a `torch.Tensor` or a `dict` of `torch.Tensor`s
+            with an `"image"` key.
 
         """
         if self.threshold is None:
@@ -160,8 +163,8 @@ class ConfidenceScore(ABC):
             )
             self.set_threshold()
         assert self.threshold is not None
-        scores = self.score(batch=batch, model=model)
-        return {"scores": scores, "selected": scores < self.threshold}
+        score = self.score(batch=batch, model=model)
+        return {"score": score, "selected": score < self.threshold}
 
 
 class EmbeddingScore(ConfidenceScore, ABC):
