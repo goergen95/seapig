@@ -21,6 +21,7 @@ class SelectiveModel(torch.nn.Module):
         self.csf = confidence_score
 
     @override
+    @torch.inference_mode()
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         preds: torch.Tensor | dict[str, torch.Tensor] = self.model(x)
         if isinstance(preds, torch.Tensor):

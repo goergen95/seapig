@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pandas as pd
 import torch
-from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -34,63 +33,61 @@ def setup_path(
 
 def get_embeddings(
     model: torch.nn.Module,
-    loader: DataLoader[Tensor | dict[str, Tensor]],
+    loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
     path: Path | None = None,
-    desc: str = "",
-) -> Tensor:
+) -> torch.Tensor:
     """Load Embeddings from disk or iterate over DataLoader."""
     if path is not None and path.is_file():
         embeddings = _load_parquet(path)
-        return embeddings
-    embeddings = _extract_dl(model=model, loader=loader, desc=desc)
+        return embeddings.to(device=model.device)
+    embeddings = _extract_dl(model=model, loader=loader)
     if path is not None:
         _write_parquet(embeddings=embeddings, path=path)
     return embeddings
 
 
-def _write_parquet(embeddings: Tensor, path: Path) -> None:
+def _write_parquet(embeddings: torch.Tensor, path: Path) -> None:
     """Write embeddings to Parquet."""
-    df = pd.DataFrame(embeddings)
+    df = pd.DataFrame(embeddings.cpu())
     df.to_parquet(path, index=False)
 
 
-def _load_parquet(path: Path) -> Tensor:
-    """Read Parquet to Tensor."""
+def _load_parquet(path: Path) -> torch.Tensor:
+    """Read Parquet to torch.Tensor."""
     df = pd.read_parquet(path)
-    return Tensor(df.values)
+    return torch.Tensor(df.values)
 
 
 @torch.inference_mode()
 def _extract_dl(
     model: torch.nn.Module,
-    loader: DataLoader[Tensor | dict[str, Tensor]],
-    desc: str = "",
-) -> Tensor:
+    loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
+) -> torch.Tensor:
     """Extract embeddings for samples in a DataLoader."""
     assert callable(model.embed)
-    steps = len(loader)  # type: ignore [unreachable]
-    pbar = tqdm(total=steps, desc=f"Embedding {desc}: {steps}", unit="steps")
+    n_batches = len(loader)  # type: ignore [unreachable]
+    pbar = tqdm(
+        total=n_batches, desc=f"Embedding {n_batches} batches", unit="batches"
+    )
 
     embeddings = list()
-    step = 0
     for batch in loader:
-        step += 1
         if isinstance(batch, dict):
-            z = model.embed(batch["inputs"])
-        elif isinstance(batch, Tensor):
-            z = model.embed(batch)
+            z = model.embed(batch["image"].to(device=model.device))
+        elif isinstance(batch, torch.torch.Tensor):
+            z = model.embed(batch.to(device=model.device))
         else:
             raise TypeError(
-                "dataloader is expected to return a Tensor or dict of Tensors with 'inputs' key."
+                "dataloader is expected to return a torch.Tensor or dict of torch.Tensors with 'inputs' key."
             )
         embeddings.append(z)
-        _ = pbar.update(n=step)
+        _ = pbar.update(n=1)
 
     embeddings = torch.cat(embeddings, dim=0)
 
     if len(embeddings.shape) > 2:
         warnings.warn(
-            f"embed method is expected to return (B,N) tensor (batchsize, embedding dim) but got {embeddings.shape}."
+            f"embed method is expected to return (B,N) torch.Tensor (batchsize, embedding dim) but got {embeddings.shape}."
         )
         embeddings = embeddings.view(
             embeddings.size(0), embeddings.size(1), -1

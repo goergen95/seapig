@@ -6,8 +6,15 @@ from typing import override
 
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
-from seapig.scores.utils import check_model, get_embeddings, setup_path
+from seapig.scores.utils import (
+    _load_parquet,
+    _write_parquet,
+    check_model,
+    get_embeddings,
+    setup_path,
+)
 
 
 class ConfidenceScore(ABC):
@@ -73,6 +80,7 @@ class ConfidenceScore(ABC):
         return self.threshold
 
     @abstractmethod
+    @torch.inference_mode()
     def score(
         self,
         batch: torch.Tensor | dict[str, torch.Tensor],
@@ -82,6 +90,7 @@ class ConfidenceScore(ABC):
         ...
 
     @abstractmethod
+    @torch.inference_mode()
     def train(
         self,
         model: torch.nn.Module,
@@ -90,11 +99,14 @@ class ConfidenceScore(ABC):
         """Train a confidence score based on samples from a `torch.utils.data.DataLoader`."""
         pass
 
+    @torch.inference_mode()
     def calibrate(
         self,
         loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
         model: torch.nn.Module,
         q: float = 0.99,
+        outdir: Path | None = None,
+        prefix: str | None = None,
     ) -> None:
         """Calibrates a rejection threshold based on samples from a `torch.utils.data.DataLoader`.
 
@@ -120,17 +132,44 @@ class ConfidenceScore(ABC):
             required to have an `.embed()` method.
         loader:
             A `DataLoader`` returning a `torch.Tensor` or a `dict` of `torch.Tensor`s.
+        outdir:
+            A `pathlib.Path` object pointing towards a directory, by default None.
+        prefix:
+            A `str`ing used as filename prefix to save embeddings, by default
+            None.
         """
         if not self.requires_calibration():
             pass
         check_model(model)
-        scores_list: list[torch.Tensor] = []
+        path = setup_path(outdir, prefix)
+        assert isinstance(loader, DataLoader)
+
+        if path is not None and path.is_file():
+            self.scores = _load_parquet(path)
+            self.scores = self.scores.to(device=model.device)
+            self.threshold = self.scores.quantile(q=q)
+            self.set_calibrated()
+            return
+
+        scores_ls: list[torch.Tensor] = []
+        n_batches = len(loader)  # type: ignore [unreachable]
+        pbar = tqdm(
+            total=n_batches,
+            desc=f"Embedding {n_batches} batches",
+            unit="batches",
+        )
         for batch in loader:
-            scores_list.append(self.score(batch=batch, model=model))
-        self.scores = torch.cat(scores_list, dim=0)
+            scores = self.score(batch=batch, model=model)
+            scores_ls.append(scores)
+            _ = pbar.update(n=1)
+        self.scores = torch.cat(scores_ls, dim=0)
+
+        if path is not None:
+            _write_parquet(embeddings=self.scores, path=path)
         self.threshold = self.scores.quantile(q=q)
         self.set_calibrated()
 
+    @torch.inference_mode()
     def select(
         self,
         batch: torch.Tensor | dict[str, torch.Tensor],
@@ -223,9 +262,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         check_model(model)
         path = setup_path(outdir, prefix)
         assert isinstance(loader, DataLoader)
-        self.embeddings = get_embeddings(
-            model=model, loader=loader, path=path, desc="train loader"
-        )
+        self.embeddings = get_embeddings(model=model, loader=loader, path=path)
 
 
 class RandomScore(ConfidenceScore):

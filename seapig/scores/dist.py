@@ -61,9 +61,9 @@ class MahalanobisScore(EmbeddingScore):
         assert callable(model.embed)
 
         if isinstance(batch, dict):  # type: ignore [unreachable]
-            z = model.embed(batch["inputs"])
+            z = model.embed(batch["inputs"].to(device=model.device))
         else:
-            z = model.embed(batch)
+            z = model.embed(batch.to(device=model.device))
         assert isinstance(z, torch.Tensor)
         distance = self._distance(query=z)
         return distance

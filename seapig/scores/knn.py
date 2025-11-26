@@ -70,9 +70,9 @@ class KNNScore(EmbeddingScore, ABC):
         assert self.embeddings is not None  # type: ignore [unreachable]
 
         if isinstance(batch, dict):
-            z = model.embed(batch["inputs"])
+            z = model.embed(batch["image"].to(device=model.device))
         else:
-            z = model.embed(batch)
+            z = model.embed(batch).to(device=model.device)
         assert isinstance(z, Tensor)
         distance = self._distance(query=z, reference=self.embeddings)
         return distance

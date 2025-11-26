@@ -10,11 +10,13 @@ to derive confidence scores to be applied for selective prediction systems.
 __author__ = "Darius A. Görgen"
 __version__ = "0.0.1"
 
+from seapig.model import SelectiveModel
 from seapig.scores.base import RandomScore
 from seapig.scores.dist import MahalanobisScore
 from seapig.scores.knn import CosineScore, EuclideanScore, PNormScore
 
 __all__ = [
+    "SelectiveModel",
     "RandomScore",
     "EuclideanScore",
     "CosineScore",
