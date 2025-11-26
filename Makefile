@@ -1,6 +1,6 @@
 .ONESHELL:
 SHELL := bash
-.PHONY: env dev-env update update-dev clean install setup-docs docs
+.PHONY: env req dev doc install all ruff mypy cov checks docs build clean
 
 env:
 	virtualenv ./env; . env/bin/activate;
