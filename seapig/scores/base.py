@@ -316,12 +316,12 @@ class RandomScore(ConfidenceScore):
         ----------
         batch:
             A `dict` with the a subset of the following keys
-            ["inputs", "masks", "weights", "labels", "outputs"] or a `torch.Tensor`.
+            ["image", "masks", "weights", "labels", "outputs"] or a `torch.Tensor`.
         model:
             Unused, because the scores are random.
         """
         if isinstance(batch, dict):
-            return torch.rand(batch["inputs"].shape[0])
+            return torch.rand(batch["image"].shape[0])
         return torch.rand(batch.shape[0])
 
     @override
