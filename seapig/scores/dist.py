@@ -61,7 +61,7 @@ class MahalanobisScore(EmbeddingScore):
         assert callable(model.embed)
 
         if isinstance(batch, dict):  # type: ignore [unreachable]
-            z = model.embed(batch["inputs"].to(device=model.device))
+            z = model.embed(batch["image"].to(device=model.device))
         else:
             z = model.embed(batch.to(device=model.device))
         assert isinstance(z, torch.Tensor)
@@ -112,7 +112,9 @@ class MahalanobisScore(EmbeddingScore):
         self.mu_zero = self.embeddings.mean(dim=0)
         self.cov_zero = self.embeddings.T.cov()
         self.vi_zero = torch.linalg.inv(self.cov_zero)
-        self.scores = self._distance(query=self.embeddings)
+        self.scores = self._distance(
+            query=self.embeddings, device=str(model.device)
+        )
         self.set_trained()
         self.set_threshold()
 
@@ -134,4 +136,4 @@ class MahalanobisScore(EmbeddingScore):
         """
         assert self.is_trained()
         assert self.scores is not None
-        self.threshold = self.scores.quantile(q=q)
+        self.threshold = self.scores.float().quantile(q=q)
