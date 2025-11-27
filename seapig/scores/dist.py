@@ -65,14 +65,15 @@ class MahalanobisScore(EmbeddingScore):
         else:
             z = model.embed(batch.to(device=model.device))
         assert isinstance(z, torch.Tensor)
-        distance = self._distance(query=z)
+        distance = self._distance(query=z, device=model.device)
         return distance
 
-    def _distance(self, query: torch.Tensor) -> torch.Tensor:
-        delta = query - self.mu_zero
-        score = torch.diag(
-            input=torch.sqrt(input=((delta @ self.vi_zero) @ delta.T))
-        )
+    def _distance(self, query: torch.Tensor, device: str) -> torch.Tensor:
+        with torch.amp.autocast(str(device)):
+            delta = query - self.mu_zero
+            score = torch.diag(
+                input=torch.sqrt(input=((delta @ self.vi_zero) @ delta.T))
+            )
         return score
 
     @override

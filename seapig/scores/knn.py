@@ -74,16 +74,20 @@ class KNNScore(EmbeddingScore, ABC):
         else:
             z = model.embed(batch).to(device=model.device)
         assert isinstance(z, Tensor)
-        distance = self._distance(query=z, reference=self.embeddings)
+        distance = self._distance(
+            query=z, reference=self.embeddings, device=model.device
+        )
         return distance
 
-    def _distance(self, query: Tensor, reference: Tensor) -> Tensor:
-        dists = self._dist_fun(z1=query, z2=reference)
+    def _distance(
+        self, query: Tensor, reference: Tensor, device: str
+    ) -> Tensor:
+        dists = self._dist_fun(z1=query, z2=reference, device=device)
         knn_dist = torch.topk(input=dists, k=self.k, largest=False, dim=1)
         return knn_dist.values.mean(dim=1)
 
     @abstractmethod
-    def _dist_fun(self, z1: Tensor, z2: Tensor) -> Tensor:
+    def _dist_fun(self, z1: Tensor, z2: Tensor, device: str) -> Tensor:
         """Calculate the distance between two matrices of embeddings."""
         ...
 
@@ -115,7 +119,9 @@ class KNNScore(EmbeddingScore, ABC):
         """
         super().train(model, loader, outdir, prefix)
         assert self.embeddings is not None
-        self.scores = self._dist_fun(z1=self.embeddings, z2=self.embeddings)
+        self.scores = self._dist_fun(
+            z1=self.embeddings, z2=self.embeddings, device=model.device
+        )
         self.set_trained()
         self.set_threshold()
         return
@@ -139,13 +145,14 @@ class KNNScore(EmbeddingScore, ABC):
         """
         assert self.is_trained()
         assert self.scores is not None
-        if not self.is_calibrated():
-            scores = torch.topk(
-                input=self.scores, k=self.k + 1, largest=False
-            ).values
-            self.threshold = scores[:, 1:].quantile(q=q)
-        else:
-            self.threshold = self.scores.quantile(q=q)
+        with torch.amp.autocast(str(self.scores.device)):
+            if not self.is_calibrated():
+                scores = torch.topk(
+                    input=self.scores, k=self.k + 1, largest=False
+                ).values
+                self.threshold = scores[:, 1:].float().quantile(q=q)
+            else:
+                self.threshold = self.scores.float().quantile(q=q)
         return
 
 
@@ -176,8 +183,10 @@ class EuclideanScore(KNNScore):
         self.k = k
 
     @override
-    def _dist_fun(self, z1: Tensor, z2: Tensor) -> Tensor:
-        return torch.cdist(x1=z1, x2=z2, p=2)
+    def _dist_fun(self, z1: Tensor, z2: Tensor, device: str) -> Tensor:
+        with torch.amp.autocast(str(device)):
+            dist = torch.cdist(x1=z1, x2=z2, p=2)
+        return dist
 
 
 class CosineScore(KNNScore):
@@ -212,11 +221,13 @@ class CosineScore(KNNScore):
         self.abs = abs
 
     @override
-    def _dist_fun(self, z1: Tensor, z2: Tensor) -> Tensor:
-        dists = pairwise_cosine_similarity(x=z1, y=z2, reduction=None)
+    def _dist_fun(self, z1: Tensor, z2: Tensor, device: str) -> Tensor:
+        with torch.amp.autocast(str(device)):
+            sim = pairwise_cosine_similarity(x=z1, y=z2, reduction=None)
         if self.abs:
-            dists = dists.abs()
-        return dists
+            sim = sim.abs()
+        dist = 1 - sim
+        return dist
 
 
 class PNormScore(KNNScore):
@@ -251,5 +262,7 @@ class PNormScore(KNNScore):
         self.p = p
 
     @override
-    def _dist_fun(self, z1: Tensor, z2: Tensor) -> Tensor:
-        return torch.cdist(x1=z1, x2=z2, p=self.p)
+    def _dist_fun(self, z1: Tensor, z2: Tensor, device: str) -> Tensor:
+        with torch.amp.autocast(str(device)):
+            dists = torch.cdist(x1=z1, x2=z2, p=self.p)
+        return dists

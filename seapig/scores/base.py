@@ -166,7 +166,7 @@ class ConfidenceScore(ABC):
 
         if path is not None:
             _write_parquet(embeddings=self.scores, path=path)
-        self.threshold = self.scores.quantile(q=q)
+        self.threshold = self.scores.float().quantile(q=q)
         self.set_calibrated()
 
     @torch.inference_mode()
