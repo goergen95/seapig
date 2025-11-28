@@ -277,7 +277,7 @@ class RandomScore(ConfidenceScore):
     import torch
     from seapig import RandomScore
     my_score = RandomScore()
-    batch = {"inputs": torch.rand(4)}
+    batch = {"image": torch.rand(4)}
     my_score.score(batch)
     ```
     """

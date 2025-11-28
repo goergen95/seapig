@@ -38,8 +38,8 @@ class MockupDataset(Dataset):  # type: ignore [type-arg]
         """Return a single sample from the dataset."""
         if self.return_dict:
             return {
-                "inputs": self.images[index, :],
-                "labels": self.labels[index, :],
+                "image": self.images[index, :],
+                "mask": self.labels[index, :],
             }
         else:
             return self.images[index, :]
@@ -63,6 +63,7 @@ class MockupCNN(torch.nn.Module):
     layer1: torch.nn.Module
     layer2: torch.nn.Module
     avg: bool
+    device: str = "cpu"
 
     def __init__(self, avg: bool = True) -> None:
         super().__init__()

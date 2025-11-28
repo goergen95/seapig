@@ -34,12 +34,13 @@ batch = next(iter(test_loader))
 score.select(batch, model=model)
 ```
 
-    Embedding train loader: 42:   0%|          | 0/42 [00:00<?, ?steps/s]Embedding train loader: 42: 153steps [00:00, 1470.63steps/s]         Embedding train loader: 42: 595steps [00:00, 3126.54steps/s]Embedding train loader: 42: 903steps [00:00, 3552.95steps/s]
+    Embedding 42 batches:   0%|          | 0/42 [00:00<?, ?batches/s]Embedding 42 batches:  93%|█████████▎| 39/42 [00:00<00:00, 383.66batches/s]Embedding 42 batches: 100%|██████████| 42/42 [00:00<00:00, 386.07batches/s]
+    Embedding 42 batches:   0%|          | 0/42 [00:00<?, ?batches/s]Embedding 42 batches:  95%|█████████▌| 40/42 [00:00<00:00, 396.65batches/s]Embedding 42 batches: 100%|██████████| 42/42 [00:00<00:00, 395.78batches/s]
 
-    Threshold: 0.0020
+    Threshold: 0.0022
 
-    {'scores': tensor([0.0032, 0.0020, 0.0007, 0.0017, 0.0018, 0.0022, 0.0019, 0.0021]),
-     'selected': tensor([False,  True,  True,  True,  True, False,  True, False])}
+    {'score': tensor([0.0015, 0.0024, 0.0021, 0.0022, 0.0017, 0.0015, 0.0035, 0.0015]),
+     'selected': tensor([ True, False,  True, False,  True,  True, False,  True])}
 
 The library supplies base classes for different families of approaches
 to express the (dis-)similarity of query samples to the training
