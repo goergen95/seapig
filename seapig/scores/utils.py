@@ -35,12 +35,13 @@ def get_embeddings(
     model: torch.nn.Module,
     loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
     path: Path | None = None,
+    device: str = "cpu",
 ) -> torch.Tensor:
     """Load Embeddings from disk or iterate over DataLoader."""
     if path is not None and path.is_file():
         embeddings = _load_parquet(path)
-        return embeddings.to(device=model.device)
-    embeddings = _extract_dl(model=model, loader=loader)
+        return embeddings.to(device=device)
+    embeddings = _extract_dl(model=model, loader=loader, device=device)
     if path is not None:
         _write_parquet(embeddings=embeddings, path=path)
     return embeddings
@@ -62,6 +63,7 @@ def _load_parquet(path: Path) -> torch.Tensor:
 def _extract_dl(
     model: torch.nn.Module,
     loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
+    device: str = "cpu",
 ) -> torch.Tensor:
     """Extract embeddings for samples in a DataLoader."""
     assert callable(model.embed)
@@ -73,13 +75,14 @@ def _extract_dl(
     embeddings = list()
     for batch in loader:
         if isinstance(batch, dict):
-            z = model.embed(batch["image"].to(device=model.device))
+            image = batch["image"].to(device=device)
         elif isinstance(batch, torch.torch.Tensor):
-            z = model.embed(batch.to(device=model.device))
+            image = batch.to(device=device)
         else:
             raise TypeError(
                 "dataloader is expected to return a torch.Tensor or dict of torch.Tensors with 'inputs' key."
             )
+        z = model.embed(image)
         embeddings.append(z)
         _ = pbar.update(n=1)
 

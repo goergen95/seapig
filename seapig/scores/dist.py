@@ -61,19 +61,19 @@ class MahalanobisScore(EmbeddingScore):
         assert callable(model.embed)
 
         if isinstance(batch, dict):  # type: ignore [unreachable]
-            z = model.embed(batch["image"].to(device=model.device))
+            z = model.embed(batch["image"].to(device=self.device))
         else:
-            z = model.embed(batch.to(device=model.device))
+            z = model.embed(batch.to(device=self.device))
         assert isinstance(z, torch.Tensor)
-        distance = self._distance(query=z, device=model.device)
+        with torch.autocast(device_type=self.device):
+            distance = self._distance(query=z)
         return distance
 
-    def _distance(self, query: torch.Tensor, device: str) -> torch.Tensor:
-        with torch.amp.autocast(str(device)):
-            delta = query - self.mu_zero
-            score = torch.diag(
-                input=torch.sqrt(input=((delta @ self.vi_zero) @ delta.T))
-            )
+    def _distance(self, query: torch.Tensor) -> torch.Tensor:
+        delta = query - self.mu_zero
+        score = torch.diag(
+            input=torch.sqrt(input=((delta @ self.vi_zero) @ delta.T))
+        )
         return score
 
     @override
@@ -112,9 +112,8 @@ class MahalanobisScore(EmbeddingScore):
         self.mu_zero = self.embeddings.mean(dim=0)
         self.cov_zero = self.embeddings.T.cov()
         self.vi_zero = torch.linalg.inv(self.cov_zero)
-        self.scores = self._distance(
-            query=self.embeddings, device=str(model.device)
-        )
+        with torch.autocast(device_type=self.device):
+            self.scores = self._distance(query=self.embeddings)
         self.set_trained()
         self.set_threshold()
 

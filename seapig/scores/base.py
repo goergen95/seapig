@@ -35,6 +35,9 @@ class ConfidenceScore(ABC):
         Defaults to `None`.
     threshold:
         A `float` indicating the rejection threshold. Defaults to `None`.
+    device:
+        A `str`ing indicating to which device internal `torch.Tensor`s are put.
+        Default is `"cpu"`.
     """
 
     trained: bool = False
@@ -43,6 +46,7 @@ class ConfidenceScore(ABC):
     cal_required: bool = False
     scores: torch.Tensor | None = None
     threshold: torch.Tensor | None = None
+    device: str = "cpu"
 
     def __init__(self) -> None:
         return
@@ -78,6 +82,14 @@ class ConfidenceScore(ABC):
     def get_threshold(self) -> torch.Tensor | None:
         """Get the current threshold value."""
         return self.threshold
+
+    def set_device(self, device: str) -> None:
+        """Set a device for tensor placement."""
+        self.device = device
+
+    def get_device(self) -> str:
+        """Get the current device string."""
+        return self.device
 
     @abstractmethod
     @torch.inference_mode()
@@ -145,20 +157,20 @@ class ConfidenceScore(ABC):
         assert isinstance(loader, DataLoader)
 
         if path is not None and path.is_file():
-            self.scores = _load_parquet(path)
-            self.scores = self.scores.to(device=model.device)
+            self.scores = _load_parquet(path).to(device=self.device)
             self.threshold = self.scores.quantile(q=q)
             self.set_calibrated()
             return
 
         scores_ls: list[torch.Tensor] = []
-        n_batches = len(loader)  # type: ignore [unreachable]
+        n_batches = len(loader)
         pbar = tqdm(
             total=n_batches,
             desc=f"Embedding {n_batches} batches",
             unit="batches",
         )
         for batch in loader:
+            batch = {k: v.to(device=self.device) for k, v in batch.items()}
             scores = self.score(batch=batch, model=model)
             scores_ls.append(scores)
             _ = pbar.update(n=1)
@@ -262,7 +274,9 @@ class EmbeddingScore(ConfidenceScore, ABC):
         check_model(model)
         path = setup_path(outdir, prefix)
         assert isinstance(loader, DataLoader)
-        self.embeddings = get_embeddings(model=model, loader=loader, path=path)
+        self.embeddings = get_embeddings(
+            model=model, loader=loader, path=path, device=self.device
+        )
 
 
 class RandomScore(ConfidenceScore):

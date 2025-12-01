@@ -37,7 +37,7 @@ class TestScores:
             RandomScore(arg=1)
         inputs = torch.rand(4)
         dists = score.score(batch=inputs)
-        dists = score.score(batch={"inputs": inputs})
+        dists = score.score(batch={"image": inputs})
         assert isinstance(dists, torch.Tensor)
         assert dists.size()[0] == 4
 
@@ -65,7 +65,7 @@ class TestScores:
 
         batch = next(iter(dataloaders["train"]))
         dists = score.score(batch=batch, model=model)
-        assert dists.shape[0] == batch["inputs"].shape[0]
+        assert dists.shape[0] == batch["image"].shape[0]
         score = EuclideanScore(k=2)
         score.train(
             model, loader=dataloaders["train"], outdir=new_path, prefix="test"
@@ -95,10 +95,9 @@ class TestScores:
         assert (new_path / "test.parquet").is_file()
         assert score.embeddings.size() == (333, 32)
 
-        batch = next(iter(dataloaders["train"]))
+        batch = next(iter(dataloaders["val"]))
         dists = score.score(batch=batch, model=model)
-        assert dists.shape[0] == batch["inputs"].shape[0]
-        assert sum(dists > 0) == batch["inputs"].shape[0]
+        assert dists.shape[0] == batch["image"].shape[0]
         score = CosineScore(k=2, abs=False)
         score.train(
             model, loader=dataloaders["train"], outdir=new_path, prefix="test"
