@@ -151,11 +151,11 @@ class EuclideanScore(KNNScore):
         """Initialize faiss index based on embeddings."""
         assert isinstance(self.embeddings, torch.Tensor)
         self.index = faiss.IndexFlatL2(self.embeddings.shape[1])
-        self.index.add(self.embeddings)
+        self.index.add(self.embeddings.cpu())
 
     def _distance(self, query: Tensor, kpn: int = 0) -> torch.Tensor:
-        dist, _ = self.index.search(query, k=self.k + kpn)
-        return torch.Tensor(dist[:, kpn:].mean(1), device=self.device)
+        dist, _ = self.index.search(query.cpu(), k=self.k + kpn)
+        return torch.Tensor(dist[:, kpn:].mean(1)).to(device=self.device)
 
 
 class CosineScore(KNNScore):
@@ -193,13 +193,16 @@ class CosineScore(KNNScore):
         """Initialize faiss index based on embeddings."""
         assert isinstance(self.embeddings, torch.Tensor)
         self.index = faiss.IndexFlatIP(self.embeddings.shape[1])
-        self.index.add(torch.nn.functional.normalize(self.embeddings))
+        self.index.add(torch.nn.functional.normalize(self.embeddings.cpu()))
         return
 
     def _distance(self, query: Tensor, kpn: int = 0) -> Tensor:
-        query = torch.nn.functional.normalize(query)
+        query = torch.nn.functional.normalize(query).cpu()
         dist, _ = self.index.search(query, k=self.k + kpn)
-        return 1 - torch.Tensor(dist[:, kpn:].mean(1), device=self.device)
+        dist = torch.Tensor(dist).to(device=self.device)
+        if self.abs:
+            dist = dist.abs()
+        return 1 - dist[:, kpn:].mean(1)
 
 
 class MahalanobisScore(KNNScore):
@@ -239,8 +242,9 @@ class MahalanobisScore(KNNScore):
         cov_zero = self.embeddings.T.cov()
         self.vi_zero = torch.linalg.inv(torch.linalg.cholesky(cov_zero))
         self.index = faiss.IndexFlatL2(self.embeddings.shape[1])
-        self.index.add(self.embeddings @ self.vi_zero.T)
+        self.index.add((self.embeddings @ self.vi_zero.T).cpu())
 
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
-        dist, _ = self.index.search(query @ self.vi_zero.T, k=self.k + kpn)
-        return torch.Tensor(dist[:, kpn:].mean(1), device=self.device)
+        query = (query @ self.vi_zero.T).cpu()
+        dist, _ = self.index.search(query, k=self.k + kpn)
+        return torch.Tensor(dist[:, kpn:].mean(1)).to(device=self.device)

@@ -107,6 +107,8 @@ class ConfidenceScore(ABC):
         self,
         model: torch.nn.Module,
         loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
+        outdir: Path | None = None,
+        prefix: str | None = None,
     ) -> None:
         """Train a confidence score based on samples from a `torch.utils.data.DataLoader`."""
         pass
@@ -296,7 +298,6 @@ class EmbeddingScore(ConfidenceScore, ABC):
         """
         assert self.is_trained()
         assert self.scores is not None
-        assert len(self.scores.shape) == 1
         self.threshold = self.scores.float().quantile(q=q)
 
 
