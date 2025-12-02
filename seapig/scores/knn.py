@@ -4,10 +4,10 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import override
 
+import faiss
 import torch
 from torch import Tensor
 from torch.utils.data import DataLoader
-from torchmetrics.functional.pairwise import pairwise_cosine_similarity
 
 from seapig.scores.base import EmbeddingScore
 
@@ -37,6 +37,7 @@ class KNNScore(EmbeddingScore, ABC):
     cal_required: bool = True
     threshold: torch.Tensor | None = None
     scores: torch.Tensor | None = None
+    index: faiss.IndexFlatL2  # type: ignore [no-any-unimported]
 
     def __init__(self, k: int = 1) -> None:
         super().__init__()
@@ -68,27 +69,16 @@ class KNNScore(EmbeddingScore, ABC):
         assert isinstance(model, torch.nn.Module)
         assert callable(model.embed)
         assert self.embeddings is not None  # type: ignore [unreachable]
+        assert self.index is not None
 
         if isinstance(batch, dict):
             z = model.embed(batch["image"])
         else:
             z = model.embed(batch)
         assert isinstance(z, Tensor)
-        with torch.autocast(device_type=self.device):
-            distance = self._distance(query=z, reference=self.embeddings)
+        distance = self._distance(query=z)
         return distance
 
-    def _distance(self, query: Tensor, reference: Tensor) -> Tensor:
-        dists = self._dist_fun(z1=query, z2=reference)
-        knn_dist = torch.topk(input=dists, k=self.k, largest=False, dim=1)
-        return knn_dist.values.mean(dim=1)
-
-    @abstractmethod
-    def _dist_fun(self, z1: Tensor, z2: Tensor) -> Tensor:
-        """Calculate the distance between two matrices of embeddings."""
-        ...
-
-    @override
     def train(
         self,
         model: torch.nn.Module,
@@ -116,39 +106,19 @@ class KNNScore(EmbeddingScore, ABC):
         """
         super().train(model, loader, outdir, prefix)
         assert self.embeddings is not None
-        with torch.autocast(device_type=self.device):
-            self.scores = self._dist_fun(z1=self.embeddings, z2=self.embeddings)
+        self._setup_index()
+        self.scores = self._distance(self.embeddings, kpn=1)
         self.set_trained()
-        self.set_threshold()
-        return
 
-    @override
-    def set_threshold(self, q: float = 0.99) -> None:
-        """Set a threshold based on quantiles on the available confidence scores.
+    @abstractmethod
+    def _setup_index(self) -> None:
+        """Prepare an index for KNN search."""
+        pass
 
-        This method sets the selection threshold based on the quantile on
-        the values found in the `scores` attribute. If the confidence score
-        is trained, but uncalibrated, this will be based on the K nearest
-        neighbors of the training samples, excluding the distance to the
-        point itself. If calibrated, the distance of the calibration samples to
-        the K-closest training samples are used.
-
-        Parameters
-        ----------
-        q:
-            A `float` indicating the quantile of confidence scores of the
-            samples to set the rejection threshold to.
-        """
-        assert self.is_trained()
-        assert self.scores is not None
-        if not self.is_calibrated():
-            scores = torch.topk(
-                input=self.scores, k=self.k + 1, largest=False
-            ).values
-            self.threshold = scores[:, 1:].float().quantile(q=q)
-        else:
-            self.threshold = self.scores.float().quantile(q=q)
-        return
+    @abstractmethod
+    def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
+        """Calculate the KNN distance of a query against a populated index."""
+        pass
 
 
 class EuclideanScore(KNNScore):
@@ -177,10 +147,15 @@ class EuclideanScore(KNNScore):
         super().__init__()
         self.k = k
 
-    @override
-    def _dist_fun(self, z1: Tensor, z2: Tensor) -> Tensor:
-        dist = torch.cdist(x1=z1, x2=z2, p=2)
-        return dist
+    def _setup_index(self) -> None:
+        """Initialize faiss index based on embeddings."""
+        assert isinstance(self.embeddings, torch.Tensor)
+        self.index = faiss.IndexFlatL2(self.embeddings.shape[1])
+        self.index.add(self.embeddings)
+
+    def _distance(self, query: Tensor, kpn: int = 0) -> torch.Tensor:
+        dist, _ = self.index.search(query, k=self.k + kpn)
+        return torch.Tensor(dist[:, kpn:].mean(1), device=self.device)
 
 
 class CosineScore(KNNScore):
@@ -214,26 +189,27 @@ class CosineScore(KNNScore):
         self.k = k
         self.abs = abs
 
-    @override
-    def _dist_fun(self, z1: Tensor, z2: Tensor) -> Tensor:
-        sim = pairwise_cosine_similarity(x=z1, y=z2, reduction=None)
-        if self.abs:
-            sim = sim.abs()
-        dist = 1 - sim
-        return dist
+    def _setup_index(self) -> None:
+        """Initialize faiss index based on embeddings."""
+        assert isinstance(self.embeddings, torch.Tensor)
+        self.index = faiss.IndexFlatIP(self.embeddings.shape[1])
+        self.index.add(torch.nn.functional.normalize(self.embeddings))
+        return
+
+    def _distance(self, query: Tensor, kpn: int = 0) -> Tensor:
+        query = torch.nn.functional.normalize(query)
+        dist, _ = self.index.search(query, k=self.k + kpn)
+        return 1 - torch.Tensor(dist[:, kpn:].mean(1), device=self.device)
 
 
-class PNormScore(KNNScore):
-    """Returns the KNN-distance based on the p-norm distance to the nearest training samples.
+class MahalanobisScore(KNNScore):
+    """Returns the Mahalanobis distance to the training samples distribution.
 
     Parameters
     ----------
     k:
         An `int`eger indicating the number of neighbors to calculate the distance.
         Defaults to 1, e.g. the distance to the closest neighbor.
-    p:
-       A `float` indicating the p-norm to calculate via `torch.cdist`, by default 2.0,
-       which is equivalent to the euclidean distance.
 
     Attributes
     ----------
@@ -247,14 +223,24 @@ class PNormScore(KNNScore):
     """
 
     k: int
-    p: float
+    vi_zero: torch.Tensor
+    train_required: bool = True
+    cal_required: bool = True
+    threshold: torch.Tensor | None = None
+    scores: torch.Tensor | None = None
 
-    def __init__(self, k: int = 1, p: float = 2) -> None:
+    def __init__(self, k: int = 1) -> None:
         super().__init__()
         self.k = k
-        self.p = p
 
-    @override
-    def _dist_fun(self, z1: Tensor, z2: Tensor) -> Tensor:
-        dists = torch.cdist(x1=z1, x2=z2, p=self.p)
-        return dists
+    def _setup_index(self) -> None:
+        """Initialize faiss index based on embeddings."""
+        assert isinstance(self.embeddings, torch.Tensor)
+        cov_zero = self.embeddings.T.cov()
+        self.vi_zero = torch.linalg.inv(torch.linalg.cholesky(cov_zero))
+        self.index = faiss.IndexFlatL2(self.embeddings.shape[1])
+        self.index.add(self.embeddings @ self.vi_zero.T)
+
+    def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
+        dist, _ = self.index.search(query @ self.vi_zero.T, k=self.k + kpn)
+        return torch.Tensor(dist[:, kpn:].mean(1), device=self.device)

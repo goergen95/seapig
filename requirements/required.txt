@@ -6,3 +6,4 @@ torchmetrics
 scikit-learn
 tqdm
 pyarrow
+faiss-cpu

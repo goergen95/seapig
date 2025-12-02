@@ -3,13 +3,7 @@ import torch
 from torch import Tensor
 from torch.utils.data import DataLoader
 
-from seapig import (
-    CosineScore,
-    EuclideanScore,
-    MahalanobisScore,
-    PNormScore,
-    RandomScore,
-)
+from seapig import CosineScore, EuclideanScore, MahalanobisScore, RandomScore
 from seapig.mockups import MockupCNN, MockupDataset
 
 
@@ -99,37 +93,6 @@ class TestScores:
         dists = score.score(batch=batch, model=model)
         assert dists.shape[0] == batch["image"].shape[0]
         score = CosineScore(k=2, abs=False)
-        score.train(
-            model, loader=dataloaders["train"], outdir=new_path, prefix="test"
-        )
-        dists2 = score.score(batch=batch, model=model)
-        assert dists is not dists2
-
-    def test_PNormScore(self, dataloaders, model, tmp_path):
-        score = PNormScore()
-
-        with pytest.raises(AssertionError):
-            score.train(model=model, loader=[1, 2, 3])
-
-        with pytest.raises(AssertionError):
-            score.train(model=[1, 2, 3], loader=dataloaders["train"])
-
-        assert score.embeddings is None
-        score.train(model, loader=dataloaders["train"])
-        assert isinstance(score.embeddings, Tensor)
-
-        new_path = tmp_path / "new_path"
-        score.train(
-            model, loader=dataloaders["train"], outdir=new_path, prefix="test"
-        )
-        assert new_path.is_dir()
-        assert isinstance(score.embeddings, Tensor)
-        assert (new_path / "test.parquet").is_file()
-        assert score.embeddings.size() == (333, 32)
-
-        batch = next(iter(dataloaders["train"]))
-        dists = score.score(batch=batch, model=model)
-        score = PNormScore(p=3)
         score.train(
             model, loader=dataloaders["train"], outdir=new_path, prefix="test"
         )

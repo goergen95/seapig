@@ -12,14 +12,12 @@ __version__ = "0.0.1"
 
 from seapig.model import SelectiveModel
 from seapig.scores.base import RandomScore
-from seapig.scores.dist import MahalanobisScore
-from seapig.scores.knn import CosineScore, EuclideanScore, PNormScore
+from seapig.scores.knn import CosineScore, EuclideanScore, MahalanobisScore
 
 __all__ = [
     "SelectiveModel",
     "RandomScore",
     "EuclideanScore",
     "CosineScore",
-    "PNormScore",
     "MahalanobisScore",
 ]

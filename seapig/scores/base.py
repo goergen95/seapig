@@ -75,7 +75,7 @@ class ConfidenceScore(ABC):
         """Set a boolean that the score is already calibrated."""
         self.calibrated = True
 
-    def set_threshold(self) -> None:
+    def set_threshold(self, q: float = 0.99) -> None:
         """Set a threshold based on a specific quantile on the available scores."""
         ...
 
@@ -277,6 +277,27 @@ class EmbeddingScore(ConfidenceScore, ABC):
         self.embeddings = get_embeddings(
             model=model, loader=loader, path=path, device=self.device
         )
+
+    def set_threshold(self, q: float = 0.99) -> None:
+        """Set a threshold based on quantiles on the available confidence scores.
+
+        This method sets the selection threshold based on the quantile on
+        the values found in the `scores` attribute. If the confidence score
+        is trained, but uncalibrated, this will be based on the K nearest
+        neighbors of the training samples, excluding the distance to the
+        point itself. If calibrated, the distance of the calibration samples to
+        the K-closest training samples are used.
+
+        Parameters
+        ----------
+        q:
+            A `float` indicating the quantile of confidence scores of the
+            samples to set the rejection threshold to.
+        """
+        assert self.is_trained()
+        assert self.scores is not None
+        assert len(self.scores.shape) == 1
+        self.threshold = self.scores.float().quantile(q=q)
 
 
 class RandomScore(ConfidenceScore):

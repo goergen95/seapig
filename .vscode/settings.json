@@ -2,6 +2,7 @@
     "cSpell.words": [
         "autocast",
         "cdist",
+        "faiss",
         "htmlcov",
         "ipykernel",
         "ipynb",
@@ -14,6 +15,7 @@
         "nosetests",
         "pathlib",
         "pbar",
+        "pinverse",
         "preds",
         "pyarrow",
         "pycache",

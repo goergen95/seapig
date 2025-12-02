@@ -19,7 +19,7 @@ class MockupDataset(Dataset):  # type: ignore [type-arg]
 
     def __init__(self, n_samples: int = 1000, return_dict: bool = True) -> None:
         super().__init__()
-        self.images = torch.rand((n_samples, 3, 128, 128))
+        self.images = torch.randn((n_samples, 3, 128, 128))
         self.labels = torch.randint_like(self.images, low=0, high=2)
         ids = list(range(0, n_samples))
         random.shuffle(ids)
@@ -81,7 +81,7 @@ class MockupCNN(torch.nn.Module):
 
     def embed(self, x: torch.Tensor):  # type: ignore [no-untyped-def]
         """Implement an embed method."""
-        out = self.layer1(x)
+        out = torch.rand(x.shape[0], 32, 4, 4).float()
         if self.avg:
             out = out.view(out.size()[0], out.size()[1], -1).mean(2)
         return out

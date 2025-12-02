@@ -1,8 +1,12 @@
 """Confidence Scores supplied by seapig."""
 
 from seapig.scores.base import ConfidenceScore, EmbeddingScore, RandomScore
-from seapig.scores.dist import MahalanobisScore
-from seapig.scores.knn import CosineScore, EuclideanScore, KNNScore, PNormScore
+from seapig.scores.knn import (
+    CosineScore,
+    EuclideanScore,
+    KNNScore,
+    MahalanobisScore,
+)
 
 __all__ = [
     "ConfidenceScore",
@@ -11,6 +15,5 @@ __all__ = [
     "RandomScore",
     "EuclideanScore",
     "CosineScore",
-    "PNormScore",
     "MahalanobisScore",
 ]
