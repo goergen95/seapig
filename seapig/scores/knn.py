@@ -155,7 +155,7 @@ class EuclideanScore(KNNScore):
 
     def _distance(self, query: Tensor, kpn: int = 0) -> torch.Tensor:
         dist, _ = self.index.search(query.cpu(), k=self.k + kpn)
-        return torch.Tensor(dist[:, kpn:].mean(1)).to(device=self.device)
+        return torch.Tensor(dist[:, kpn:].mean(1))
 
 
 class CosineScore(KNNScore):
@@ -193,13 +193,13 @@ class CosineScore(KNNScore):
         """Initialize faiss index based on embeddings."""
         assert isinstance(self.embeddings, torch.Tensor)
         self.index = faiss.IndexFlatIP(self.embeddings.shape[1])
-        self.index.add(torch.nn.functional.normalize(self.embeddings.cpu()))
+        self.index.add(torch.nn.functional.normalize(self.embeddings).cpu())
         return
 
     def _distance(self, query: Tensor, kpn: int = 0) -> Tensor:
         query = torch.nn.functional.normalize(query).cpu()
         dist, _ = self.index.search(query, k=self.k + kpn)
-        dist = torch.Tensor(dist).to(device=self.device)
+        dist = torch.Tensor(dist)
         if self.abs:
             dist = dist.abs()
         return 1 - dist[:, kpn:].mean(1)
@@ -245,6 +245,6 @@ class MahalanobisScore(KNNScore):
         self.index.add((self.embeddings @ self.vi_zero.T).cpu())
 
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
-        query = (query @ self.vi_zero.T).cpu()
+        query = query.cpu() @ self.vi_zero.T.cpu()
         dist, _ = self.index.search(query, k=self.k + kpn)
-        return torch.Tensor(dist[:, kpn:].mean(1)).to(device=self.device)
+        return torch.Tensor(dist[:, kpn:].mean(1))

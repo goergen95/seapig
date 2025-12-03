@@ -30,4 +30,8 @@ class SelectiveModel(torch.nn.Module):
         scores: dict[str, torch.Tensor] = self.csf.select(
             batch=x, model=self.model
         )
+        scores = {
+            k: v.to(device=str(preds["predictions"].device))
+            for k, v in scores.items()
+        }
         return preds | scores

@@ -46,7 +46,6 @@ class ConfidenceScore(ABC):
     cal_required: bool = False
     scores: torch.Tensor | None = None
     threshold: torch.Tensor | None = None
-    device: str = "cpu"
 
     def __init__(self) -> None:
         return
@@ -82,14 +81,6 @@ class ConfidenceScore(ABC):
     def get_threshold(self) -> torch.Tensor | None:
         """Get the current threshold value."""
         return self.threshold
-
-    def set_device(self, device: str) -> None:
-        """Set a device for tensor placement."""
-        self.device = device
-
-    def get_device(self) -> str:
-        """Get the current device string."""
-        return self.device
 
     @abstractmethod
     @torch.inference_mode()
@@ -159,8 +150,8 @@ class ConfidenceScore(ABC):
         assert isinstance(loader, DataLoader)
 
         if path is not None and path.is_file():
-            self.scores = _load_parquet(path).to(device=self.device)
-            self.threshold = self.scores.quantile(q=q)
+            self.scores = _load_parquet(path)
+            self.threshold = self.scores.float().quantile(q=q)
             self.set_calibrated()
             return
 
@@ -172,12 +163,10 @@ class ConfidenceScore(ABC):
             unit="batches",
         )
         for batch in loader:
-            batch = {k: v.to(device=self.device) for k, v in batch.items()}
             scores = self.score(batch=batch, model=model)
             scores_ls.append(scores)
             _ = pbar.update(n=1)
         self.scores = torch.cat(scores_ls, dim=0)
-
         if path is not None:
             _write_parquet(embeddings=self.scores, path=path)
         self.threshold = self.scores.float().quantile(q=q)
@@ -276,9 +265,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         check_model(model)
         path = setup_path(outdir, prefix)
         assert isinstance(loader, DataLoader)
-        self.embeddings = get_embeddings(
-            model=model, loader=loader, path=path, device=self.device
-        )
+        self.embeddings = get_embeddings(model=model, loader=loader, path=path)
 
     def set_threshold(self, q: float = 0.99) -> None:
         """Set a threshold based on quantiles on the available confidence scores.
@@ -322,17 +309,17 @@ class RandomScore(ConfidenceScore):
     cal_required: bool = False
     threshold: torch.Tensor | None = torch.Tensor([0.099])
 
-    @override
     def train(
         self,
         model: torch.nn.Module | None = None,
         loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]]
         | None = None,
+        outdir: Path | None = None,
+        prefix: str | None = None,
     ) -> None:
         """Unused."""
         pass
 
-    @override
     def score(
         self,
         batch: torch.Tensor | dict[str, torch.Tensor],

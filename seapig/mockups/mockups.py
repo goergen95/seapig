@@ -63,7 +63,6 @@ class MockupCNN(torch.nn.Module):
     layer1: torch.nn.Module
     layer2: torch.nn.Module
     avg: bool
-    device: str = "cpu"
 
     def __init__(self, avg: bool = True) -> None:
         super().__init__()
