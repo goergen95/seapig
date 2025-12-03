@@ -7,6 +7,7 @@ from seapig.scores.knn import (
     KNNScore,
     MahalanobisScore,
 )
+from seapig.scores.pyod import PyODScore
 
 __all__ = [
     "ConfidenceScore",
@@ -16,4 +17,5 @@ __all__ = [
     "EuclideanScore",
     "CosineScore",
     "MahalanobisScore",
+    "PyODScore",
 ]

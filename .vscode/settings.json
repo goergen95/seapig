@@ -20,6 +20,7 @@
         "pyarrow",
         "pycache",
         "pydocstyle",
+        "pyod",
         "pytest",
         "scikit",
         "sdist",
