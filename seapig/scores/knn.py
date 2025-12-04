@@ -83,6 +83,7 @@ class KNNScore(EmbeddingScore, ABC):
         self,
         model: torch.nn.Module,
         loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
+        q: float | bool = False,
         outdir: Path | None = None,
         prefix: str | None = None,
     ) -> None:
@@ -103,11 +104,21 @@ class KNNScore(EmbeddingScore, ABC):
             DataLoader yielding training samples either as dict or Tensor.
         model:
             A trained model.
+        q:
+           A `float` or a `bool` indicating if the scores should be filtered to
+           remove outliers from the training distribution. Defaults to `False`.
         """
         super().train(model, loader, outdir, prefix)
         assert self.embeddings is not None
         self._setup_index()
         self.scores = self._distance(self.embeddings, kpn=1)
+        if q:
+            assert (q >= 0.0) & (q <= 1.0)
+            threshold = torch.quantile(self.scores.float(), q=q)
+            index = self.scores < threshold
+            self.embeddings = self.embeddings[index, :]
+            self.scores = self.scores[index]
+            self._setup_index()
         self.set_trained()
 
     @abstractmethod
