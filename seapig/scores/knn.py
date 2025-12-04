@@ -155,7 +155,8 @@ class EuclideanScore(KNNScore):
 
     def _distance(self, query: Tensor, kpn: int = 0) -> torch.Tensor:
         dist, _ = self.index.search(query.cpu(), k=self.k + kpn)
-        return torch.Tensor(dist[:, kpn:].mean(1))
+        dist = torch.Tensor(dist[:, kpn:].mean(1))
+        return torch.sqrt(dist)
 
 
 class CosineScore(KNNScore):
