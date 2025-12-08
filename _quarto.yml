@@ -63,37 +63,29 @@ quartodoc:
           members:
             - score
             - select
-            - train
-            - calibrate
-            - is_trained
-            - is_calibrated
+            - fit
+            - fit_dl
             - set_threshold
         - name: CosineScore
           members:
             - score
             - select
-            - train
-            - calibrate
-            - is_trained
-            - is_calibrated
-            - set_threshold
-        - name: PNormScore
-          members:
-            - score
-            - select
-            - train
-            - calibrate
-            - is_trained
-            - is_calibrated
+            - fit
+            - fit_dl
             - set_threshold
         - name: MahalanobisScore
           members:
             - score
             - select
-            - train
-            - calibrate
-            - is_trained
-            - is_calibrated
+            - fit
+            - fit_dl
+            - set_threshold
+        - name: PyODScore
+          members: 
+            - score
+            - select
+            - fit
+            - fit_dl
             - set_threshold
     - title: Abstract Base Classes
       desc: ""
@@ -102,6 +94,8 @@ quartodoc:
         - name: scores.EmbeddingScore
           include_inherited: true
         - name: scores.KNNScore
+          include_inherited: true
+        - name: scores.PyODScore
           include_inherited: true
 
 filters:

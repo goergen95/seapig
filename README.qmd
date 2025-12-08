@@ -28,14 +28,14 @@ val_loader = DataLoader(dataset=dataset.get_val_split(), batch_size=8)
 test_loader = DataLoader(dataset=dataset.get_test_split(), batch_size=8)
 
 score = EuclideanScore(k=1)
-score.train(model=model, loader=train_loader)
-score.calibrate(model=model, loader=val_loader)
+score.fit_dl(model=model, loaders={"train": train_loader, "val": val_loader})
 
 score.set_threshold(q=0.75)
 print(f"Threshold: {score.get_threshold():.4f}")
 
 batch = next(iter(test_loader))
-score.select(batch, model=model)
+embs = model.embed(batch["image"])
+score.select(embs)
 ```
 
 The library supplies base classes for different families of

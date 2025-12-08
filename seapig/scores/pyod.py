@@ -1,12 +1,12 @@
 """Confidence score based on an arbitrary PyOD model."""
 
 from pathlib import Path
+from typing import Any, override
 
 import torch
-from pyod.models.base import BaseDetector
 from torch.utils.data import DataLoader
 
-from seapig.scores import EmbeddingScore
+from seapig.scores.embed import EmbeddingScore
 
 
 class PyODScore(EmbeddingScore):
@@ -16,34 +16,32 @@ class PyODScore(EmbeddingScore):
     ----------
     detector:
         An `BaseDetector` instance from PyOD.
-    scores:
-        A `torch.Tensor` with the confidence scores of the calibration samples.
-        Defaults to `None`.
-    threshold:
-        A `float` indicating the rejection threshold. Defaults to `None`.
 
     Attributes
     ----------
     embeddings:
         A `torch.Tensor` representing reference embeddings.
+    scores:
+        A `torch.Tensor` with the confidence scores of the calibration samples.
+        Defaults to `None`.
+    threshold:
+        A `float` indicating the rejection threshold. Defaults to `None`.
     """
 
     trained: bool = False
     train_required: bool = True
     calibrated: bool = False
     cal_required: bool = True
-    detector: BaseDetector
+    detector: Any
+    ident = "pyod"
 
-    def __init__(self, detector: BaseDetector) -> None:
+    def __init__(self, detector: Any) -> None:
         self.detector = detector
+        self.ident = f"{self.ident}-{detector.__class__.__name__}"
 
-    def train(
-        self,
-        model: torch.nn.Module,
-        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
-        q: float | bool = False,
-        outdir: Path | None = None,
-        prefix: str | None = None,
+    @override
+    def fit(
+        self, X: torch.Tensor, Y: torch.Tensor | None, q: bool | float = False
     ) -> None:
         """Train a confidence score based on samples from a `torch.utils.data.DataLoader`.
 
@@ -52,67 +50,112 @@ class PyODScore(EmbeddingScore):
         later used to calculate the KNN-distances for query samples.
 
         ```python
-        my_score = KNNScore(k=2)
-        my_score.train(train_loader, model)
+        my_score = PyODScore(detector=KNN(n_neighbors=5))
+        my_score.fit(train_embs, val_embs)
         ```
 
         Parameters
         ----------
-        loader:
-            DataLoader yielding training samples either as dict or Tensor.
-        model:
-            A trained model.
+        X:
+            A `torch.tensor` or an `np.Array` with samples representing training
+            samples.
+        Y:  A `torch.tensor` or an `np.Array` with samples representing calibration
+            samples.
         q:
-           A `float` or a `bool` indicating if the scores should be filtered to
-           remove outliers from the training distribution. Defaults to `False`.
+            A `float` or a `bool` indicating if the scores should be filtered to
+            remove outliers from the training distribution. Defaults to `False`.
         """
-        super().train(model, loader, outdir, prefix)
-        assert self.embeddings is not None
-        self.detector.fit(self.embeddings.cpu().numpy())
+        super().fit(X=X, Y=Y)
+        self._fit_impl(q=q)
+
+    @override
+    def fit_dl(
+        self,
+        model: torch.nn.Module,
+        loaders: dict[str, DataLoader[torch.Tensor | dict[str, torch.Tensor]]],
+        q: bool | float = False,
+        outdir: Path | None = None,
+        prefix: str | None = None,
+    ) -> None:
+        """Train a confidence score based on samples from a `DataLoader`.
+
+        Training embeddings are extracted from the supplied models and the data
+        loader with the `"train"` key in the supplied `loaders` argument.
+        Calibration embeddings are extracted from the `DataLoader` object with
+        the `"val"` key. The confidence score is then calibrated based on the
+        extracted embeddings.
+
+        ```python
+        my_score = PyODScore()
+        my_score.fit_dl(model=model, loaders={"train": train_loader, "val": val_loader})
+        ```
+
+        Parameters
+        ----------
+        model:
+            A torch.nn.Module representing a trained model instance. It is
+            required to have an `.embed()` method.
+        loaders:
+            A `dict`ionary with dataloader objects with required keys `["train", "val"]`.
+            The `DataLoaders` are expected to return `torch.Tensor`s or a `dict`
+            of `torch.Tensor`s with the `"image"` key present.
+        outdir:
+            A `pathlib.Path` object pointing towards a directory, by default `None`.
+            If specified, embeddings are read to disk, if previously written. Otherwise,
+            embeddings will be written to disk.
+        prefix:
+            A `str`ing used as filename prefix to save embeddings, by default
+            `None`. See `outdir` parameter above.
+        q:
+            A `float` or a `bool` indicating if the scores should be filtered to
+            remove outliers from the training distribution. Defaults to `False`.
+        """
+        super().fit_dl(model, loaders, outdir, prefix)
+        self._fit_impl(q=q)
+
+    def _fit_impl(self, q: float | None = None) -> None:
+        """Fit implementation."""
+        assert self.ref_embeddings is not None
+        if self.cal_required:
+            assert self.cal_embeddings is not None
+
+        # TODO: serialize detector to disk to avoid refitting and ensure deterministic results
+        self.detector.fit(self.ref_embeddings.cpu().numpy())
         self.scores = torch.Tensor(self.detector.decision_scores_)
+
         if q:
             assert (q >= 0.0) & (q <= 1.0)
             threshold = torch.quantile(self.scores.float(), q=q)
             index = self.scores < threshold
-            self.embeddings = self.embeddings[index, :]
-            self.detector.fit(self.embeddings.cpu().numpy())
+            self.ref_embeddings = self.ref_embeddings[index, :]
+            self.detector.fit(self.ref_embeddings.cpu().numpy())
             self.scores = torch.Tensor(self.detector.decision_scores_)
         self.set_trained()
 
+        if self.cal_embeddings is not None:
+            self.scores = self.score(self.cal_embeddings)
+            self.set_calibrated()
+
+    @override
     @torch.inference_mode()
-    def score(
-        self,
-        batch: torch.Tensor | dict[str, torch.Tensor],
-        model: torch.nn.Module | None,
-    ) -> torch.Tensor:
-        """Compute a confidence score for every sample in a batch.
+    def score(self, X: torch.Tensor) -> torch.Tensor:
+        """Compute a confidence score based on sample embeddings.
 
         Once instantiated, the object can be called to return confidence
-        scores based on a batch of inputs and a trained model:
+        scores based on sample embeddings.
 
         ```python
         my_score = PyODScore()
-        scores = my_score.score(batch, model)
+        my_score.fit(train_data, val_data)
+        scores = my_score.score(test_data)
         ```
 
         Parameters
         ----------
-        batch:
-            A `dict` with the a subset of the following keys
-            ["inputs", "masks", "weights", "labels", "outputs"] or a `torch.Tensor`.
-        model:
-            A torch.nn.Module representing a trained model.
+        X:
+            A `torch.tensor`or representing sample embeddings. Expected dimensions
+            are (B,D).
         """
-        assert isinstance(model, torch.nn.Module)
-        assert callable(model.embed)
-        assert self.embeddings is not None  # type: ignore [unreachable]
-
-        if isinstance(batch, dict):
-            z = model.embed(batch["image"])
-            device = str(batch["image"].device)
-        else:
-            z = model.embed(batch)
-            device = str(batch.device)
-        assert isinstance(z, torch.Tensor)
-        score = self.detector.decision_function(z.cpu().numpy())
-        return torch.Tensor(score).to(device=device)
+        assert self.detector is not None
+        score = torch.Tensor(self.detector.decision_function(X.cpu().numpy()))
+        return score

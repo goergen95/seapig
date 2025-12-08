@@ -6,10 +6,9 @@ from typing import override
 
 import faiss
 import torch
-from torch import Tensor
 from torch.utils.data import DataLoader
 
-from seapig.scores.base import EmbeddingScore
+from seapig.scores.embed import EmbeddingScore
 
 
 class KNNScore(EmbeddingScore, ABC):
@@ -44,82 +43,120 @@ class KNNScore(EmbeddingScore, ABC):
         self.k = k
 
     @override
-    @torch.inference_mode()
-    def score(
-        self, batch: Tensor | dict[str, Tensor], model: torch.nn.Module | None
-    ) -> Tensor:
-        """Compute a confidence score for every sample in a batch.
+    def fit(
+        self, X: torch.Tensor, Y: torch.Tensor | None, q: bool | float = False
+    ) -> None:
+        """Train a confidence score based on sample embeddings.
 
-        Once instantiated, the object can be called to return confidence
-        scores based on a batch of inputs and a trained model:
+        Training embeddings are required to be supplied as a `torch.tensor` with
+        parameter `X`. Calibration embeddings are supplied with the `Y` parameter.
+        As an alternative, use `fit_dl()` to supply a model with an `.embed()` method
+        and a dictionary with `DataLoaders` to extract embeddings on the fly.
+
+        These are later used to retrieve confidence scores for query samples.
 
         ```python
-        my_score = KNNScore()
-        scores = my_score.score(batch, model)
+        my_score = EmbeddingScore(k=2)
+        my_score.fit(train_embs, val_embs)
         ```
 
         Parameters
         ----------
-        batch:
-            A `dict` with the a subset of the following keys
-            ["inputs", "masks", "weights", "labels", "outputs"] or a `torch.Tensor`.
-        model:
-            A torch.nn.Module representing a trained model.
+        X:
+            A `torch.tensor` or an `np.Array` with samples representing training
+            samples.
+        Y:  A `torch.tensor` or an `np.Array` with samples representing calibration
+            samples.
+        q:
+            A `float` or a `bool` indicating if the scores should be filtered to
+            remove outliers from the training distribution. Defaults to `False`.
         """
-        assert isinstance(model, torch.nn.Module)
-        assert callable(model.embed)
-        assert self.embeddings is not None  # type: ignore [unreachable]
-        assert self.index is not None
+        super().fit(X=X, Y=Y)
+        self._setup_index()
+        self._fit_impl(q=q)
 
-        if isinstance(batch, dict):
-            z = model.embed(batch["image"])
-        else:
-            z = model.embed(batch)
-        assert isinstance(z, Tensor)
-        distance = self._distance(query=z)
-        return distance
-
-    def train(
+    @override
+    def fit_dl(
         self,
         model: torch.nn.Module,
-        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
-        q: float | bool = False,
+        loaders: dict[str, DataLoader[torch.Tensor | dict[str, torch.Tensor]]],
+        q: bool | float = False,
         outdir: Path | None = None,
         prefix: str | None = None,
     ) -> None:
-        """Train a confidence score based on samples from a `torch.utils.data.DataLoader`.
+        """Train a confidence score based on samples from a `DataLoader`.
 
-        The train method retrieves embeddings for all samples from a DataLoader
-        that is expected to represent training samples. These embeddings are
-        later used to calculate the KNN-distances for query samples.
+        Training embeddings are extracted from the supplied models and the data
+        loader with the `"train"` key in the supplied `loaders` argument.
+        Calibration embeddings are extracted from the `DataLoader` object with
+        the `"val"` key. The confidence score is then calibrated based on the
+        extracted embeddings.
 
         ```python
         my_score = KNNScore(k=2)
-        my_score.train(train_loader, model)
+        my_score.fit_dl(model=model, loaders={"train": train_loader, "val": val_loader})
         ```
 
         Parameters
         ----------
-        loader:
-            DataLoader yielding training samples either as dict or Tensor.
         model:
-            A trained model.
+            A torch.nn.Module representing a trained model instance. It is
+            required to have an `.embed()` method.
+        loaders:
+            A `dict`ionary with dataloader objects with required keys `["train", "val"]`.
+            The `DataLoaders` are expected to return `torch.Tensor`s or a `dict`
+            of `torch.Tensor`s with the `"image"` key present.
+        outdir:
+            A `pathlib.Path` object pointing towards a directory, by default `None`.
+            If specified, embeddings are read to disk, if previously written. Otherwise,
+            embeddings will be written to disk.
+        prefix:
+            A `str`ing used as filename prefix to save embeddings, by default
+            `None`. See `outdir` parameter above.
         q:
-           A `float` or a `bool` indicating if the scores should be filtered to
-           remove outliers from the training distribution. Defaults to `False`.
+            A `float` or a `bool` indicating if the scores should be filtered to
+            remove outliers from the training distribution. Defaults to `False`.
         """
-        super().train(model, loader, outdir, prefix)
-        assert self.embeddings is not None
+        super().fit_dl(model, loaders, outdir, prefix)
         self._setup_index()
-        self.scores = self._distance(self.embeddings, kpn=1)
+        self._fit_impl(q=q, outdir=outdir, prefix=prefix)
+
+    def _fit_impl(
+        self,
+        q: float | None = None,
+        outdir: Path | None = None,
+        prefix: str | None = None,
+    ) -> None:
+        """Fit implementation."""
+        path = None
+        assert self.ref_embeddings is not None
+        if self.cal_required:
+            assert self.cal_embeddings is not None
+
+        if prefix is not None:
+            path = self._setup_path(outdir, prefix + f"-{self.ident}-scores")
+
+        if path is not None and path.is_file():
+            print(f"Loading pre-existing scores from {path}.")
+            self.scores = self._load_parquet(path)
+        else:
+            self.scores = self._distance(self.ref_embeddings, kpn=1)
+            if path is not None:
+                self._write_parquet(x=self.scores, path=path)
+
         if q:
             assert (q >= 0.0) & (q <= 1.0)
             threshold = torch.quantile(self.scores.float(), q=q)
             index = self.scores < threshold
-            self.embeddings = self.embeddings[index, :]
+            self.ref_embeddings = self.ref_embeddings[index, :]
             self.scores = self.scores[index]
             self._setup_index()
+
         self.set_trained()
+
+        if self.cal_embeddings is not None:
+            self.scores = self._distance(self.cal_embeddings, kpn=0)
+            self.set_calibrated()
 
     @abstractmethod
     def _setup_index(self) -> None:
@@ -130,6 +167,29 @@ class KNNScore(EmbeddingScore, ABC):
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         """Calculate the KNN distance of a query against a populated index."""
         pass
+
+    @override
+    def score(self, X: torch.Tensor) -> torch.Tensor:
+        """Compute a confidence score based on sample embeddings.
+
+        Once instantiated, the object can be called to return confidence
+        scores based on sample embeddings.
+
+        ```python
+        my_score = KNNScore()
+        my_score.fit(train_data, val_data)
+        scores = my_score.score(test_data)
+        ```
+
+        Parameters
+        ----------
+        X:
+            A `torch.tensor`or representing sample embeddings. Expected dimensions
+            are (B,D).
+        """
+        assert self.index is not None
+        score = self._distance(query=X)
+        return score
 
 
 class EuclideanScore(KNNScore):
@@ -153,18 +213,23 @@ class EuclideanScore(KNNScore):
     """
 
     k: int
+    ident = "euclidean"
 
     def __init__(self, k: int = 1) -> None:
         super().__init__()
         self.k = k
+        self.ident = self.ident + f"-k{k}"
 
+    @override
     def _setup_index(self) -> None:
         """Initialize faiss index based on embeddings."""
-        assert isinstance(self.embeddings, torch.Tensor)
-        self.index = faiss.IndexFlatL2(self.embeddings.shape[1])
-        self.index.add(self.embeddings.cpu())
+        assert isinstance(self.ref_embeddings, torch.Tensor)
+        self.index = faiss.IndexFlatL2(self.ref_embeddings.shape[1])
+        self.index.add(self.ref_embeddings.cpu())
 
-    def _distance(self, query: Tensor, kpn: int = 0) -> torch.Tensor:
+    @override
+    @torch.inference_mode()
+    def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         dist, _ = self.index.search(query.cpu(), k=self.k + kpn)
         dist = torch.Tensor(dist[:, kpn:].mean(1))
         return torch.sqrt(dist)
@@ -195,20 +260,25 @@ class CosineScore(KNNScore):
 
     k: int = 1
     abs: bool
+    ident = "cosine"
 
     def __init__(self, k: int = 1, abs: bool = True) -> None:
         super().__init__()
         self.k = k
         self.abs = abs
+        self.ident = self.ident + f"-k{k}"
 
+    @override
     def _setup_index(self) -> None:
         """Initialize faiss index based on embeddings."""
-        assert isinstance(self.embeddings, torch.Tensor)
-        self.index = faiss.IndexFlatIP(self.embeddings.shape[1])
-        self.index.add(torch.nn.functional.normalize(self.embeddings).cpu())
+        assert isinstance(self.ref_embeddings, torch.Tensor)
+        self.index = faiss.IndexFlatIP(self.ref_embeddings.shape[1])
+        self.index.add(torch.nn.functional.normalize(self.ref_embeddings).cpu())
         return
 
-    def _distance(self, query: Tensor, kpn: int = 0) -> Tensor:
+    @override
+    @torch.inference_mode()
+    def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         query = torch.nn.functional.normalize(query).cpu()
         dist, _ = self.index.search(query, k=self.k + kpn)
         dist = torch.Tensor(dist)
@@ -243,19 +313,24 @@ class MahalanobisScore(KNNScore):
     cal_required: bool = True
     threshold: torch.Tensor | None = None
     scores: torch.Tensor | None = None
+    ident = "mahalanobis"
 
     def __init__(self, k: int = 1) -> None:
         super().__init__()
         self.k = k
+        self.ident = self.ident + f"-k{k}"
 
+    @override
     def _setup_index(self) -> None:
         """Initialize faiss index based on embeddings."""
-        assert isinstance(self.embeddings, torch.Tensor)
-        cov_zero = self.embeddings.T.cov()
+        assert isinstance(self.ref_embeddings, torch.Tensor)
+        cov_zero = self.ref_embeddings.T.cov()
         self.vi_zero = torch.linalg.inv(torch.linalg.cholesky(cov_zero))
-        self.index = faiss.IndexFlatL2(self.embeddings.shape[1])
-        self.index.add((self.embeddings @ self.vi_zero.T).cpu())
+        self.index = faiss.IndexFlatL2(self.ref_embeddings.shape[1])
+        self.index.add((self.ref_embeddings @ self.vi_zero.T).cpu())
 
+    @override
+    @torch.inference_mode()
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         query = query.cpu() @ self.vi_zero.T.cpu()
         dist, _ = self.index.search(query, k=self.k + kpn)

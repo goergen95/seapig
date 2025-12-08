@@ -24,23 +24,23 @@ val_loader = DataLoader(dataset=dataset.get_val_split(), batch_size=8)
 test_loader = DataLoader(dataset=dataset.get_test_split(), batch_size=8)
 
 score = EuclideanScore(k=1)
-score.train(model=model, loader=train_loader)
-score.calibrate(model=model, loader=val_loader)
+score.fit_dl(model=model, loaders={"train": train_loader, "val": val_loader})
 
 score.set_threshold(q=0.75)
 print(f"Threshold: {score.get_threshold():.4f}")
 
 batch = next(iter(test_loader))
-score.select(batch, model=model)
+embs = model.embed(batch["image"])
+score.select(embs)
 ```
 
-    Embedding 42 batches:   0%|          | 0/42 [00:00<?, ?batches/s]Embedding 42 batches:  93%|█████████▎| 39/42 [00:00<00:00, 383.66batches/s]Embedding 42 batches: 100%|██████████| 42/42 [00:00<00:00, 386.07batches/s]
-    Embedding 42 batches:   0%|          | 0/42 [00:00<?, ?batches/s]Embedding 42 batches:  95%|█████████▌| 40/42 [00:00<00:00, 396.65batches/s]Embedding 42 batches: 100%|██████████| 42/42 [00:00<00:00, 395.78batches/s]
+    Embedding 42 batches:   0%|          | 0/42 [00:00<?, ?batches/s]Embedding 42 batches: 100%|██████████| 42/42 [00:00<00:00, 1820.39batches/s]
+    Embedding 42 batches:   0%|          | 0/42 [00:00<?, ?batches/s]Embedding 42 batches: 100%|██████████| 42/42 [00:00<00:00, 1993.96batches/s]
 
-    Threshold: 0.0022
+    Threshold: 0.4254
 
-    {'score': tensor([0.0015, 0.0024, 0.0021, 0.0022, 0.0017, 0.0015, 0.0035, 0.0015]),
-     'selected': tensor([ True, False,  True, False,  True,  True, False,  True])}
+    {'score': tensor([0.4028, 0.4113, 0.3662, 0.3431, 0.3921, 0.3419, 0.4053, 0.3765]),
+     'selected': tensor([True, True, True, True, True, True, True, True])}
 
 The library supplies base classes for different families of approaches
 to express the (dis-)similarity of query samples to the training

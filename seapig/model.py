@@ -27,9 +27,7 @@ class SelectiveModel(torch.nn.Module):
         if isinstance(preds, torch.Tensor):
             preds = {"predictions": preds}
         assert isinstance(preds, dict)
-        scores: dict[str, torch.Tensor] = self.csf.select(
-            batch=x, model=self.model
-        )
+        scores: dict[str, torch.Tensor] = self.csf.select(x)
         scores = {
             k: v.to(device=str(preds["predictions"].device))
             for k, v in scores.items()

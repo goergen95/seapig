@@ -2,6 +2,7 @@
     "cSpell.words": [
         "autocast",
         "cdist",
+        "embs",
         "faiss",
         "htmlcov",
         "ipykernel",
@@ -9,6 +10,7 @@
         "ipywidgets",
         "isort",
         "linalg",
+        "loadorembed",
         "machow",
         "mypy",
         "nbmake",

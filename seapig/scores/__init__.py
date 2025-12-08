@@ -1,6 +1,7 @@
 """Confidence Scores supplied by seapig."""
 
-from seapig.scores.base import ConfidenceScore, EmbeddingScore, RandomScore
+from seapig.scores.base import ConfidenceScore, RandomScore
+from seapig.scores.embed import EmbeddingScore
 from seapig.scores.knn import (
     CosineScore,
     EuclideanScore,
