@@ -75,7 +75,8 @@ class PyODScore(EmbeddingScore):
             threshold = torch.quantile(self.scores.float(), q=q)
             index = self.scores < threshold
             self.embeddings = self.embeddings[index, :]
-            self.scores = self.scores[index]
+            self.detector.fit(self.embeddings.cpu().numpy())
+            self.scores = torch.Tensor(self.detector.decision_scores_)
         self.set_trained()
 
     @torch.inference_mode()
