@@ -4,12 +4,22 @@ import torch
 
 
 class TensorPCA:
-    """Tensor based PCA with L2 normalized inputs."""
+    """Tensor based PCA with L2 normalized inputs.
+
+    See https://arxiv.org/pdf/2505.15284.
+    """
 
     # based on https://github.com/fanghenshaometeor/ood-kernel-pca/blob/main/CoP_CoRP_ImgNet.py
 
-    def __init__(self, exp_var: float = 0.90):
+    def __init__(
+        self,
+        exp_var: float = 0.90,
+        gamma: int | None = None,
+        M: int | None = None,
+    ):
         self.exp_var = exp_var
+        self.gamma = gamma
+        self.M = M
 
     @staticmethod
     def _l2_normalize(X: torch.Tensor) -> torch.Tensor:
@@ -17,12 +27,33 @@ class TensorPCA:
         X = X / (torch.linalg.norm(X, ord=2, dim=-1, keepdims=True) + 1e-10)
         return X.contiguous()
 
+    @staticmethod
+    def _rff(
+        X: torch.Tensor, gamma: float | None = 3, M: int | None = 4096
+    ) -> torch.Tensor:
+        if gamma is None or M is None:
+            return X
+        _, D = X.shape
+        assert M > D
+        w = torch.sqrt(torch.tensor([2 * gamma])) * torch.normal(
+            mean=0, std=torch.ones(size=(M, D))
+        )
+        u = 2 * torch.pi * torch.rand(M)
+        X = torch.sqrt(torch.tensor([2 / M])) * torch.cos(
+            X @ w.T + u[torch.newaxis, :]
+        )
+        return X.contiguous()
+
     def _preprocess(self, X: torch.Tensor) -> torch.Tensor:
-        X = X - self.mu
-        return self._l2_normalize(X)
+        X = (
+            self._l2_normalize(self._rff(X, gamma=self.gamma, M=self.M))
+            - self.mu
+        )
+        return X.contiguous()
 
     def fit(self, X: torch.Tensor, Y: None = None) -> None:
         """Fitting the PCA based on an input tensor."""
+        X = self._rff(X, gamma=self.gamma, M=self.M)
         X = self._l2_normalize(X)
         self.mu = X.mean(dim=0)
         X = X - self.mu

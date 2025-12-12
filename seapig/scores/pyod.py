@@ -7,7 +7,6 @@ import torch
 from torch.utils.data import DataLoader
 
 from seapig.scores.embed import EmbeddingScore
-from seapig.scores.utils import TensorPCA
 
 
 class PyODScore(EmbeddingScore):
@@ -17,6 +16,10 @@ class PyODScore(EmbeddingScore):
     ----------
     detector:
         An `BaseDetector` instance from PyOD.
+    exp_var:
+        A `float` indicating the percentage of explained variance to retain
+        if dimensionality reduction via PCA shall be applied. Defaults to `False`,
+        indicating that dimensionality reduction is not applied.
 
     Attributes
     ----------
@@ -40,11 +43,6 @@ class PyODScore(EmbeddingScore):
         self.detector = detector
         self.exp_var = exp_var
         self.ident = f"{self.ident}-{detector.__class__.__name__}"
-
-    def _fit_pca(self) -> None:
-        assert self.ref_embeddings is not None
-        self.pca = TensorPCA(exp_var=self.exp_var)
-        self.pca.fit(self.ref_embeddings)
 
     @override
     def fit(
@@ -73,8 +71,6 @@ class PyODScore(EmbeddingScore):
             remove outliers from the training distribution. Defaults to `False`.
         """
         super().fit(X=X, Y=Y)
-        if self.exp_var:
-            self._fit_pca()
         self._fit_impl(q=q)
 
     @override
@@ -120,8 +116,6 @@ class PyODScore(EmbeddingScore):
             remove outliers from the training distribution. Defaults to `False`.
         """
         super().fit_dl(model, loaders, outdir, prefix)
-        if self.exp_var:
-            self._fit_pca()
         self._fit_impl(q=q)
 
     def _fit_impl(self, q: float | None = None) -> None:
@@ -131,24 +125,27 @@ class PyODScore(EmbeddingScore):
             assert self.cal_embeddings is not None
 
         # TODO: serialize detector to disk to avoid refitting and ensure deterministic results
-        self.detector.fit(self.ref_embeddings.cpu().numpy())
-        self.scores = torch.Tensor(self.detector.decision_scores_)
 
         if q:
+            self.detector.fit(self.ref_embeddings.cpu().numpy())
+            self.scores = torch.Tensor(self.detector.decision_scores_)
             assert (q >= 0.0) & (q <= 1.0)
             threshold = torch.quantile(self.scores.float(), q=q)
             index = self.scores < threshold
             self.ref_embeddings = self.ref_embeddings[index, :]
-            if self.exp_var:
-                self._fit_pca()
+
+        if self.exp_var is not None:
+            self._fit_pca()
+            assert self.pca is not None
             self.ref_embeddings = self.pca.predict(self.ref_embeddings)
-            self.detector.fit(self.ref_embeddings.cpu().numpy())
-            self.scores = torch.Tensor(self.detector.decision_scores_)
+            if self.cal_embeddings is not None:
+                self.cal_embeddings = self.pca.predict(self.cal_embeddings)
+
+        self.detector.fit(self.ref_embeddings.cpu().numpy())
+        self.scores = torch.Tensor(self.detector.decision_scores_)
         self.set_trained()
 
         if self.cal_embeddings is not None:
-            if self.exp_var:
-                self.cal_embeddings = self.pca.predict(self.cal_embeddings)
             self.scores = torch.Tensor(
                 self.detector.decision_function(
                     self.cal_embeddings.cpu().numpy()
