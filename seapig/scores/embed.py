@@ -114,9 +114,9 @@ class EmbeddingScore(ConfidenceScore, ABC):
                 raise KeyError(
                     'A batch dictionary is required to contain the "image" key.'
                 )
-            z = model.embed(X["image"])  # type: ignore [operator]
+            z = model.embed(X["image"])
         else:
-            z = model.embed(X)  # type: ignore [operator]
+            z = model.embed(X)
         assert isinstance(z, torch.Tensor)
         if len(z.shape) > 2:  # we expect (B,D)
             raise ValueError(
@@ -137,12 +137,12 @@ class EmbeddingScore(ConfidenceScore, ABC):
             desc=f"Embedding {len(loader)} batches",
             unit="batches",
         )
-        embs = list()
+        embs_ls = list()
         for batch in loader:
             z = self._embed(X=batch, model=model)
-            embs.append(z)
+            embs_ls.append(z)
             _ = pbar.update(n=1)
-        embs = torch.cat(embs, dim=0)
+        embs = torch.cat(embs_ls, dim=0)
         return embs
 
     @classmethod
