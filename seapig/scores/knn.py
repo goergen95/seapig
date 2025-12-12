@@ -35,7 +35,7 @@ class KNNScore(EmbeddingScore, ABC):
     train_required: bool = True
     cal_required: bool = True
     threshold: torch.Tensor | None = None
-    scores: torch.Tensor | None = None
+    scores: torch.Tensor
     index: faiss.IndexFlatL2  # type: ignore [no-any-unimported]
 
     def __init__(self, k: int = 1) -> None:
@@ -80,9 +80,9 @@ class KNNScore(EmbeddingScore, ABC):
         self,
         model: torch.nn.Module,
         loaders: dict[str, DataLoader[torch.Tensor | dict[str, torch.Tensor]]],
-        q: bool | float = False,
         outdir: Path | None = None,
         prefix: str | None = None,
+        q: bool | float = False,
     ) -> None:
         """Train a confidence score based on samples from a `DataLoader`.
 
@@ -312,7 +312,7 @@ class MahalanobisScore(KNNScore):
     train_required: bool = True
     cal_required: bool = True
     threshold: torch.Tensor | None = None
-    scores: torch.Tensor | None = None
+    scores: torch.Tensor
     ident = "mahalanobis"
 
     def __init__(self, k: int = 1) -> None:

@@ -73,9 +73,9 @@ class PyODScore(EmbeddingScore):
         self,
         model: torch.nn.Module,
         loaders: dict[str, DataLoader[torch.Tensor | dict[str, torch.Tensor]]],
-        q: bool | float = False,
         outdir: Path | None = None,
         prefix: str | None = None,
+        q: bool | float = False,
     ) -> None:
         """Train a confidence score based on samples from a `DataLoader`.
 
