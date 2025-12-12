@@ -34,13 +34,13 @@ embs = model.embed(batch["image"])
 score.select(embs)
 ```
 
-    Embedding 42 batches:   0%|          | 0/42 [00:00<?, ?batches/s]Embedding 42 batches: 100%|██████████| 42/42 [00:00<00:00, 1820.39batches/s]
-    Embedding 42 batches:   0%|          | 0/42 [00:00<?, ?batches/s]Embedding 42 batches: 100%|██████████| 42/42 [00:00<00:00, 1993.96batches/s]
+    Embedding 42 batches:   0%|          | 0/42 [00:00<?, ?batches/s]Embedding 42 batches: 100%|██████████| 42/42 [00:00<00:00, 3158.30batches/s]
+    Embedding 42 batches:   0%|          | 0/42 [00:00<?, ?batches/s]Embedding 42 batches: 100%|██████████| 42/42 [00:00<00:00, 2230.93batches/s]
 
-    Threshold: 0.4254
+    Threshold: 0.4187
 
-    {'score': tensor([0.4028, 0.4113, 0.3662, 0.3431, 0.3921, 0.3419, 0.4053, 0.3765]),
-     'selected': tensor([True, True, True, True, True, True, True, True])}
+    {'score': tensor([0.3800, 0.4775, 0.3968, 0.3983, 0.4173, 0.3746, 0.3405, 0.3432]),
+     'selected': tensor([ True, False,  True,  True,  True,  True,  True,  True])}
 
 The library supplies base classes for different families of approaches
 to express the (dis-)similarity of query samples to the training

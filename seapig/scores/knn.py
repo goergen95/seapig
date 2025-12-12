@@ -9,6 +9,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from seapig.scores.embed import EmbeddingScore
+from seapig.scores.utils import TensorPCA
 
 
 class KNNScore(EmbeddingScore, ABC):
@@ -19,6 +20,10 @@ class KNNScore(EmbeddingScore, ABC):
     k:
         An `int`eger indicating the number of neighbors to calculate the distance.
         Defaults to 1, e.g. the distance to the closest neighbor.
+    exp_var:
+        A `float` indicating the percentage of explained variance to retain
+        if dimensionality reduction via PCA shall be applied. Defaults to `False`,
+        indicating that dimensionality reduction is not applied.
 
     Attributes
     ----------
@@ -37,10 +42,12 @@ class KNNScore(EmbeddingScore, ABC):
     threshold: torch.Tensor | None = None
     scores: torch.Tensor
     index: faiss.IndexFlatL2  # type: ignore [no-any-unimported]
+    pca: TensorPCA | None = None
 
-    def __init__(self, k: int = 1) -> None:
+    def __init__(self, k: int = 1, exp_var: float | bool = False) -> None:
         super().__init__()
         self.k = k
+        self.exp_var = exp_var
 
     @override
     def fit(
@@ -72,6 +79,8 @@ class KNNScore(EmbeddingScore, ABC):
             remove outliers from the training distribution. Defaults to `False`.
         """
         super().fit(X=X, Y=Y)
+        if self.exp_var:
+            self._fit_pca()
         self._setup_index()
         self._fit_impl(q=q)
 
@@ -118,8 +127,15 @@ class KNNScore(EmbeddingScore, ABC):
             remove outliers from the training distribution. Defaults to `False`.
         """
         super().fit_dl(model, loaders, outdir, prefix)
+        if self.exp_var:
+            self._fit_pca()
         self._setup_index()
         self._fit_impl(q=q, outdir=outdir, prefix=prefix)
+
+    def _fit_pca(self) -> None:
+        assert self.ref_embeddings is not None
+        self.pca = TensorPCA(exp_var=self.exp_var)
+        self.pca.fit(self.ref_embeddings)
 
     def _fit_impl(
         self,
@@ -149,12 +165,17 @@ class KNNScore(EmbeddingScore, ABC):
             threshold = torch.quantile(self.scores.float(), q=q)
             index = self.scores < threshold
             self.ref_embeddings = self.ref_embeddings[index, :]
-            self.scores = self.scores[index]
+            if self.exp_var:
+                self._fit_pca()
+            self.ref_embeddings = self.pca.predict(self.ref_embeddings)
             self._setup_index()
+            self.scores = self._distance(self.ref_embeddings, kpn=1)
 
         self.set_trained()
 
         if self.cal_embeddings is not None:
+            if self.exp_var:
+                self.cal_embeddings = self.pca.predict(self.cal_embeddings)
             self.scores = self._distance(self.cal_embeddings, kpn=0)
             self.set_calibrated()
 
@@ -188,6 +209,8 @@ class KNNScore(EmbeddingScore, ABC):
             are (B,D).
         """
         assert self.index is not None
+        if self.pca is not None:
+            X = self.pca.predict(X)
         score = self._distance(query=X)
         return score
 
@@ -200,6 +223,10 @@ class EuclideanScore(KNNScore):
     k:
         An `int`eger indicating the number of neighbors to calculate the distance.
         Defaults to 1, e.g. the distance to the closest neighbor.
+    exp_var:
+        A `float` indicating the percentage of explained variance to retain
+        if dimensionality reduction via PCA shall be applied. Defaults to `False`,
+        indicating that dimensionality reduction is not applied.
 
     Attributes
     ----------
@@ -215,10 +242,9 @@ class EuclideanScore(KNNScore):
     k: int
     ident = "euclidean"
 
-    def __init__(self, k: int = 1) -> None:
-        super().__init__()
-        self.k = k
-        self.ident = self.ident + f"-k{k}"
+    def __init__(self, k: int = 1, exp_var: float | bool = False) -> None:
+        super().__init__(k=k, exp_var=exp_var)
+        self.ident = self.ident + f"-k{self.k}"
 
     @override
     def _setup_index(self) -> None:
@@ -246,6 +272,10 @@ class CosineScore(KNNScore):
     abs:
         A `bool`ean indicating if the absolute cosine distance should be returned,
         by default `True`.
+    exp_var:
+        A `float` indicating the percentage of explained variance to retain
+        if dimensionality reduction via PCA shall be applied. Defaults to `False`,
+        indicating that dimensionality reduction is not applied.
 
     Attributes
     ----------
@@ -262,11 +292,12 @@ class CosineScore(KNNScore):
     abs: bool
     ident = "cosine"
 
-    def __init__(self, k: int = 1, abs: bool = True) -> None:
-        super().__init__()
-        self.k = k
+    def __init__(
+        self, k: int = 1, abs: bool = True, exp_var: float | bool = False
+    ) -> None:
+        super().__init__(k=k, exp_var=exp_var)
         self.abs = abs
-        self.ident = self.ident + f"-k{k}"
+        self.ident = self.ident + f"-k{self.k}"
 
     @override
     def _setup_index(self) -> None:
@@ -295,6 +326,10 @@ class MahalanobisScore(KNNScore):
     k:
         An `int`eger indicating the number of neighbors to calculate the distance.
         Defaults to 1, e.g. the distance to the closest neighbor.
+    exp_var:
+        A `float` indicating the percentage of explained variance to retain
+        if dimensionality reduction via PCA shall be applied. Defaults to `False`,
+        indicating that dimensionality reduction is not applied.
 
     Attributes
     ----------
@@ -315,10 +350,9 @@ class MahalanobisScore(KNNScore):
     scores: torch.Tensor
     ident = "mahalanobis"
 
-    def __init__(self, k: int = 1) -> None:
-        super().__init__()
-        self.k = k
-        self.ident = self.ident + f"-k{k}"
+    def __init__(self, k: int = 1, exp_var: float | bool = False) -> None:
+        super().__init__(k=k, exp_var=exp_var)
+        self.ident = self.ident + f"-k{self.k}"
 
     @override
     def _setup_index(self) -> None:

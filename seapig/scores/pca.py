@@ -1,7 +1,7 @@
-"""Confidence score based on an arbitrary PyOD model."""
+"""PCA based dimensionality reduction and confidence scoring."""
 
 from pathlib import Path
-from typing import Any, override
+from typing import override
 
 import torch
 from torch.utils.data import DataLoader
@@ -10,54 +10,41 @@ from seapig.scores.embed import EmbeddingScore
 from seapig.scores.utils import TensorPCA
 
 
-class PyODScore(EmbeddingScore):
-    """Confidence Scores based on detectors supplied by PyOD.
+class PCAScore(EmbeddingScore):
+    """Returns a confidence scores based on PCA-based reconstruction errors.
+
+    See https://arxiv.org/pdf/2402.02949v3
 
     Parameters
     ----------
-    detector:
-        An `BaseDetector` instance from PyOD.
-
-    Attributes
-    ----------
-    embeddings:
-        A `torch.Tensor` representing reference embeddings.
-    scores:
-        A `torch.Tensor` with the confidence scores of the calibration samples.
-        Defaults to `None`.
-    threshold:
-        A `float` indicating the rejection threshold. Defaults to `None`.
+    exp_var:
+        A `float` indicating the explained variance to keep when PCA-based
+        dimensionality reduction shall be applied. Defaults to `False`, meaning
+        that no dimensionality reduction will be conducted.
     """
 
-    trained: bool = False
-    train_required: bool = True
-    calibrated: bool = False
-    cal_required: bool = True
-    detector: Any
-    ident = "pyod"
+    ident = "pca"
 
-    def __init__(self, detector: Any, exp_var: float | bool = False) -> None:
-        self.detector = detector
+    def __init__(self, exp_var: float = 0.90) -> None:
+        super().__init__()
         self.exp_var = exp_var
-        self.ident = f"{self.ident}-{detector.__class__.__name__}"
-
-    def _fit_pca(self) -> None:
-        assert self.ref_embeddings is not None
-        self.pca = TensorPCA(exp_var=self.exp_var)
-        self.pca.fit(self.ref_embeddings)
+        self.ident = f"{self.ident}-{exp_var}"
 
     @override
     def fit(
         self, X: torch.Tensor, Y: torch.Tensor | None, q: bool | float = False
     ) -> None:
-        """Train a confidence score based on samples from a `torch.utils.data.DataLoader`.
+        """Train a confidence score based on sample embeddings.
 
-        The train method retrieves embeddings for all samples from a DataLoader
-        that is expected to represent training samples. These embeddings are
-        later used to calculate the KNN-distances for query samples.
+        Training embeddings are required to be supplied as a `torch.tensor` with
+        parameter `X`. Calibration embeddings are supplied with the `Y` parameter.
+        As an alternative, use `fit_dl()` to supply a model with an `.embed()` method
+        and a dictionary with `DataLoaders` to extract embeddings on the fly.
+
+        These are later used to retrieve confidence scores for query samples.
 
         ```python
-        my_score = PyODScore(detector=KNN(n_neighbors=5))
+        my_score = PCAScore(exp_var = 0.90)
         my_score.fit(train_embs, val_embs)
         ```
 
@@ -73,8 +60,7 @@ class PyODScore(EmbeddingScore):
             remove outliers from the training distribution. Defaults to `False`.
         """
         super().fit(X=X, Y=Y)
-        if self.exp_var:
-            self._fit_pca()
+        self._fit_pca()
         self._fit_impl(q=q)
 
     @override
@@ -95,7 +81,7 @@ class PyODScore(EmbeddingScore):
         extracted embeddings.
 
         ```python
-        my_score = PyODScore()
+        my_score = PCAScore(exp_var = 0.90)
         my_score.fit_dl(model=model, loaders={"train": train_loader, "val": val_loader})
         ```
 
@@ -120,44 +106,52 @@ class PyODScore(EmbeddingScore):
             remove outliers from the training distribution. Defaults to `False`.
         """
         super().fit_dl(model, loaders, outdir, prefix)
-        if self.exp_var:
-            self._fit_pca()
-        self._fit_impl(q=q)
+        self._fit_pca()
+        self._fit_impl(q=q, outdir=outdir, prefix=prefix)
 
-    def _fit_impl(self, q: float | None = None) -> None:
+    def _fit_pca(self) -> None:
+        assert self.ref_embeddings is not None
+        self.pca = TensorPCA(exp_var=self.exp_var)
+        self.pca.fit(self.ref_embeddings)
+
+    def _fit_impl(
+        self,
+        q: float | None = None,
+        outdir: Path | None = None,
+        prefix: str | None = None,
+    ) -> None:
         """Fit implementation."""
+        path = None
         assert self.ref_embeddings is not None
         if self.cal_required:
             assert self.cal_embeddings is not None
 
-        # TODO: serialize detector to disk to avoid refitting and ensure deterministic results
-        self.detector.fit(self.ref_embeddings.cpu().numpy())
-        self.scores = torch.Tensor(self.detector.decision_scores_)
+        if prefix is not None:
+            path = self._setup_path(outdir, prefix + f"-{self.ident}-scores")
+
+        if path is not None and path.is_file():
+            print(f"Loading pre-existing scores from {path}.")
+            self.scores = self._load_parquet(path)
+        else:
+            _, self.scores = self.pca.reconstruct(self.ref_embeddings)
+            if path is not None:
+                self._write_parquet(x=self.scores, path=path)
 
         if q:
             assert (q >= 0.0) & (q <= 1.0)
             threshold = torch.quantile(self.scores.float(), q=q)
             index = self.scores < threshold
             self.ref_embeddings = self.ref_embeddings[index, :]
-            if self.exp_var:
-                self._fit_pca()
-            self.ref_embeddings = self.pca.predict(self.ref_embeddings)
-            self.detector.fit(self.ref_embeddings.cpu().numpy())
-            self.scores = torch.Tensor(self.detector.decision_scores_)
+            self._fit_pca()
+            _, self.scores = self.pca.reconstruct(self.ref_embeddings)
+
         self.set_trained()
 
         if self.cal_embeddings is not None:
-            if self.exp_var:
-                self.cal_embeddings = self.pca.predict(self.cal_embeddings)
-            self.scores = torch.Tensor(
-                self.detector.decision_function(
-                    self.cal_embeddings.cpu().numpy()
-                )
-            )
+            _, self.scores = self.pca.reconstruct(self.cal_embeddings)
             self.set_calibrated()
 
     @override
-    @torch.inference_mode()
     def score(self, X: torch.Tensor) -> torch.Tensor:
         """Compute a confidence score based on sample embeddings.
 
@@ -165,7 +159,7 @@ class PyODScore(EmbeddingScore):
         scores based on sample embeddings.
 
         ```python
-        my_score = PyODScore()
+        my_score = KNNScore()
         my_score.fit(train_data, val_data)
         scores = my_score.score(test_data)
         ```
@@ -176,8 +170,7 @@ class PyODScore(EmbeddingScore):
             A `torch.tensor`or representing sample embeddings. Expected dimensions
             are (B,D).
         """
-        assert self.detector is not None
-        if self.pca is not None:
-            X = self.pca.predict(X)
-        score = torch.Tensor(self.detector.decision_function(X.cpu().numpy()))
+        assert self.pca is not None
+        X = self.pca.predict(X)
+        _, score = self.pca.reconstruct(X)
         return score

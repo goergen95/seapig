@@ -8,6 +8,7 @@ from seapig.scores.knn import (
     KNNScore,
     MahalanobisScore,
 )
+from seapig.scores.pca import PCAScore
 from seapig.scores.pyod import PyODScore
 
 __all__ = [
@@ -19,4 +20,5 @@ __all__ = [
     "CosineScore",
     "MahalanobisScore",
     "PyODScore",
+    "PCAScore",
 ]
