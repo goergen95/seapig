@@ -310,7 +310,8 @@ class CosineScore(KNNScore):
         dist = torch.Tensor(dist)
         if self.abs:
             dist = dist.abs()
-        return 1 - dist[:, kpn:].mean(1)
+        dist = dist[:, kpn:].mean(1)
+        return torch.tensor(1 - dist)
 
 
 class MahalanobisScore(KNNScore):
