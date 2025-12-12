@@ -27,7 +27,7 @@ class PCAScore(EmbeddingScore):
     def __init__(
         self,
         exp_var: float = 0.50,
-        gamma: float | None = 3.5,
+        gamma: float | None = 3.0,
         M: int | None = 4096,
     ) -> None:
         super().__init__()

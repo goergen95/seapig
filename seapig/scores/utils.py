@@ -45,16 +45,15 @@ class TensorPCA:
         return X.contiguous()
 
     def _preprocess(self, X: torch.Tensor) -> torch.Tensor:
-        X = (
-            self._l2_normalize(self._rff(X, gamma=self.gamma, M=self.M))
-            - self.mu
-        )
+        X = self._l2_normalize(X)
+        X = self._rff(X, gamma=self.gamma, M=self.M)
+        X = X - self.mu
         return X.contiguous()
 
     def fit(self, X: torch.Tensor, Y: None = None) -> None:
         """Fitting the PCA based on an input tensor."""
-        X = self._rff(X, gamma=self.gamma, M=self.M)
         X = self._l2_normalize(X)
+        X = self._rff(X, gamma=self.gamma, M=self.M)
         self.mu = X.mean(dim=0)
         X = X - self.mu
         K = X.T @ X
