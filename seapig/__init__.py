@@ -13,6 +13,7 @@ __version__ = "0.0.1"
 from seapig.model import SelectiveModel
 from seapig.scores.base import RandomScore
 from seapig.scores.knn import CosineScore, EuclideanScore, MahalanobisScore
+from seapig.scores.pca import PCAScore
 from seapig.scores.pyod import PyODScore
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "CosineScore",
     "MahalanobisScore",
     "PyODScore",
+    "PCAScore",
 ]

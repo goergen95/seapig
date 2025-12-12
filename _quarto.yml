@@ -87,6 +87,13 @@ quartodoc:
             - fit
             - fit_dl
             - set_threshold
+        - name: PCAScore
+          members: 
+            - score
+            - select
+            - fit
+            - fit_dl
+            - set_threshold
     - title: Abstract Base Classes
       desc: ""
       contents:
