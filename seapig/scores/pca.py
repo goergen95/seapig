@@ -7,7 +7,6 @@ import torch
 from torch.utils.data import DataLoader
 
 from seapig.scores.embed import EmbeddingScore
-from seapig.scores.utils import TensorPCA
 
 
 class PCAScore(EmbeddingScore):
@@ -25,9 +24,16 @@ class PCAScore(EmbeddingScore):
 
     ident = "pca"
 
-    def __init__(self, exp_var: float = 0.90) -> None:
+    def __init__(
+        self,
+        exp_var: float = 0.50,
+        gamma: float | None = 3.5,
+        M: int | None = 4096,
+    ) -> None:
         super().__init__()
         self.exp_var = exp_var
+        self.gamma = gamma
+        self.M = M
         self.ident = f"{self.ident}-{exp_var}"
 
     @override
@@ -106,13 +112,7 @@ class PCAScore(EmbeddingScore):
             remove outliers from the training distribution. Defaults to `False`.
         """
         super().fit_dl(model, loaders, outdir, prefix)
-        self._fit_pca()
         self._fit_impl(q=q, outdir=outdir, prefix=prefix)
-
-    def _fit_pca(self) -> None:
-        assert self.ref_embeddings is not None
-        self.pca = TensorPCA(exp_var=self.exp_var)
-        self.pca.fit(self.ref_embeddings)
 
     def _fit_impl(
         self,
@@ -133,6 +133,8 @@ class PCAScore(EmbeddingScore):
             print(f"Loading pre-existing scores from {path}.")
             self.scores = self._load_parquet(path)
         else:
+            self._fit_pca()
+            assert self.pca is not None
             _, self.scores = self.pca.reconstruct(self.ref_embeddings)
             if path is not None:
                 self._write_parquet(x=self.scores, path=path)
@@ -142,9 +144,10 @@ class PCAScore(EmbeddingScore):
             threshold = torch.quantile(self.scores.float(), q=q)
             index = self.scores < threshold
             self.ref_embeddings = self.ref_embeddings[index, :]
-            self._fit_pca()
-            _, self.scores = self.pca.reconstruct(self.ref_embeddings)
 
+        self._fit_pca()
+        assert self.pca is not None
+        _, self.scores = self.pca.reconstruct(self.ref_embeddings)
         self.set_trained()
 
         if self.cal_embeddings is not None:
@@ -171,6 +174,5 @@ class PCAScore(EmbeddingScore):
             are (B,D).
         """
         assert self.pca is not None
-        X = self.pca.predict(X)
         _, score = self.pca.reconstruct(X)
         return score

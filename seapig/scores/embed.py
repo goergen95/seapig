@@ -11,10 +11,18 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from seapig.scores.base import ConfidenceScore
+from seapig.scores.utils import TensorPCA
 
 
 class EmbeddingScore(ConfidenceScore, ABC):
     """Base class for embedding-based confidence scores.
+
+    Parameters
+    ----------
+    exp_var:
+        A `float` indicating the percentage of explained variance to retain
+        if dimensionality reduction via PCA shall be applied. Defaults to `False`,
+        indicating that dimensionality reduction is not applied.
 
     Attributes
     ----------
@@ -34,11 +42,13 @@ class EmbeddingScore(ConfidenceScore, ABC):
     train_required: bool = True
     cal_required: bool = True
     scores: torch.Tensor
+    pca: TensorPCA | None = None
 
-    def __init__(self) -> None:
+    def __init__(self, exp_var: float | bool = False) -> None:
         super().__init__()
         self.ref_embeddings = None
         self.cal_embeddings = None
+        self.exp_var = exp_var
 
     @staticmethod
     def _setup_path(
@@ -157,6 +167,11 @@ class EmbeddingScore(ConfidenceScore, ABC):
             path = self._setup_path(outdir, prefix + f"-embeddings-{key}")
         embs = self._loadorembed(path, model, loader)
         return embs
+
+    def _fit_pca(self) -> None:
+        assert self.ref_embeddings is not None
+        self.pca = TensorPCA(exp_var=self.exp_var)
+        self.pca.fit(self.ref_embeddings)
 
     @override
     def fit(

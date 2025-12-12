@@ -9,7 +9,6 @@ import torch
 from torch.utils.data import DataLoader
 
 from seapig.scores.embed import EmbeddingScore
-from seapig.scores.utils import TensorPCA
 
 
 class KNNScore(EmbeddingScore, ABC):
@@ -42,7 +41,6 @@ class KNNScore(EmbeddingScore, ABC):
     threshold: torch.Tensor | None = None
     scores: torch.Tensor
     index: faiss.IndexFlatL2  # type: ignore [no-any-unimported]
-    pca: TensorPCA | None = None
 
     def __init__(self, k: int = 1, exp_var: float | bool = False) -> None:
         super().__init__()
@@ -79,9 +77,6 @@ class KNNScore(EmbeddingScore, ABC):
             remove outliers from the training distribution. Defaults to `False`.
         """
         super().fit(X=X, Y=Y)
-        if self.exp_var:
-            self._fit_pca()
-        self._setup_index()
         self._fit_impl(q=q)
 
     @override
@@ -127,15 +122,7 @@ class KNNScore(EmbeddingScore, ABC):
             remove outliers from the training distribution. Defaults to `False`.
         """
         super().fit_dl(model, loaders, outdir, prefix)
-        if self.exp_var:
-            self._fit_pca()
-        self._setup_index()
         self._fit_impl(q=q, outdir=outdir, prefix=prefix)
-
-    def _fit_pca(self) -> None:
-        assert self.ref_embeddings is not None
-        self.pca = TensorPCA(exp_var=self.exp_var)
-        self.pca.fit(self.ref_embeddings)
 
     def _fit_impl(
         self,
@@ -145,6 +132,7 @@ class KNNScore(EmbeddingScore, ABC):
     ) -> None:
         """Fit implementation."""
         path = None
+        reset_index = False
         assert self.ref_embeddings is not None
         if self.cal_required:
             assert self.cal_embeddings is not None
@@ -156,6 +144,7 @@ class KNNScore(EmbeddingScore, ABC):
             print(f"Loading pre-existing scores from {path}.")
             self.scores = self._load_parquet(path)
         else:
+            self._setup_index()
             self.scores = self._distance(self.ref_embeddings, kpn=1)
             if path is not None:
                 self._write_parquet(x=self.scores, path=path)
@@ -165,17 +154,23 @@ class KNNScore(EmbeddingScore, ABC):
             threshold = torch.quantile(self.scores.float(), q=q)
             index = self.scores < threshold
             self.ref_embeddings = self.ref_embeddings[index, :]
-            if self.exp_var:
-                self._fit_pca()
+            reset_index = True
+
+        if self.exp_var is not None:
+            self._fit_pca()
+            assert self.pca is not None
             self.ref_embeddings = self.pca.predict(self.ref_embeddings)
+            if self.cal_embeddings is not None:
+                self.cal_embeddings = self.pca.predict(self.cal_embeddings)
+            reset_index = True
+
+        if reset_index:
             self._setup_index()
             self.scores = self._distance(self.ref_embeddings, kpn=1)
 
         self.set_trained()
 
         if self.cal_embeddings is not None:
-            if self.exp_var:
-                self.cal_embeddings = self.pca.predict(self.cal_embeddings)
             self.scores = self._distance(self.cal_embeddings, kpn=0)
             self.set_calibrated()
 
