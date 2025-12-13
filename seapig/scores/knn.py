@@ -264,9 +264,6 @@ class CosineScore(KNNScore):
     k:
         An `int`eger indicating the number of neighbors to calculate the distance.
         Defaults to 1, e.g. the distance to the closest neighbor.
-    abs:
-        A `bool`ean indicating if the absolute cosine distance should be returned,
-        by default `True`.
     exp_var:
         A `float` indicating the percentage of explained variance to retain
         if dimensionality reduction via PCA shall be applied. Defaults to `False`,
@@ -284,14 +281,10 @@ class CosineScore(KNNScore):
     """
 
     k: int = 1
-    abs: bool
     ident = "cosine"
 
-    def __init__(
-        self, k: int = 1, abs: bool = True, exp_var: float | bool = False
-    ) -> None:
+    def __init__(self, k: int = 1, exp_var: float | bool = False) -> None:
         super().__init__(k=k, exp_var=exp_var)
-        self.abs = abs
         self.ident = self.ident + f"-k{self.k}"
 
     @override
@@ -308,10 +301,7 @@ class CosineScore(KNNScore):
         query = torch.nn.functional.normalize(query).cpu()
         dist, _ = self.index.search(query, k=self.k + kpn)
         dist = torch.Tensor(dist)
-        if self.abs:
-            dist = dist.abs()
-        dist = dist[:, kpn:].mean(1)
-        return torch.tensor(1 - dist)
+        return torch.tensor(dist[:, kpn:].mean(1))
 
 
 class MahalanobisScore(KNNScore):
