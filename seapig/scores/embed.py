@@ -109,6 +109,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         self, X: torch.Tensor | dict[str, torch.Tensor], model: torch.nn.Module
     ) -> torch.Tensor:
         """Embed a batch based on a models embed method."""
+        assert callable(model.embed)
         if isinstance(X, dict):
             if "image" not in X.keys():
                 raise KeyError(
