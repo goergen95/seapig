@@ -137,6 +137,8 @@ class KNNScore(EmbeddingScore, ABC):
         if self.cal_required:
             assert self.cal_embeddings is not None
 
+        self._setup_index()
+
         if prefix is not None:
             path = self._setup_path(outdir, prefix + f"-{self.ident}-scores")
 
@@ -144,7 +146,6 @@ class KNNScore(EmbeddingScore, ABC):
             print(f"Loading pre-existing scores from {path}.")
             self.scores = self._load_parquet(path)
         else:
-            self._setup_index()
             self.scores = self._distance(self.ref_embeddings, kpn=1)
             if path is not None:
                 self._write_parquet(x=self.scores, path=path)
@@ -156,7 +157,7 @@ class KNNScore(EmbeddingScore, ABC):
             self.ref_embeddings = self.ref_embeddings[index, :]
             reset_index = True
 
-        if self.exp_var is not None:
+        if self.exp_var:
             self._fit_pca()
             assert self.pca is not None
             self.ref_embeddings = self.pca.predict(self.ref_embeddings)
