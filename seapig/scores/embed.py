@@ -81,10 +81,10 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
     @staticmethod
     @torch.inference_mode()
-    def _load_parquet(path: Path) -> torch.Tensor:
+    def _load_parquet(path: Path, device=str) -> torch.Tensor:
         """Read a parquet file to a `torch.Tensor`."""
         df = pd.read_parquet(path)
-        return torch.Tensor(df.values).squeeze()
+        return torch.Tensor(df.values).squeeze().to(device=device)
 
     @classmethod
     def _loadorembed(
@@ -96,7 +96,10 @@ class EmbeddingScore(ConfidenceScore, ABC):
         """Load from file or iterate over dataloader to extract embeddings."""
         if path is not None and path.is_file():
             print(f"Loading pre-existing embeddings from {path}.")
-            v = self._load_parquet(path)
+            batch = next(iter(loader))
+            if isinstance(batch, dict):
+                batch = batch["image"]
+            v = self._load_parquet(path, device=batch.device)
         else:
             v = self._embed_dl(model=model, loader=loader)
             if path is not None:
