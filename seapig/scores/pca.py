@@ -112,45 +112,30 @@ class PCAScore(EmbeddingScore):
             remove outliers from the training distribution. Defaults to `False`.
         """
         super().fit_dl(model, loaders, outdir, prefix)
-        self._fit_impl(q=q, outdir=outdir, prefix=prefix)
+        self._fit_impl(q=q)
 
-    def _fit_impl(
-        self,
-        q: float | None = None,
-        outdir: Path | None = None,
-        prefix: str | None = None,
-    ) -> None:
+    def _fit_impl(self, q: float | None = None) -> None:
         """Fit implementation."""
-        path = None
         assert self.ref_embeddings is not None
         if self.cal_required:
             assert self.cal_embeddings is not None
 
-        if prefix is not None:
-            path = self._setup_path(outdir, prefix + f"-{self.ident}-scores")
-
-        if path is not None and path.is_file():
-            print(f"Loading pre-existing scores from {path}.")
-            self.scores = self._load_parquet(path)
-        else:
-            self._fit_pca()
-            assert self.pca is not None
-            _, self.scores = self.pca.reconstruct(self.ref_embeddings)
-            if path is not None:
-                self._write_parquet(x=self.scores, path=path)
-
         if q:
             assert (q >= 0.0) & (q <= 1.0)
-            threshold = torch.quantile(self.scores.float(), q=q)
-            index = self.scores < threshold
+            self._fit_pca()
+            assert self.pca is not None
+            _, scores = self.pca.reconstruct(self.ref_embeddings)
+            threshold = torch.quantile(scores.float(), q=q)
+            index = scores < threshold
             self.ref_embeddings = self.ref_embeddings[index, :]
 
         self._fit_pca()
-        assert self.pca is not None
-        _, self.scores = self.pca.reconstruct(self.ref_embeddings)
         self.set_trained()
+        assert self.pca is not None
 
-        if self.cal_embeddings is not None:
+        if self.cal_embeddings is None:
+            _, self.scores = self.pca.reconstruct(self.ref_embeddings)
+        else:
             _, self.scores = self.pca.reconstruct(self.cal_embeddings)
             self.set_calibrated()
 

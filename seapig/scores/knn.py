@@ -46,6 +46,7 @@ class KNNScore(EmbeddingScore, ABC):
         super().__init__()
         self.k = k
         self.exp_var = exp_var
+        self.ident = f"{self.ident}-k{self.k}-{'full' if exp_var else 'pca'}"
 
     @override
     def fit(
@@ -122,40 +123,13 @@ class KNNScore(EmbeddingScore, ABC):
             remove outliers from the training distribution. Defaults to `False`.
         """
         super().fit_dl(model, loaders, outdir, prefix)
-        self._fit_impl(q=q, outdir=outdir, prefix=prefix)
+        self._fit_impl(q=q)
 
-    def _fit_impl(
-        self,
-        q: float | None = None,
-        outdir: Path | None = None,
-        prefix: str | None = None,
-    ) -> None:
+    def _fit_impl(self, q: float | None = None) -> None:
         """Fit implementation."""
-        path = None
-        reset_index = False
         assert self.ref_embeddings is not None
         if self.cal_required:
             assert self.cal_embeddings is not None
-
-        self._setup_index()
-
-        if prefix is not None:
-            path = self._setup_path(outdir, prefix + f"-{self.ident}-scores")
-
-        if path is not None and path.is_file():
-            print(f"Loading pre-existing scores from {path}.")
-            self.scores = self._load_parquet(path)
-        else:
-            self.scores = self._distance(self.ref_embeddings, kpn=1)
-            if path is not None:
-                self._write_parquet(x=self.scores, path=path)
-
-        if q:
-            assert (q >= 0.0) & (q <= 1.0)
-            threshold = torch.quantile(self.scores.float(), q=q)
-            index = self.scores < threshold
-            self.ref_embeddings = self.ref_embeddings[index, :]
-            reset_index = True
 
         if self.exp_var:
             self._fit_pca()
@@ -163,15 +137,22 @@ class KNNScore(EmbeddingScore, ABC):
             self.ref_embeddings = self.pca.predict(self.ref_embeddings)
             if self.cal_embeddings is not None:
                 self.cal_embeddings = self.pca.predict(self.cal_embeddings)
-            reset_index = True
 
-        if reset_index:
-            self._setup_index()
-            self.scores = self._distance(self.ref_embeddings, kpn=1)
+        if q:
+            assert (q >= 0.0) & (q <= 1.0)
+            if self.index is None:
+                self._setup_index()
+            scores = self._distance(self.ref_embeddings, kpn=1)
+            threshold = torch.quantile(scores.float(), q=q)
+            index = scores < threshold
+            self.ref_embeddings = self.ref_embeddings[index, :]
 
+        self._setup_index()
         self.set_trained()
 
-        if self.cal_embeddings is not None:
+        if self.cal_embeddings is None:
+            self.scores = self._distance(self.ref_embeddings, kpn=1)
+        else:
             self.scores = self._distance(self.cal_embeddings, kpn=0)
             self.set_calibrated()
 
@@ -240,7 +221,6 @@ class EuclideanScore(KNNScore):
 
     def __init__(self, k: int = 1, exp_var: float | bool = False) -> None:
         super().__init__(k=k, exp_var=exp_var)
-        self.ident = self.ident + f"-k{self.k}"
 
     @override
     def _setup_index(self) -> None:
@@ -286,7 +266,6 @@ class CosineScore(KNNScore):
 
     def __init__(self, k: int = 1, exp_var: float | bool = False) -> None:
         super().__init__(k=k, exp_var=exp_var)
-        self.ident = self.ident + f"-k{self.k}"
 
     @override
     def _setup_index(self) -> None:
@@ -339,7 +318,6 @@ class MahalanobisScore(KNNScore):
 
     def __init__(self, k: int = 1, exp_var: float | bool = False) -> None:
         super().__init__(k=k, exp_var=exp_var)
-        self.ident = self.ident + f"-k{self.k}"
 
     @override
     def _setup_index(self) -> None:

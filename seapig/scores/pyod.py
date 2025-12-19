@@ -126,20 +126,20 @@ class PyODScore(EmbeddingScore):
 
         # TODO: serialize detector to disk to avoid refitting and ensure deterministic results
 
-        if q:
-            self.detector.fit(self.ref_embeddings.cpu().numpy())
-            self.scores = torch.Tensor(self.detector.decision_scores_)
-            assert (q >= 0.0) & (q <= 1.0)
-            threshold = torch.quantile(self.scores.float(), q=q)
-            index = self.scores < threshold
-            self.ref_embeddings = self.ref_embeddings[index, :]
-
         if self.exp_var is not None:
             self._fit_pca()
             assert self.pca is not None
             self.ref_embeddings = self.pca.predict(self.ref_embeddings)
             if self.cal_embeddings is not None:
                 self.cal_embeddings = self.pca.predict(self.cal_embeddings)
+
+        if q:
+            assert (q >= 0.0) & (q <= 1.0)
+            self.detector.fit(self.ref_embeddings.cpu().numpy())
+            scores = torch.Tensor(self.detector.decision_scores_)
+            threshold = torch.quantile(scores.float(), q=q)
+            index = scores < threshold
+            self.ref_embeddings = self.ref_embeddings[index, :]
 
         self.detector.fit(self.ref_embeddings.cpu().numpy())
         self.scores = torch.Tensor(self.detector.decision_scores_)
