@@ -280,8 +280,8 @@ class CosineScore(KNNScore):
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         query = torch.nn.functional.normalize(query).cpu()
         dist, _ = self.index.search(query, k=self.k + kpn)
-        dist = torch.Tensor(dist)
-        return torch.tensor(dist[:, kpn:].mean(1))
+        dist = torch.Tensor(dist)[:, kpn:].mean(1)
+        return dist
 
 
 class MahalanobisScore(KNNScore):
