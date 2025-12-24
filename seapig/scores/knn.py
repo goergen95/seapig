@@ -42,8 +42,12 @@ class KNNScore(EmbeddingScore, ABC):
     scores: torch.Tensor
     index: faiss.IndexFlatL2  # type: ignore [no-any-unimported]
 
-    def __init__(self, k: int = 1, exp_var: float | bool = False) -> None:
+    def __init__(
+        self, k: int = 1, stat: str = "max", exp_var: float | bool = False
+    ) -> None:
         super().__init__()
+        assert stat in ["max", "mean", "median", "min"]
+        self.stat = stat
         self.k = k
         self.exp_var = exp_var
         self.ident = f"{self.ident}-k{self.k}-{'full' if exp_var else 'pca'}"
@@ -191,6 +195,19 @@ class KNNScore(EmbeddingScore, ABC):
         score = self._distance(query=X)
         return score
 
+    @classmethod
+    def _stat(self, x: torch.Tensor, stat: str = "max") -> torch.Tensor:
+        assert stat in ["max", "mean", "median", "min"]
+        if stat == "max":
+            x = x.amax(1)
+        if stat == "mean":
+            x = x.mean(1)
+        if stat == "median":
+            x = x.median(1).values
+        if stat == "min":
+            x = x.amin(1)
+        return x
+
 
 class EuclideanScore(KNNScore):
     """Returns the KNN-distance based on the euclidean distance to the nearest samples.
@@ -219,8 +236,10 @@ class EuclideanScore(KNNScore):
     k: int
     ident = "euclidean"
 
-    def __init__(self, k: int = 1, exp_var: float | bool = False) -> None:
-        super().__init__(k=k, exp_var=exp_var)
+    def __init__(
+        self, k: int = 1, stat: str = "max", exp_var: float | bool = False
+    ) -> None:
+        super().__init__(k=k, stat=stat, exp_var=exp_var)
 
     @override
     def _setup_index(self) -> None:
@@ -233,7 +252,8 @@ class EuclideanScore(KNNScore):
     @torch.inference_mode()
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         dist, _ = self.index.search(query.cpu(), k=self.k + kpn)
-        dist = torch.Tensor(dist[:, kpn:].mean(1))
+        dist = torch.Tensor(dist[:, kpn:])
+        dist = self._stat(dist, stat=self.stat)
         return torch.sqrt(dist)
 
 
@@ -264,8 +284,10 @@ class CosineScore(KNNScore):
     k: int = 1
     ident = "cosine"
 
-    def __init__(self, k: int = 1, exp_var: float | bool = False) -> None:
-        super().__init__(k=k, exp_var=exp_var)
+    def __init__(
+        self, k: int = 1, stat: str = "max", exp_var: float | bool = False
+    ) -> None:
+        super().__init__(k=k, stat=stat, exp_var=exp_var)
 
     @override
     def _setup_index(self) -> None:
@@ -280,7 +302,8 @@ class CosineScore(KNNScore):
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         query = torch.nn.functional.normalize(query).cpu()
         dist, _ = self.index.search(query, k=self.k + kpn)
-        dist = torch.Tensor(dist)[:, kpn:].mean(1)
+        dist = torch.Tensor(dist)[:, kpn:]
+        dist = self._stat(dist, stat=self.stat)
         return dist
 
 
@@ -316,8 +339,10 @@ class MahalanobisScore(KNNScore):
     scores: torch.Tensor
     ident = "mahalanobis"
 
-    def __init__(self, k: int = 1, exp_var: float | bool = False) -> None:
-        super().__init__(k=k, exp_var=exp_var)
+    def __init__(
+        self, k: int = 1, stat: str = "max", exp_var: float | bool = False
+    ) -> None:
+        super().__init__(k=k, stat=stat, exp_var=exp_var)
 
     @override
     def _setup_index(self) -> None:
@@ -333,4 +358,6 @@ class MahalanobisScore(KNNScore):
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         query = query.cpu() @ self.vi_zero.T.cpu()
         dist, _ = self.index.search(query, k=self.k + kpn)
-        return torch.Tensor(dist[:, kpn:].mean(1))
+        dist = torch.Tensor(dist[:, kpn:])
+        dist = self._stat(dist, stat=self.stat)
+        return dist
