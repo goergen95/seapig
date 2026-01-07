@@ -159,5 +159,6 @@ class PCAScore(EmbeddingScore):
             are (B,D).
         """
         assert self.pca is not None
+        self.to(device=X.device)
         _, score = self.pca.reconstruct(X)
         return score

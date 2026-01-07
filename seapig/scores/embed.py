@@ -50,6 +50,19 @@ class EmbeddingScore(ConfidenceScore, ABC):
         self.cal_embeddings = None
         self.exp_var = exp_var
 
+    def to(self, device: str = "cpu") -> None:
+        """Put all tensors to a specified device."""
+        if self.ref_embeddings is not None:
+            self.ref_embeddings = self.ref_embeddings.to(device=device)
+        if self.cal_embeddings is not None:
+            self.cal_embeddings = self.cal_embeddings.to(device=device)
+        if self.scores is not None:
+            self.scores = self.scores.to(device=device)
+        if self.threshold is not None:
+            self.threshold = self.threshold.to(device=device)
+        if self.pca is not None:
+            self.pca.to(device=device)
+
     @staticmethod
     def _setup_path(
         outdir: Path | None = None, prefix: str | None = None
@@ -81,10 +94,10 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
     @staticmethod
     @torch.inference_mode()
-    def _load_parquet(path: Path, device=str) -> torch.Tensor:
+    def _load_parquet(path: Path) -> torch.Tensor:
         """Read a parquet file to a `torch.Tensor`."""
         df = pd.read_parquet(path)
-        return torch.Tensor(df.values).squeeze().to(device=device)
+        return torch.Tensor(df.values).squeeze()
 
     @classmethod
     def _loadorembed(
@@ -96,10 +109,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         """Load from file or iterate over dataloader to extract embeddings."""
         if path is not None and path.is_file():
             print(f"Loading pre-existing embeddings from {path}.")
-            batch = next(iter(loader))
-            if isinstance(batch, dict):
-                batch = batch["image"]
-            v = self._load_parquet(path, device=batch.device)
+            v = self._load_parquet(path)
         else:
             v = self._embed_dl(model=model, loader=loader)
             if path is not None:
@@ -320,6 +330,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
             )
             self.set_threshold()
         assert self.threshold is not None
+        self.to(device=X.device)
         score = self.score(X=X)
         return {"score": score, "selected": score < self.threshold}
 

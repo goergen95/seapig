@@ -21,6 +21,16 @@ class TensorPCA:
         self.gamma = gamma
         self.M = M
 
+    def to(self, device: str = "cpu") -> None:
+        """Put all tensors to a specified device."""
+        self.mu = self.mu.to(device=device)
+        self.u = self.u.to(device=device)
+        self.s = self.s.to(device=device)
+        self.s_acc = self.s_acc.to(device=device)
+        self.q = self.q.to(device=device)
+        self.u_q = self.u_q.to(device=device)
+        self.u_q_dot = self.u_q_dot.to(device=device)
+
     @staticmethod
     def _l2_normalize(X: torch.Tensor) -> torch.Tensor:
         """L2 normalization of an input tensor."""
