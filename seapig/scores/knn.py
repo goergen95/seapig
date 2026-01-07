@@ -190,6 +190,7 @@ class KNNScore(EmbeddingScore, ABC):
             are (B,D).
         """
         assert self.index is not None
+        self.to(device=X.device)
         if self.pca is not None:
             X = self.pca.predict(X)
         score = self._distance(query=X)
