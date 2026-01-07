@@ -10,6 +10,13 @@ class TensorPCA:
     """
 
     # based on https://github.com/fanghenshaometeor/ood-kernel-pca/blob/main/CoP_CoRP_ImgNet.py
+    mu: torch.Tensor
+    u: torch.Tensor
+    s: torch.Tensor
+    s_acc: torch.Tensor
+    q: torch.Tensor
+    u_q: torch.Tensor
+    u_q_dot: torch.Tensor
 
     def __init__(
         self,
@@ -21,7 +28,7 @@ class TensorPCA:
         self.gamma = gamma
         self.M = M
 
-    def to(self, device: str = "cpu") -> None:
+    def to(self, device: str | torch.device = "cpu") -> None:
         """Put all tensors to the specified device."""
         self.mu = self.mu.to(device=device)
         self.u = self.u.to(device=device)

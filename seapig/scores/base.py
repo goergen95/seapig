@@ -71,13 +71,13 @@ class ConfidenceScore(ABC):
         return self.threshold
 
     @abstractmethod
-    def to(self, device: str = "cpu") -> None:
+    def to(self, device: str | torch.device = "cpu") -> None:
         """Move all tensors to the specified device."""
         pass
 
     @staticmethod
     def _to(
-        tensor: torch.Tensor | None, device: str = "cpu"
+        tensor: torch.Tensor | None, device: str | torch.device = "cpu"
     ) -> torch.Tensor | None:
         if tensor is None:
             return None
@@ -134,7 +134,7 @@ class RandomScore(ConfidenceScore):
     ident = "random"
 
     @override
-    def to(self, device: str) -> None:
+    def to(self, device: str | torch.device = "cpu") -> None:
         self.threshold = self._to(self.threshold, device=device)
 
     @override

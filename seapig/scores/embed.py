@@ -41,16 +41,17 @@ class EmbeddingScore(ConfidenceScore, ABC):
     cal_embeddings: torch.Tensor | None
     train_required: bool = True
     cal_required: bool = True
-    scores: torch.Tensor
+    scores: torch.Tensor | None
     pca: TensorPCA | None = None
 
     def __init__(self, exp_var: float | bool = False) -> None:
         super().__init__()
         self.ref_embeddings = None
         self.cal_embeddings = None
+        self.scores = None
         self.exp_var = exp_var
 
-    def to(self, device: str = "cpu") -> None:
+    def to(self, device: str | torch.device = "cpu") -> None:
         """Put all tensors to the specified device."""
         self.ref_embeddings = self._to(self.ref_embeddings, device=device)
         self.cal_embeddings = self._to(self.cal_embeddings, device=device)
