@@ -22,7 +22,7 @@ class TensorPCA:
         self.M = M
 
     def to(self, device: str = "cpu") -> None:
-        """Put all tensors to a specified device."""
+        """Put all tensors to the specified device."""
         self.mu = self.mu.to(device=device)
         self.u = self.u.to(device=device)
         self.s = self.s.to(device=device)

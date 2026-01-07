@@ -71,6 +71,19 @@ class ConfidenceScore(ABC):
         return self.threshold
 
     @abstractmethod
+    def to(self, device: str = "cpu") -> None:
+        """Move all tensors to the specified device."""
+        pass
+
+    @staticmethod
+    def _to(
+        tensor: torch.Tensor | None, device: str = "cpu"
+    ) -> torch.Tensor | None:
+        if tensor is None:
+            return None
+        return tensor.to(device=device)
+
+    @abstractmethod
     def set_threshold(self, q: float = 0.99) -> None:
         """Set a threshold based on a specific quantile on the available scores."""
         pass
@@ -121,6 +134,10 @@ class RandomScore(ConfidenceScore):
     ident = "random"
 
     @override
+    def to(self, device: str) -> None:
+        self.threshold = self._to(self.threshold, device=device)
+
+    @override
     def fit(
         self, X: torch.Tensor | None = None, Y: torch.Tensor | None = None
     ) -> None:
@@ -145,6 +162,7 @@ class RandomScore(ConfidenceScore):
         X:
             A `torch.Tensor`.
         """
+        self.to(device=X.device)
         return torch.rand(X.shape[0])
 
     @override
