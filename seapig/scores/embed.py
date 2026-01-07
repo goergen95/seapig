@@ -51,15 +51,12 @@ class EmbeddingScore(ConfidenceScore, ABC):
         self.exp_var = exp_var
 
     def to(self, device: str = "cpu") -> None:
-        """Put all tensors to a specified device."""
-        if self.ref_embeddings is not None:
-            self.ref_embeddings = self.ref_embeddings.to(device=device)
-        if self.cal_embeddings is not None:
-            self.cal_embeddings = self.cal_embeddings.to(device=device)
-        if self.scores is not None:
-            self.scores = self.scores.to(device=device)
-        if self.threshold is not None:
-            self.threshold = self.threshold.to(device=device)
+        """Put all tensors to the specified device."""
+        self.ref_embeddings = self._to(self.ref_embeddings, device=device)
+        self.cal_embeddings = self._to(self.cal_embeddings, device=device)
+        self.scores = self._to(self.scores, device=device)
+        self.threshold = self._to(self.threshold, device=device)
+        self.cal_embeddings = self._to(self.cal_embeddings, device=device)
         if self.pca is not None:
             self.pca.to(device=device)
 
@@ -186,6 +183,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         assert self.ref_embeddings is not None
         self.pca = TensorPCA(exp_var=self.exp_var)
         self.pca.fit(self.ref_embeddings)
+        self.pca.to(device=self.ref_embeddings.device)
 
     @override
     def fit(
@@ -215,6 +213,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         """
         self.ref_embeddings = X
         self.cal_embeddings = Y
+        self.to(device=self.ref_embeddings.device)
 
     def fit_dl(
         self,
@@ -275,6 +274,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
             outdir=outdir,
             prefix=prefix,
         )
+        self.to(device=self.ref_embeddings.device)
 
     @override
     def set_threshold(self, q: float = 0.99) -> None:
@@ -330,7 +330,6 @@ class EmbeddingScore(ConfidenceScore, ABC):
             )
             self.set_threshold()
         assert self.threshold is not None
-        self.to(device=X.device)
         score = self.score(X=X)
         return {"score": score, "selected": score < self.threshold}
 
