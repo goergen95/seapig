@@ -1,14 +1,19 @@
 # seapig <img src="docs/assets/logo.png" align="right" height="138" />
 
 
-The Deep Latent space Understanding for ConfIdent Decisions (seapig)
-library supplies methods for deep learning models to detect low
-confidence samples and exclude them from prediction based on the
-analysis of latent space representations.
+The seapig library is used for confidence based selective inference. It
+is named for its phonetic resemblance to *c-pick* and supplies methods
+for rejecting low confidence samples from prediction via deep learning
+models in Pytorch. The selection decision is based on the analysis of
+latent space representations of a query sample compared to samples used
+during training. Decision thresholds are calibrated using an independent
+validation set.
 
-The core idea behind the approach is that query samples that deviate in
-some form from the embeddings of the training samples shall be excluded
-from prediction because model failure is more likely to occur.
+The core idea behind the approach is that query samples that deviate
+from the embeddings of the training samples shall be excluded from
+prediction because the estimated model performance is not expected to
+hold for those samples. Several distance metrics based on the embedding
+space can be used. The following examples uses the Euclidean distance.
 
 ``` python
 import torch
@@ -34,23 +39,21 @@ embs = model.embed(batch["image"])
 score.select(embs)
 ```
 
-    Embedding 42 batches:   0%|          | 0/42 [00:00<?, ?batches/s]Embedding 42 batches: 100%|██████████| 42/42 [00:00<00:00, 3158.30batches/s]
-    Embedding 42 batches:   0%|          | 0/42 [00:00<?, ?batches/s]Embedding 42 batches: 100%|██████████| 42/42 [00:00<00:00, 2230.93batches/s]
+    Embedding 42 batches:   0%|          | 0/42 [00:00<?, ?batches/s]Embedding 42 batches: 100%|██████████| 42/42 [00:00<00:00, 1565.87batches/s]
+    Embedding 42 batches:   0%|          | 0/42 [00:00<?, ?batches/s]Embedding 42 batches: 100%|██████████| 42/42 [00:00<00:00, 1827.70batches/s]
 
-    Threshold: 0.4187
+    Threshold: 0.4189
 
-    {'score': tensor([0.3800, 0.4775, 0.3968, 0.3983, 0.4173, 0.3746, 0.3405, 0.3432]),
-     'selected': tensor([ True, False,  True,  True,  True,  True,  True,  True])}
+    {'score': tensor([0.4665, 0.4391, 0.3997, 0.3831, 0.4859, 0.3923, 0.3884, 0.3695]),
+     'selected': tensor([False, False,  True,  True, False,  True,  True,  True])}
 
 The library supplies base classes for different families of approaches
 to express the (dis-)similarity of query samples to the training
 distribution:
 
-- predictive variances,
-- KNN-distances (euclid, cosine, etc.),
-- distributional distances (mahalanobis),
-- density estimation (local point density),
-- and cluster analysis (HDBSCAN).
+- KNN-distances (euclid, cosine, mahalanobis etc.),
+- PCA-based reconstruction errors (linear and kernel PCA)
+- PyOD-based confidence scores
 
 Each of the methods above induces a selection function
 $g_{\lambda}(x|\kappa,f) = \mathbb{1}[\kappa(x|f)>\lambda]$, either
@@ -61,8 +64,5 @@ derive a selective prediction system,
   (f,g_{\lambda})(x) \equiv \begin{cases}
   \text{$f(x)$, if $g_{\lambda}(x) = 1$,}\\
   \text{reject, if $g_{\lambda}(x) = 0$.}
-  \end{cases}
+  \end{cases}.
  \qquad(1)$$</span>
-
-for which we supply an evaluation class which analyses the risk-coverage
-tradeoff of such systems.
