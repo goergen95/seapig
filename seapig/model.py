@@ -9,8 +9,10 @@ from typing import Any, Literal, get_args
 
 import torch
 from pytorch_lightning import LightningModule
-from torchmetrics import MetricCollection
+from torchmetrics import Metric, MetricCollection
 
+from seapig.metric import RiskCoverageMetric, SelectiveMetric
+from seapig.risk_coverage import RiskCoverage
 from seapig.scores.base import ConfidenceScore
 
 INPUT_KEYS = Literal["image", "input", "images", "inputs", "x"]
@@ -53,6 +55,7 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         score: ConfidenceScore,
         input_key: INPUT_KEYS = "image",
         target_key: TARGET_KEYS = "label",
+        rc_metric: RiskCoverageMetric | None = None,
     ) -> None:
         super().__init__()
         self.task = task
@@ -71,7 +74,21 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         assert hasattr(task, "test_metrics"), (
             "Wrapped task must have test_metrics"
         )
-        self.test_metrics = task.test_metrics
+        assert isinstance(task.test_metrics, (MetricCollection, Metric)), (
+            "Wrapped task's test_metrics must be a Metric or MetricCollection"
+        )
+        self.test_metrics = SelectiveMetric(
+            base=task.test_metrics,
+            prediction_key="predictions",
+            selection_key="selected",
+        )
+
+        self.rc_metric = rc_metric or RiskCoverageMetric(
+            risk="generalized",
+            n_bins=100,
+            prediction_key="predictions",
+            score_key="score",  # falls back to 'scores' if absent
+        )
 
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
@@ -126,10 +143,16 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         x = batch[self.input_key]
         y = batch[self.target_key]
         batch_size = x.shape[0]
+
         outputs = self.forward(x)
-        assert isinstance(self.test_metrics, MetricCollection)
-        self.test_metrics(outputs["predictions"], y)
-        self.log_dict(self.test_metrics, batch_size=batch_size)
+
+        # Update metrics:
+        self.test_metrics.update(outputs, y)
+
+        # Update risk‑coverage metric and log AUCs
+        self.rc_metric.update(outputs, y)
+        rc_stats = self.rc_metric.compute()
+        self.log_dict(rc_stats, batch_size=batch_size, prog_bar=True)
 
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def predict_step(
@@ -160,3 +183,7 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         x = batch[self.input_key]
         outputs: dict[str, torch.Tensor] = self.forward(x)
         return outputs
+
+    def get_risk_coverage_curve(self) -> RiskCoverage | None:
+        """Return the latest computed risk‑coverage curve (if any)."""
+        return self.rc_metric.get_curve()

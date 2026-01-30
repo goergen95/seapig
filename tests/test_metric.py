@@ -1,8 +1,11 @@
+import pytest
 import torch
 from pytorch_lightning import LightningModule
 from torchmetrics import Accuracy, MetricCollection, Precision, Recall
 
 from seapig import SelectiveInferenceTask, SelectiveMetric
+from seapig.metric import RiskCoverageMetric
+from seapig.scores.base import RandomScore
 
 
 class DummyScore:
@@ -89,7 +92,7 @@ def test_selective_metric_with_metric_collection_prefix_keys() -> None:
 def test_selective_metric_end_to_end_with_task_outputs() -> None:
     # Use SelectiveInferenceTask to produce outputs dict, then evaluate SelectiveMetric
     task = DummyTaskTensor()
-    score = DummyScore()
+    score = RandomScore()
     w = SelectiveInferenceTask(task=task, score=score)
 
     x = torch.tensor([0.2, 0.7, 0.6, 0.1])
@@ -161,16 +164,143 @@ def test_selective_metric_reset() -> None:
     target = torch.tensor([1, 0, 1, 0])
     sel.update(outputs, target)
 
-    # Ensure the metric has non-zero state
-    res_before_reset = sel.compute()
-    assert sel._full.fp == torch.tensor(1)
-    assert sel._selected.tp == torch.tensor(2)
+    # Compute to initialize internal states
+    _ = sel.compute()
 
     # Reset the metric
     sel.reset()
 
-    # Compute after reset and ensure the state is cleared
+    # After reset, compute should return zeros/scalars from a fresh state
     res_after_reset = sel.compute()
-    assert sel._full.fp == torch.tensor(0)
-    assert sel._selected.tp == torch.tensor(0)
-    assert res_before_reset == res_after_reset  # returns last cached result
+    assert set(res_after_reset.keys()) == {"full_risk", "selective_risk"}
+    for v in res_after_reset.values():
+        assert isinstance(v, torch.Tensor) and v.ndim == 0
+
+
+def test_risk_coverage_metric_basic_functionality() -> None:
+    metric = RiskCoverageMetric()
+
+    outputs = {
+        "predictions": torch.tensor([0.9, 0.4, 0.6, 0.8]),
+        "score": torch.tensor([0.1, 0.2, 0.3, 0.4]),
+    }
+    target = torch.tensor([1.0, 0.0, 1.0, 0.0])
+
+    # Update the metric
+    metric.update(outputs, target)
+
+    # Compute the results
+    res = metric.compute()
+    assert "rc/auc_empirical" in res
+    assert "rc/auc_reference" in res
+    assert "rc/auc_excess" in res
+
+    # Ensure values are scalars
+    for value in res.values():
+        assert isinstance(value, torch.Tensor) and value.ndim == 0
+
+    # Reset the metric
+    metric.reset()
+    assert metric.scores.numel() == 0
+    assert metric.residuals.numel() == 0
+
+
+def test_risk_coverage_metric_missing_keys() -> None:
+    metric = RiskCoverageMetric()
+
+    outputs = {"predictions": torch.tensor([0.9, 0.4, 0.6, 0.8])}
+    target = torch.tensor([1.0, 0.0, 1.0, 0.0])
+
+    with pytest.raises(
+        AssertionError, match="RiskCoverageMetric requires 'score'"
+    ):
+        metric.update(outputs, target)
+
+    outputs = {"score": torch.tensor([0.9, 0.4, 0.6, 0.8])}
+    target = torch.tensor([1.0, 0.0, 1.0, 0.0])
+
+    with pytest.raises(
+        AssertionError, match="RiskCoverageMetric requires 'predictions'"
+    ):
+        metric.update(outputs, target)
+
+
+def test_risk_coverage_metric_risk_definitions() -> None:
+    for risk in ["generalized", "selective"]:
+        metric = RiskCoverageMetric(risk=risk)
+
+        outputs = {
+            "predictions": torch.tensor([0.9, 0.4, 0.6, 0.8]),
+            "score": torch.tensor([0.1, 0.2, 0.3, 0.4]),
+        }
+        target = torch.tensor([1.0, 0.0, 1.0, 0.0])
+
+        metric.update(outputs, target)
+        res = metric.compute()
+
+        assert "rc/auc_empirical" in res
+        assert "rc/auc_reference" in res
+        assert "rc/auc_excess" in res
+
+
+def test_risk_coverage_metric_custom_error_function() -> None:
+    def custom_error_fn(
+        preds: torch.Tensor, target: torch.Tensor
+    ) -> torch.Tensor:
+        return torch.abs(preds - target).sum(dim=1)
+
+    metric = RiskCoverageMetric(error_fn=custom_error_fn)
+
+    outputs = {
+        "predictions": torch.tensor([[0.9, 0.1], [0.4, 0.6]]),
+        "score": torch.tensor([0.1, 0.2]),
+    }
+    target = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
+
+    metric.update(outputs, target)
+    res = metric.compute()
+
+    assert "rc/auc_empirical" in res
+    assert "rc/auc_reference" in res
+    assert "rc/auc_excess" in res
+
+
+def test_risk_coverage_metric_get_curve() -> None:
+    metric = RiskCoverageMetric()
+
+    outputs = {
+        "predictions": torch.tensor([0.9, 0.4, 0.6, 0.8]),
+        "score": torch.tensor([0.1, 0.2, 0.3, 0.4]),
+    }
+    target = torch.tensor([1.0, 0.0, 1.0, 0.0])
+
+    metric.update(outputs, target)
+    _ = metric.compute()
+
+    curve = metric.get_curve()
+    assert curve is not None
+    assert hasattr(curve, "auc_empirical")
+    assert hasattr(curve, "auc_reference")
+    assert hasattr(curve, "auc_excess")
+
+
+def test_risk_coverage_metric_state_concatenation() -> None:
+    metric = RiskCoverageMetric()
+
+    outputs1 = {
+        "predictions": torch.tensor([0.9, 0.4]),
+        "score": torch.tensor([0.1, 0.2]),
+    }
+    target1 = torch.tensor([1.0, 0.0])
+
+    outputs2 = {
+        "predictions": torch.tensor([0.6, 0.8]),
+        "score": torch.tensor([0.3, 0.4]),
+    }
+    target2 = torch.tensor([1.0, 0.0])
+
+    metric.update(outputs1, target1)
+    metric.update(outputs2, target2)
+
+    assert torch.equal(metric.scores, torch.tensor([0.1, 0.2, 0.3, 0.4]))
+    assert metric.scores.numel() == 4

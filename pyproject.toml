@@ -54,6 +54,7 @@ testpaths = ["tests", "."]
 python_files = ["test_*.py", "*_test.py"]
 
 [tool.ruff]
+exclude = ["build", "dist", "data", "docs", "env", "dev"]
 extend-include = ["*.ipynb"]
 fix = true
 line-length = 80
