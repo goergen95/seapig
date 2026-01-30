@@ -343,8 +343,8 @@ class EmbeddingScore(ConfidenceScore, ABC):
         self,
         model: torch.nn.Sequential,
         loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
-        outdir: Path,
-        prefix: str,
+        outdir: Path | None = None,
+        prefix: str | None = None,
     ) -> dict[str, torch.Tensor]:
         """Select samples for prediction based on their confidence score.
 
