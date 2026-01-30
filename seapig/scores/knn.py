@@ -39,8 +39,8 @@ class KNNScore(EmbeddingScore, ABC):
     train_required: bool = True
     cal_required: bool = True
     threshold: torch.Tensor | None = None
-    scores: torch.Tensor
-    index: faiss.IndexFlatL2  # type: ignore [no-any-unimported]
+    scores: torch.Tensor | None = None
+    index: faiss.IndexFlatL2 | None = None  # type: ignore [no-any-unimported]
 
     def __init__(
         self, k: int = 1, stat: str = "max", exp_var: float | bool = False
