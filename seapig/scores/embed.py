@@ -170,6 +170,11 @@ class EmbeddingScore(ConfidenceScore, ABC):
         path = None
         assert isinstance(loaders, dict)
         assert isinstance(model, torch.nn.Module)
+        if outdir is not None and prefix is None:
+            raise Warning(
+                "'outdir' has been specified but 'prefix' is None.\n"
+                "Consider specifying 'prefix' as well to enable saving embeddings."
+            )
         self._check_model(model)
         if key not in loaders.keys():
             raise KeyError(f"Missing key `{key}` in loaders dictionary.")
