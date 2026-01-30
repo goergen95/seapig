@@ -118,7 +118,40 @@ indicate likely inliers (samples similar to the training distribution)
 while high scores indicate likely outliers (samples deviating from the
 training distribution). Each method induces a selection function
 
-$g_{\lambda}(x|\kappa) = \mathbb{1}[\kappa(x)<\lambda]$, either
+## Risk-Coverage Analysis
+
+The library provides tools for evaluating selective prediction systems
+using risk-coverage curves. This analysis describes the trade-off between
+coverage (fraction of samples accepted) and risk (error rate) across
+different confidence thresholds.
+
+``` python
+import torch
+from seapig import risk_coverage
+
+# Example with confidence scores and prediction residuals
+score = torch.rand(100)      # Lower scores = higher confidence
+residuals = torch.rand(100)  # Prediction errors
+
+# Calculate risk-coverage curve
+rc = risk_coverage(score, residuals, risk="generalized")
+
+# Access metrics
+print(f"E-AURC: {rc.auc_excess:.4f}")
+
+# Visualize (requires matplotlib)
+fig = rc.plot()
+```
+
+The risk-coverage curve compares an empirical curve (based on your
+confidence scores) to a reference curve (optimal ordering by residuals).
+The difference between these curves, quantified by the Excess Area Under
+the Risk-Coverage Curve (E-AURC), indicates how well the confidence
+scores predict prediction errors. Lower E-AURC values indicate better
+calibrated confidence scores.
+
+Each of the methods above induces a selection function
+$g_{\lambda}(x|\kappa,f) = \mathbb{1}[\kappa(x|f)>\lambda]$, either
 accepting or rejecting a query sample during prediction time. We thus
 derive a selective prediction system,
 

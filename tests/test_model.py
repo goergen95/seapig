@@ -1,12 +1,15 @@
+from typing import override
+
 import pytest
 import torch
 from pytorch_lightning import LightningModule
 from torchmetrics import Accuracy, MetricCollection
 
 from seapig import SelectiveInferenceTask
+from seapig.scores.base import ConfidenceScore
 
 
-class DummyScore:
+class DummyScore(ConfidenceScore):
     """Minimal duck-typed score with select() and to()."""
 
     def __init__(self) -> None:
@@ -22,6 +25,18 @@ class DummyScore:
             "score": torch.arange(b, dtype=x.dtype, device=x.device),
             "selected": torch.ones(b, dtype=torch.bool, device=x.device),
         }
+
+    def score(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.zeros(x.shape[0], dtype=x.dtype, device=x.device)
+
+    def fit(self, x: torch.Tensor) -> None:
+        """Dummy implementation of fit."""
+        pass
+
+    @override
+    def set_threshold(self, q: float) -> None:
+        """Dummy implementation of set_threshold."""
+        self.threshold = q
 
 
 class DummyTaskTensor(LightningModule):
@@ -63,7 +78,7 @@ def test_init_accepts_default_and_alt_keys() -> None:
 def test_init_rejects_invalid_keys(kw: str, key: str, value: str) -> None:
     kwargs: dict[str, object] = {kw: value}
     with pytest.raises(ValueError):
-        SelectiveInferenceTask(
+        _ = SelectiveInferenceTask(
             task=DummyTaskTensor(), score=DummyScore(), **kwargs
         )
 
@@ -131,54 +146,54 @@ def test_predict_step_missing_key_raises_keyerror() -> None:
         _ = w.predict_step({"not_image": torch.zeros(1, 2)}, batch_idx=0)
 
 
-def test_test_step_calls_metrics_and_logs(monkeypatch) -> None:
+def test_test_step_updates_metrics_and_logs_rc(monkeypatch) -> None:
     task = DummyTaskTensor()
     score = DummyScore()
     w = SelectiveInferenceTask(task=task, score=score)
 
-    calls: dict[str, object] = {"metrics_calls": 0, "log_arg": None}
+    calls: dict[str, object] = {"log_arg": None}
 
-    class DummyMetrics(MetricCollection):
-        def __call__(self, outputs, y):  # noqa: ANN001
-            calls["metrics_calls"] = int(calls["metrics_calls"]) + 1
-
-    # attach a callable metrics object and stub log_dict to accept any input
-    w.test_metrics = DummyMetrics(Accuracy(task="binary"))  # type: ignore[attr-defined]
-
-    def fake_log_dict(arg, batch_size=None):  # noqa: ANN001
+    def fake_log_dict(arg, batch_size=None, **kwargs):  # noqa: ANN001
         calls["log_arg"] = arg
         return None
 
     monkeypatch.setattr(w, "log_dict", fake_log_dict)
 
+    # Use 1D inputs to ensure binary Accuracy shape compatibility
     batch = {
-        "image": torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
-        "label": torch.tensor([0, 1]),
+        "image": torch.tensor([0.0, 1.0, 0.6, 0.4]),
+        "label": torch.tensor([0, 1, 1, 0]),
     }
     w.test_step(batch, batch_idx=0)
 
-    # metrics called once, and our stub log_dict received the metrics object
-    assert calls["metrics_calls"] == 1
-    assert calls["log_arg"] is w.test_metrics
+    # SelectiveMetric should have results for collection (prefixed keys)
+    res = w.test_metrics.compute()
+    assert any(k.startswith("full/") for k in res.keys())
+    assert any(k.startswith("selected/") for k in res.keys())
+
+    # RiskCoverageMetric stats should have been logged
+    assert isinstance(calls["log_arg"], dict)
+    assert "rc/auc_empirical" in calls["log_arg"]
+    assert "rc/auc_reference" in calls["log_arg"]
+    assert "rc/auc_excess" in calls["log_arg"]
 
 
-def test_test_step_with_alt_keys(monkeypatch) -> None:
+def test_test_step_with_alt_keys_updates_metrics(monkeypatch) -> None:
     task = DummyTaskTensor()
     score = DummyScore()
     w = SelectiveInferenceTask(
         task=task, score=score, input_key="x", target_key="y"
     )
 
-    class DummyMetrics(MetricCollection):
-        def __call__(self, outputs, y):  # noqa: ANN001
-            # ensure y is the provided target
-            assert torch.equal(y, torch.tensor([1, 1]))
-
-    w.test_metrics = DummyMetrics(Accuracy(task="binary"))  # type: ignore[attr-defined]
     monkeypatch.setattr(w, "log_dict", lambda *a, **k: None)
 
-    batch = {"x": torch.tensor([[1.0, 2.0]]), "y": torch.tensor([1, 1])}
+    # 1D inputs/targets so Accuracy is well-defined
+    batch = {"x": torch.tensor([0.0, 1.0]), "y": torch.tensor([0, 1])}
     w.test_step(batch, batch_idx=0)
+
+    res = w.test_metrics.compute()
+    assert any(k.startswith("full/") for k in res.keys())
+    assert any(k.startswith("selected/") for k in res.keys())
 
 
 def test_test_step_missing_keys_raise_keyerror(monkeypatch) -> None:
@@ -189,3 +204,56 @@ def test_test_step_missing_keys_raise_keyerror(monkeypatch) -> None:
         w.test_step({"label": torch.tensor([0])}, batch_idx=0)
     with pytest.raises(KeyError):
         w.test_step({"image": torch.zeros(1, 2)}, batch_idx=0)
+
+
+def test_risk_coverage_metric_updates_and_logs(monkeypatch) -> None:
+    task = DummyTaskTensor()
+    score = DummyScore()
+    w = SelectiveInferenceTask(task=task, score=score)
+
+    calls: dict[str, object] = {"log_arg": None}
+
+    def fake_log_dict(arg, batch_size=None, **kwargs):  # noqa: ANN001
+        calls["log_arg"] = arg
+        return None
+
+    monkeypatch.setattr(w, "log_dict", fake_log_dict)
+
+    # Use 1D inputs to avoid Accuracy shape mismatch
+    batch = {
+        "image": torch.tensor([0.0, 1.0, 0.6, 0.4]),
+        "label": torch.tensor([0, 1, 1, 0]),
+    }
+    w.test_step(batch, batch_idx=0)
+
+    # Ensure RiskCoverageMetric is updated and logged
+    assert "rc/auc_empirical" in calls["log_arg"]
+    assert "rc/auc_reference" in calls["log_arg"]
+    assert "rc/auc_excess" in calls["log_arg"]
+
+
+def test_get_risk_coverage_curve_none_before_compute() -> None:
+    task = DummyTaskTensor()
+    score = DummyScore()
+    w = SelectiveInferenceTask(task=task, score=score)
+
+    # Before any compute, no curve should be available
+    assert w.get_risk_coverage_curve() is None
+
+
+def test_get_risk_coverage_curve() -> None:
+    task = DummyTaskTensor()
+    score = DummyScore()
+    w = SelectiveInferenceTask(task=task, score=score)
+
+    batch = {
+        "image": torch.tensor([0.0, 1.0, 0.6, 0.4]),
+        "label": torch.tensor([0, 1, 1, 0]),
+    }
+    w.test_step(batch, batch_idx=0)
+
+    curve = w.get_risk_coverage_curve()
+    assert curve is not None
+    assert hasattr(curve, "auc_empirical")
+    assert hasattr(curve, "auc_reference")
+    assert hasattr(curve, "auc_excess")

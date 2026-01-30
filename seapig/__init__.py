@@ -12,6 +12,7 @@ __version__ = "0.0.1"
 
 from seapig.metric import SelectiveMetric
 from seapig.model import SelectiveInferenceTask
+from seapig.risk_coverage import RiskCoverage, risk_coverage
 from seapig.scores.base import RandomScore
 from seapig.scores.knn import CosineScore, EuclideanScore, MahalanobisScore
 from seapig.scores.pca import PCAScore
@@ -26,4 +27,6 @@ __all__ = [
     "MahalanobisScore",
     "PyODScore",
     "PCAScore",
+    "risk_coverage",
+    "RiskCoverage",
 ]
