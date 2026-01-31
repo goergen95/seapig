@@ -22,6 +22,14 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements/docs.txt', 'pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
@@ -31,7 +39,7 @@ jobs:
       - name: Setup Quarto
         uses: quarto-dev/quarto-actions/setup@v2
         with:
-          quarto-version: 'latest'
+          version: 'latest'
 
       - name: Render site (Makefile docs sequence)
         run: |
