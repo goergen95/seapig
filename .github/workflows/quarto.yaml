@@ -44,7 +44,7 @@ jobs:
           quarto render README.qmd
           python -m quartodoc build --verbose
           python -m quartodoc interlinks
-          quarto render --no-cache --no-preview --output-dir _site
+          quarto render --no-cache --output-dir _site
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v3
