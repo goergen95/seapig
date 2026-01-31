@@ -1,6 +1,7 @@
 """Abstract Base Method for embeddings based confidence scores."""
 
 import inspect
+import warnings
 from abc import ABC
 from pathlib import Path
 from typing import Any, Literal, override
@@ -95,7 +96,8 @@ class EmbeddingScore(ConfidenceScore, ABC):
     def _load_parquet(path: Path) -> torch.Tensor:
         """Read a parquet file to a `torch.Tensor`."""
         df = pd.read_parquet(path)
-        return torch.Tensor(df.values).squeeze()
+        arr = df.to_numpy(copy=True)
+        return torch.as_tensor(arr).squeeze()
 
     @classmethod
     def _loadorembed(
@@ -171,9 +173,10 @@ class EmbeddingScore(ConfidenceScore, ABC):
         assert isinstance(loaders, dict)
         assert isinstance(model, torch.nn.Module)
         if outdir is not None and prefix is None:
-            raise Warning(
+            warnings.warn(
                 "'outdir' has been specified but 'prefix' is None.\n"
-                "Consider specifying 'prefix' as well to enable saving embeddings."
+                "Consider specifying 'prefix' as well to enable saving embeddings.",
+                UserWarning,
             )
         self._check_model(model)
         if key not in loaders.keys():

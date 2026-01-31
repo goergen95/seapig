@@ -75,10 +75,13 @@ class TensorPCA:
         X = X - self.mu
         K = X.T @ X
         self.u, self.s, _ = torch.linalg.svd(K)
-        self.s_acc = torch.cumsum(self.s, 0) / self.s.sum()
-        self.q = (self.s_acc >= self.exp_var).nonzero()[0][0]
+        self.s_acc = torch.cumsum(self.s, 0) / (self.s.sum() + 1e-20)
+        q_idx = (self.s_acc >= self.exp_var).nonzero()[0][0]
+        q_int = max(1, int(q_idx.item()) + 1)
+        self.q = torch.tensor([q_int])
+        explained = self.s_acc[self.q - 1].item()
         print(
-            f"Explained variance of {self.s_acc[self.q].item():.4f} reached at dimension {self.q.item()}."
+            f"Explained variance of {explained:.4f} reached at dimension {self.q}."
         )
         self.u_q = self.u[:, : self.q]
         self.u_q_dot = self.u_q @ self.u_q.T

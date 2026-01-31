@@ -1,0 +1,152 @@
+"""
+Unit tests for seapig.scores.knn distance and similarity score classes.
+
+These tests exercise Euclidean, Cosine and Mahalanobis scoring implementations
+for correct distance/similarity computation, k-nearest handling, statistical
+aggregation (min/max/mean/median), index creation, and behavior on singular
+covariance matrices.
+"""
+
+import pytest
+import torch
+
+from seapig.scores.knn import CosineScore, EuclideanScore, MahalanobisScore
+
+
+def approx(t1: torch.Tensor, t2: torch.Tensor, tol: float = 1e-6) -> None:
+    assert torch.allclose(t1, t2, atol=tol, rtol=0)
+
+
+def test_euclidean_distance_simple_nearest() -> None:
+    """Verify EuclideanScore returns the correct nearest distance."""
+    # Two reference points: (0,0) and (3,4) -> distances to (6,8) -> nearest = (3,4) dist = 5
+    ref = torch.tensor([[0.0, 0.0], [3.0, 4.0]])
+    q = torch.tensor([[6.0, 8.0]])
+    score = EuclideanScore(k=1, stat="min")
+    score.ref_embeddings = ref
+    score._setup_index()
+    # kpn default 0 => returns distance to k nearest (here k=1)
+    out = score._distance(q, kpn=0)
+    expected = torch.tensor([5.0])
+    approx(out, expected)
+
+
+@pytest.mark.parametrize(
+    "stat, expected_fn",
+    [
+        ("max", lambda ds: ds.max()),
+        ("min", lambda ds: ds.min()),
+        ("mean", lambda ds: ds.mean()),
+        ("median", lambda ds: ds.median()),
+    ],
+)
+def test_euclidean_k_and_stats(stat, expected_fn) -> None:
+    """Test EuclideanScore k-nearest selection and aggregation statistic."""
+    # create 3 refs, query at origin: distances are simple
+    refs = torch.tensor(
+        [[3.0, 4.0], [6.0, 8.0], [0.0, 5.0]]
+    )  # distances: 5,10,5
+    q = torch.tensor([[0.0, 0.0]])
+    # k=2 -> pick two nearest squared distances [25,25] -> stat on squared then sqrt
+    score = EuclideanScore(k=2, stat=stat)
+    score.ref_embeddings = refs
+    score._setup_index()
+    out = score._distance(q, kpn=0)
+    # pick two smallest distances: 5 and 5 -> squared are 25 and 25
+    two = torch.tensor([25.0, 25.0])
+    stat_sq = expected_fn(two)
+    expected = torch.sqrt(stat_sq)
+    approx(out, expected.unsqueeze(0) if expected.dim() == 0 else expected)
+
+
+def test_cosine_similarity_identical_vector() -> None:
+    """Verify CosineScore returns similarity ~1.0 for identical vectors."""
+    refs = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
+    q = torch.tensor([[1.0, 0.0]])
+    score = CosineScore(k=1, stat="max")
+    score.ref_embeddings = refs
+    score._setup_index()
+    out = score._distance(q, kpn=0)
+    # identical vector should yield cosine similarity ~1.0
+    assert out.shape == (1,)
+    assert torch.isclose(out[0], torch.tensor(1.0), atol=1e-6)
+
+
+def test_cosine_k_mean() -> None:
+    """Verify CosineScore with k>1 and mean statistic."""
+    refs = torch.tensor([[1.0, 0.0], [1.0, 0.0]])
+    # both refs identical to query => similarity 1 each -> mean 1
+    q = torch.tensor([[1.0, 0.0]])
+    score = CosineScore(k=2, stat="mean")
+    score.ref_embeddings = refs
+    score._setup_index()
+    out = score._distance(q, kpn=0)
+    assert torch.allclose(out, torch.tensor([1.0]), atol=1e-6)
+
+
+def test_mahalanobis_matches_manual_calculation() -> None:
+    """Verify MahalanobisScore against a manual Mahalanobis computation."""
+    refs = torch.tensor([[0.0, 0.0], [2.0, 0.0], [0.0, 2.0]])
+    query = torch.tensor([[1.0, 1.0]])
+    score = MahalanobisScore(k=1, stat="min")
+    score.ref_embeddings = refs
+    # call setup to compute vi_zero and populate index
+    score._setup_index()
+    # compute expected Mahalanobis distances manually
+    cov = refs.T.cov()
+    cov_inv = torch.linalg.inv(cov)
+    expected = []
+    x = query[0]
+    for p in refs:
+        diff = (x - p).unsqueeze(0)  # 1xD
+        val = torch.sqrt((diff @ cov_inv @ diff.T).squeeze())
+        expected.append(val.item())
+    expected = torch.tensor(expected)
+    expected_min = torch.min(expected).unsqueeze(0)
+    out = score._distance(query, kpn=0)
+    approx(out, expected_min)
+
+
+def test_mahalanobis_singular_cov_raises() -> None:
+    """Ensure setup raises for singular covariance matrices."""
+    # identical points -> covariance singular -> cholesky should fail
+    refs = torch.tensor([[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]])
+    score = MahalanobisScore(k=1)
+    score.ref_embeddings = refs
+    with pytest.raises(Exception):
+        score._setup_index()
+
+
+def test_q_trimming_reduces_reference_set() -> None:
+    """Test that _fit_impl trimming reduces the number of reference points."""
+    n = 100
+    refs = torch.randn(n, 5)
+    score = EuclideanScore(k=1)
+    # avoid calibration requirement for this test
+    score.cal_required = False
+    score.ref_embeddings = refs.float()
+    # run fit-impl trimming (q=0.5 should remove roughly half the points)
+    original_count = score.ref_embeddings.shape[0]
+    score._fit_impl(q=0.50)
+    new_count = score.ref_embeddings.shape[0]
+    assert new_count < original_count
+    assert new_count >= 1
+
+
+def test_setup_index_creates_faiss_index_types() -> None:
+    """Ensure _setup_index creates an index for each score type."""
+    refs = torch.randn(5, 3)
+    e = EuclideanScore(k=1)
+    e.ref_embeddings = refs
+    e._setup_index()
+    assert e.index is not None
+
+    c = CosineScore(k=1)
+    c.ref_embeddings = refs
+    c._setup_index()
+    assert c.index is not None
+
+    m = MahalanobisScore(k=1)
+    m.ref_embeddings = refs
+    m._setup_index()
+    assert m.index is not None
