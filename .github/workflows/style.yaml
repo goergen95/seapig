@@ -67,4 +67,4 @@ jobs:
           fi
 
       - name: Run mypy
-        run: mypy 
+        run: mypy .

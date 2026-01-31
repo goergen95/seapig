@@ -39,7 +39,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest --cov=seapig --cov-report=xml
+          pytest --cov --cov-report=xml
       - name: Report coverage
         uses: codecov/codecov-action@v5
         with:
