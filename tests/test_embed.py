@@ -2,7 +2,8 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from seapig.scores.embed import EmbeddingScore, TensorPCA
+from seapig.scores.embed import EmbeddingScore
+from seapig.scores.utils import TensorPCA
 
 
 class DummyModel(torch.nn.Module):

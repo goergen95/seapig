@@ -14,7 +14,7 @@ class TensorPCA:
     u: torch.Tensor
     s: torch.Tensor
     s_acc: torch.Tensor
-    q: torch.Tensor
+    q: int
     u_q: torch.Tensor
     u_q_dot: torch.Tensor
 
@@ -34,7 +34,6 @@ class TensorPCA:
         self.u = self.u.to(device=device)
         self.s = self.s.to(device=device)
         self.s_acc = self.s_acc.to(device=device)
-        self.q = self.q.to(device=device)
         self.u_q = self.u_q.to(device=device)
         self.u_q_dot = self.u_q_dot.to(device=device)
 
@@ -77,8 +76,7 @@ class TensorPCA:
         self.u, self.s, _ = torch.linalg.svd(K)
         self.s_acc = torch.cumsum(self.s, 0) / (self.s.sum() + 1e-20)
         q_idx = (self.s_acc >= self.exp_var).nonzero()[0][0]
-        q_int = max(1, int(q_idx.item()) + 1)
-        self.q = torch.tensor([q_int])
+        self.q = max(1, int(q_idx.item()) + 1)
         explained = self.s_acc[self.q - 1].item()
         print(
             f"Explained variance of {explained:.4f} reached at dimension {self.q}."

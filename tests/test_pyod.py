@@ -53,9 +53,7 @@ def test_fit_sets_trained_and_scores_without_cal() -> None:
     assert torch.allclose(score.scores, torch.zeros(3))
 
 
-def test_fit_with_calibration_sets_calibrated_and_scores_from_decision_function() -> (
-    None
-):
+def test_fit_with_calibration_sets_calibrated_and_scores_from_decision_function() -> None:
     """When calibration embeddings are present, final scores should come from
     detector.decision_function and the score should be marked calibrated."""
     refs = torch.tensor([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
