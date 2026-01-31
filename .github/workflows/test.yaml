@@ -34,12 +34,12 @@ jobs:
             pip install .[dev]
           else
             pip install -e .
-            pip install pytest
+            pip install pytest pytest-cov
           fi
 
       - name: Run tests
         run: |
-          pytest --cov .
+          pytest --cov --junitxml=junit.xml -o junit_family=legacy
       - name: Report coverage
         uses: codecov/codecov-action@v5
         with:
