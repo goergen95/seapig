@@ -49,6 +49,9 @@ include = ["seapig*"]
 exclude = ["tests*", "docs", "_extensions"]
 
 [tool.pytest.ini_options]
+filterwarnings = [
+  "ignore: builtin type .* has no __module__ attribute:DeprecationWarning",
+]
 testpaths = ["tests", "."]
 python_files = ["test_*.py", "*_test.py"]
 

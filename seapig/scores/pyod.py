@@ -36,6 +36,7 @@ class PyODScore(EmbeddingScore):
     train_required: bool = True
     calibrated: bool = False
     cal_required: bool = True
+    cal_embeddings: torch.Tensor | None = None
     detector: Any
     ident = "pyod"
 
@@ -126,7 +127,7 @@ class PyODScore(EmbeddingScore):
 
         # TODO: serialize detector to disk to avoid refitting and ensure deterministic results
 
-        if self.exp_var is not None:
+        if self.exp_var:
             self._fit_pca()
             assert self.pca is not None
             self.ref_embeddings = self.pca.predict(self.ref_embeddings)
