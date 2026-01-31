@@ -39,7 +39,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest --cov --cov-report=xml
+          pytest --cov .
       - name: Report coverage
         uses: codecov/codecov-action@v5
         with:
