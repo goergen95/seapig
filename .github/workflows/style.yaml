@@ -67,4 +67,4 @@ jobs:
           fi
 
       - name: Run mypy
-        run: mypy --show-error-codes --pretty --ignore-missing-imports .
+        run: mypy 

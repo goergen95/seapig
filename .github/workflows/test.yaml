@@ -38,4 +38,9 @@ jobs:
           fi
 
       - name: Run tests
-        run: pytest -q --maxfail=1
+        run: |
+          pytest --cov=seapig --cov-report=xml
+      - name: Report coverage
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
