@@ -1,61 +1,96 @@
 # seapig <img src="docs/assets/logo.png" align="right" height="138" />
 
 
-The seapig library is used for confidence based selective inference. It
-is named for its phonetic resemblance to *c-pick* and supplies methods
-for rejecting low confidence samples from prediction via deep learning
-models in Pytorch. The selection decision is based on the analysis of
-latent space representations of a query sample compared to samples used
-during training. Decision thresholds are calibrated using an independent
-validation set.
+seapig provides confidence-based selective inference for deep learning
+predictions by analysing latent-space embeddings. The library implements
+a set of lightweight, composable confidence scores that decide whether
+to accept or reject individual query samples at prediction time.
+Thresholds are calibrated on an independent validation set.
 
-The core idea behind the approach is that query samples that deviate
-from the embeddings of the training samples shall be excluded from
-prediction because the estimated model performance is not expected to
-hold for those samples. Several distance metrics based on the embedding
-space can be used. The following examples uses the Euclidean distance.
+The basic idea is simple: query samples that deviate from the training
+embeddings should be excluded from prediction because the model’s
+expected performance may not hold. Several families of scores are
+provided (KNN-based metrics, PCA-reconstruction errors and PyOD
+detectors) and most accept either pre-computed embeddings (as tensors)
+or will extract embeddings on-the-fly from a model that implements an
+.embed() method.
+
+Key features include:
+
+- Fit from tensors (fit) or from dataloaders using a model with a
+  .embed() method (fit_dl / score_dl / select_dl).
+- KNN-based scores (Euclidean, Cosine, Mahalanobis) with configurable
+  aggregation statistic: stat in {"max", "mean", "median", "min"}.
+- Optional PCA dimensionality reduction via exp_var (fraction of
+  explained variance retained) to speed up nearest-neighbour search.
+- PyOD-based detectors via PyODScore.
+- Embeddings can be saved to / loaded from disk with outdir and prefix
+  when using the \*\_dl helpers.
+
+If you have a trained model that exposes an .embed(x) method and PyTorch
+DataLoaders for train/val/test, you can let seapig extract embeddings on
+the fly. The DataLoader may yield plain tensors or dicts containing an
+“images” key.
 
 ``` python
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import TensorDataset, DataLoader
+from torch import nn
 from seapig import EuclideanScore
-from seapig.mockups import MockupDataset, MockupCNN
 
-model = MockupCNN()
-dataset = MockupDataset()
+class TinyModel(nn.Module):
+    """Minimal model exposing an `embed(x)` method returning (B, D) tensors."""
+    def __init__(self):
+        super().__init__()
+        self.backbone = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(2, 8),
+            nn.ReLU(),
+            nn.Linear(8, 4),
+        )
+    def embed(self, x):
+        if isinstance(x, dict):
+            x = x["image"]
+        return self.backbone(x)
 
-train_loader = DataLoader(dataset=dataset.get_train_split(), batch_size=8)
-val_loader = DataLoader(dataset=dataset.get_val_split(), batch_size=8)
-test_loader = DataLoader(dataset=dataset.get_test_split(), batch_size=8)
+# create small datasets (N x 2 features)
+train = torch.tensor([[0.0, 0.0], [1.0, 1.0]], dtype=torch.float32)
+val = torch.tensor([[0.1, 0.0], [0.9, 1.1]], dtype=torch.float32)
+test = torch.tensor([[0.2, 0.1], [10.0, 10.0]], dtype=torch.float32)
 
-score = EuclideanScore(k=1)
-score.fit_dl(model=model, loaders={"train": train_loader, "val": val_loader})
+# ensure DataLoader returns tensors (not lists) by providing a collate_fn
+collate = lambda b: torch.stack([x[0] if isinstance(x, (list, tuple)) else x for x in b], 0)
+train_loader = DataLoader(TensorDataset(train), batch_size=2, collate_fn=collate)
+val_loader = DataLoader(TensorDataset(val), batch_size=2, collate_fn=collate)
+test_loader = DataLoader(TensorDataset(test), batch_size=1, collate_fn=collate)
 
+model = TinyModel()
+score = EuclideanScore(k=1, stat="max", exp_var=False)
+score.fit_dl(model=model, loaders={"train": train_loader, "val": val_loader}, outdir=None, prefix=None)
 score.set_threshold(q=0.75)
-print(f"Threshold: {score.get_threshold():.4f}")
 
-batch = next(iter(test_loader))
-embs = model.embed(batch["image"])
-score.select(embs)
+out = score.select_dl(model=model, loader=test_loader)
+out
 ```
 
-    Embedding 42 batches:   0%|          | 0/42 [00:00<?, ?batches/s]Embedding 42 batches: 100%|██████████| 42/42 [00:00<00:00, 1565.87batches/s]
-    Embedding 42 batches:   0%|          | 0/42 [00:00<?, ?batches/s]Embedding 42 batches: 100%|██████████| 42/42 [00:00<00:00, 1827.70batches/s]
+    Embedding 1 batches:   0%|          | 0/1 [00:00<?, ?batches/s]Embedding 1 batches: 100%|██████████| 1/1 [00:00<00:00, 1298.14batches/s]
+    Embedding 1 batches:   0%|          | 0/1 [00:00<?, ?batches/s]Embedding 1 batches: 100%|██████████| 1/1 [00:00<00:00, 3460.65batches/s]
+    Embedding 2 batches:   0%|          | 0/2 [00:00<?, ?batches/s]Embedding 2 batches: 100%|██████████| 2/2 [00:00<00:00, 6043.67batches/s]
 
-    Threshold: 0.4189
+    {'score': tensor([0.0593, 3.9979]), 'selected': tensor([ True, False])}
 
-    {'score': tensor([0.4665, 0.4391, 0.3997, 0.3831, 0.4859, 0.3923, 0.3884, 0.3695]),
-     'selected': tensor([False, False,  True,  True, False,  True,  True,  True])}
+Available scores
 
-The library supplies base classes for different families of approaches
-to express the (dis-)similarity of query samples to the training
-distribution:
+- KNN distances: EuclideanScore, CosineScore, MahalanobisScore (all
+  inherit KNNScore)
+- PCA reconstruction: PCAScore
+- PyOD detectors: PyODScore
+- Random baseline: RandomScore
 
-- KNN-distances (euclid, cosine, mahalanobis etc.),
-- PCA-based reconstruction errors (linear and kernel PCA)
-- PyOD-based confidence scores
+Math
 
-Each of the methods above induces a selection function
+Each method induces a selection function
+
 $g_{\lambda}(x|\kappa,f) = \mathbb{1}[\kappa(x|f)>\lambda]$, either
 accepting or rejecting a query sample during prediction time. We thus
 derive a selective prediction system,
