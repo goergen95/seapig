@@ -283,10 +283,10 @@ class CosineScore(KNNScore):
     Computes cosine distance-based confidence scores where low scores indicate
     samples similar to the training distribution (likely inliers) and high scores
     indicate samples deviating from the training distribution (likely outliers).
-    
-    The cosine distance is calculated as (1 - cosine_similarity), ensuring that
-    identical vectors have distance 0 and orthogonal vectors have distance 1.
 
+    The cosine distance is calculated as (1 - cosine_similarity), with a range
+    of [0, 2] where 0 indicates identical vectors, 1 indicates orthogonal
+    vectors, and 2 indicates opposite vectors.
     Parameters
     ----------
     k:
