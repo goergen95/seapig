@@ -150,3 +150,74 @@ def test_setup_index_creates_faiss_index_types() -> None:
     m.ref_embeddings = refs
     m._setup_index()
     assert m.index is not None
+
+
+def test_exp_var_reduces_dimension_and_preserves_euclidean() -> None:
+    """Ensure exp_var triggers PCA dimensionality reduction and preserves distances.
+
+    We build reference embeddings that lie (mostly) on a single latent direction
+    in a higher-dimensional space. Setting exp_var should reduce the stored
+    reference embeddings' dimensionality. We also verify that a score computed
+    with PCA enabled equals the score computed after manually applying the
+    learned projection and using a score with PCA disabled.
+    """
+    torch.manual_seed(0)
+    n, D = 50, 6
+    # generate data along a single latent direction with small noise in other dims
+    base = torch.randn(n, 1)
+    direction = torch.randn(1, D)
+    refs = (base @ direction) + 0.01 * torch.randn(n, D)
+
+    q = torch.randn(1, D)
+
+    s_pca = EuclideanScore(k=1, exp_var=0.90)
+    s_pca.cal_required = False
+    s_pca.ref_embeddings = refs.float()
+    s_pca._fit_impl(q=None)
+
+    original_dim = D
+    reduced_dim = s_pca.ref_embeddings.shape[1]
+    assert reduced_dim < original_dim
+
+    # build a second score that uses the already-projected embeddings
+    s_proj = EuclideanScore(k=1, exp_var=False)
+    s_proj.ref_embeddings = s_pca.ref_embeddings.clone()
+    s_proj._setup_index()
+
+    # get the PCA-transformed query via the fitted PCA (KNNScore uses pca.predict)
+    assert s_pca.pca is not None
+    q_proj = s_pca.pca.predict(q)
+
+    out_with_pca = s_pca.score(q)
+    out_manual = s_proj._distance(q_proj, kpn=0)
+    approx(out_with_pca, out_manual)
+
+
+def test_exp_var_preserves_cosine_similarity() -> None:
+    """Same check for cosine-based scores."""
+    torch.manual_seed(1)
+    n, D = 40, 8
+    base = torch.randn(n, 1)
+    direction = torch.randn(1, D)
+    refs = (base @ direction) + 0.01 * torch.randn(n, D)
+
+    q = torch.randn(1, D)
+
+    s_pca = CosineScore(k=2, exp_var=0.95)
+    s_pca.cal_required = False
+    s_pca.ref_embeddings = refs.float()
+    s_pca._fit_impl(q=None)
+
+    reduced_dim = s_pca.ref_embeddings.shape[1]
+    assert reduced_dim < D
+
+    s_proj = CosineScore(k=2, exp_var=False)
+    s_proj.ref_embeddings = s_pca.ref_embeddings.clone()
+    s_proj._setup_index()
+
+    assert s_pca.pca is not None
+    q_proj = s_pca.pca.predict(q)
+
+    out_with_pca = s_pca.score(q)
+    out_manual = s_proj._distance(q_proj, kpn=0)
+    approx(out_with_pca, out_manual)
