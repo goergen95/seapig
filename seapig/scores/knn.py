@@ -47,7 +47,7 @@ class KNNScore(EmbeddingScore, ABC):
     cal_embeddings: torch.Tensor | None = None
     threshold: torch.Tensor | None = None
     scores: torch.Tensor | None = None
-    index: faiss.IndexFlatL2 | None = None  # type: ignore [no-any-unimported]
+    index: faiss.IndexFlatL2 | None = None
 
     def __init__(
         self, k: int = 1, stat: str = "max", exp_var: float | bool = False
