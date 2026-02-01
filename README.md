@@ -73,11 +73,11 @@ out = score.select_dl(model=model, loader=test_loader)
 out
 ```
 
-    Embedding 1 batches:   0%|          | 0/1 [00:00<?, ?batches/s]Embedding 1 batches: 100%|██████████| 1/1 [00:00<00:00, 1298.14batches/s]
-    Embedding 1 batches:   0%|          | 0/1 [00:00<?, ?batches/s]Embedding 1 batches: 100%|██████████| 1/1 [00:00<00:00, 3460.65batches/s]
-    Embedding 2 batches:   0%|          | 0/2 [00:00<?, ?batches/s]Embedding 2 batches: 100%|██████████| 2/2 [00:00<00:00, 6043.67batches/s]
+    Embedding 1 batches:   0%|          | 0/1 [00:00<?, ?batches/s]Embedding 1 batches: 100%|██████████| 1/1 [00:00<00:00, 19.46batches/s]
+    Embedding 1 batches:   0%|          | 0/1 [00:00<?, ?batches/s]Embedding 1 batches: 100%|██████████| 1/1 [00:00<00:00, 844.43batches/s]
+    Embedding 2 batches:   0%|          | 0/2 [00:00<?, ?batches/s]Embedding 2 batches: 100%|██████████| 2/2 [00:00<00:00, 883.85batches/s]
 
-    {'score': tensor([0.0593, 3.9979]), 'selected': tensor([ True, False])}
+    {'score': tensor([0.1252, 1.9164]), 'selected': tensor([False, False])}
 
 Available scores
 
@@ -89,12 +89,12 @@ Available scores
 
 Math
 
-All confidence scores follow a consistent definition: low scores indicate likely
-inliers (samples similar to the training distribution) while high scores indicate
-likely outliers (samples deviating from the training distribution). Each method
-induces a selection function
+All confidence scores follow a consistent definition: low scores
+indicate likely inliers (samples similar to the training distribution)
+while high scores indicate likely outliers (samples deviating from the
+training distribution). Each method induces a selection function
 
-$g_{\lambda}(x|\kappa,f) = \mathbb{1}[\kappa(x|f)<\lambda]$, either
+$g_{\lambda}(x|\kappa) = \mathbb{1}[\kappa(x)<\lambda]$, either
 accepting or rejecting a query sample during prediction time. We thus
 derive a selective prediction system,
 
