@@ -369,4 +369,4 @@ class MahalanobisScore(KNNScore):
         dist = torch.Tensor(dist[:, kpn:])
         dist = self._stat(dist, stat=self.stat)
         # Return negative distance as confidence score: higher confidence = lower distance
-        return -dist
+        return -torch.sqrt(dist)
