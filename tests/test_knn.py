@@ -60,28 +60,28 @@ def test_euclidean_k_and_stats(stat, expected_fn) -> None:
 
 
 def test_cosine_similarity_identical_vector() -> None:
-    """Verify CosineScore returns similarity ~1.0 for identical vectors."""
+    """Verify CosineScore returns distance ~0.0 for identical vectors."""
     refs = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
     q = torch.tensor([[1.0, 0.0]])
     score = CosineScore(k=1, stat="max")
     score.ref_embeddings = refs
     score._setup_index()
     out = score._distance(q, kpn=0)
-    # identical vector should yield cosine similarity ~1.0
+    # identical vector should yield cosine distance ~0.0 (1 - similarity of 1.0)
     assert out.shape == (1,)
-    assert torch.isclose(out[0], torch.tensor(1.0), atol=1e-6)
+    assert torch.isclose(out[0], torch.tensor(0.0), atol=1e-6)
 
 
 def test_cosine_k_mean() -> None:
     """Verify CosineScore with k>1 and mean statistic."""
     refs = torch.tensor([[1.0, 0.0], [1.0, 0.0]])
-    # both refs identical to query => similarity 1 each -> mean 1
+    # both refs identical to query => distance 0 each -> mean 0
     q = torch.tensor([[1.0, 0.0]])
     score = CosineScore(k=2, stat="mean")
     score.ref_embeddings = refs
     score._setup_index()
     out = score._distance(q, kpn=0)
-    assert torch.allclose(out, torch.tensor([1.0]), atol=1e-6)
+    assert torch.allclose(out, torch.tensor([0.0]), atol=1e-6)
 
 
 def test_mahalanobis_matches_manual_calculation() -> None:

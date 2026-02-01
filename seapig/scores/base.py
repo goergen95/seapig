@@ -9,6 +9,11 @@ import torch
 class ConfidenceScore(ABC):
     """Abstract Base Class for Confidence Scores.
 
+    Confidence scores quantify the deviation of query samples from the training
+    distribution. Low scores indicate likely inliers (samples similar to training),
+    while high scores indicate likely outliers (samples deviating from training).
+    Samples with scores exceeding the threshold are excluded from prediction.
+
     Attributes
     ----------
     trained:
@@ -21,9 +26,11 @@ class ConfidenceScore(ABC):
         A `bool`ean indicating if the score has been calibrated. Defaults to `FALSE`.
     scores:
         A `torch.Tensor` with the confidence scores of the calibration samples.
+        Low scores indicate likely inliers, high scores indicate likely outliers.
         Defaults to `None`.
     threshold:
-        A `float` indicating the rejection threshold. Defaults to `None`.
+        A `float` indicating the rejection threshold. Samples with scores higher
+        than this threshold are excluded from prediction. Defaults to `None`.
     device:
         A `str`ing indicating to which device internal `torch.Tensor`s are put.
         Default is `"cpu"`.
@@ -85,7 +92,10 @@ class ConfidenceScore(ABC):
 
     @abstractmethod
     def set_threshold(self, q: float = 0.99) -> None:
-        """Set a threshold based on a specific quantile on the available scores."""
+        """Set a threshold based on a specific quantile on the available scores.
+        
+        Samples with scores higher than this threshold are excluded from prediction.
+        """
         pass
 
     @abstractmethod
@@ -94,20 +104,28 @@ class ConfidenceScore(ABC):
 
         Here, `X` is used as training samples to fit the downstream method,
         while `Y` as an optional parameter that can be used to calculate
-        references scores for the decision threshold.
+        reference scores for the decision threshold.
         """
         pass
 
     @abstractmethod
     def score(self, X: torch.Tensor, *args: Any, **kwargs: Any) -> torch.Tensor:
-        """Calculate the confidence score for an tensor of samples."""
+        """Calculate the confidence score for a tensor of samples.
+        
+        Returns scores where low values indicate likely inliers and high values
+        indicate likely outliers.
+        """
         pass
 
     @abstractmethod
     def select(
         self, X: torch.Tensor, *args: Any, **kwargs: Any
     ) -> dict[str, torch.Tensor]:
-        """Select samples for prediction based on their confidence score."""
+        """Select samples for prediction based on their confidence score.
+        
+        Samples with scores lower than the threshold are selected for prediction,
+        while samples with scores higher than the threshold are excluded.
+        """
         pass
 
 
@@ -115,7 +133,8 @@ class RandomScore(ConfidenceScore):
     """Returns random confidence scores per sample.
 
     This score returns a random float in the range `[0,1]` for each sample
-    in a batch. By default, it selects samples below values of `0.99`.
+    in a batch. Low scores indicate likely inliers, high scores indicate likely
+    outliers. By default, samples with scores below 0.99 are selected for prediction.
 
     Examples
     --------
@@ -149,6 +168,9 @@ class RandomScore(ConfidenceScore):
     def score(self, X: torch.Tensor) -> torch.Tensor:
         """Compute a confidence score for every sample in a batch.
 
+        Returns random scores where low values indicate likely inliers and
+        high values indicate likely outliers.
+
         Once instantiated, the object can be called to return a tensor of
         random confidence scores based on a batch of inputs:
 
@@ -169,6 +191,8 @@ class RandomScore(ConfidenceScore):
     @torch.inference_mode()
     def select(self, X: torch.Tensor) -> dict[str, torch.Tensor]:
         """Select samples for prediction based on their confidence score.
+
+        Samples with scores lower than the threshold are selected for prediction.
 
         Once instantiated, the object can be called to return a tensor of
         random confidence scores and selection decision based on a batch of inputs:

@@ -18,6 +18,11 @@ from seapig.scores.utils import TensorPCA
 class EmbeddingScore(ConfidenceScore, ABC):
     """Base class for embedding-based confidence scores.
 
+    Embedding-based scores quantify deviation from the training distribution using
+    latent-space embeddings. Low scores indicate samples similar to the training
+    distribution (likely inliers), while high scores indicate samples deviating
+    from the training distribution (likely outliers).
+
     Parameters
     ----------
     exp_var:
@@ -33,9 +38,11 @@ class EmbeddingScore(ConfidenceScore, ABC):
         A `torch.Tensor` with the embeddings of validation samples. Defaults to `None`.
     scores:
         A `torch.Tensor` with the confidence scores of the validation samples.
+        Low scores indicate likely inliers, high scores indicate likely outliers.
         Defaults to `None`.
     threshold:
-        A `float` indicating the rejection threshold. Defaults to `None`.
+        A `float` indicating the rejection threshold. Samples with scores higher
+        than this threshold are excluded from prediction. Defaults to `None`.
     """
 
     ref_embeddings: torch.Tensor | None
@@ -290,7 +297,8 @@ class EmbeddingScore(ConfidenceScore, ABC):
         """Set a threshold based on quantiles on the reference confidence scores.
 
         This method sets the selection threshold based on the quantile on
-        the values found in the `scores` attribute. If the confidence score
+        the values found in the `scores` attribute. Samples with scores higher
+        than this threshold are excluded from prediction. If the confidence score
         is trained, but uncalibrated, this will be based on the k-nearest-neighbor
         distances of the training samples, excluding the distance to the
         point itself. If calibrated, the distance of the calibration samples to
@@ -314,8 +322,9 @@ class EmbeddingScore(ConfidenceScore, ABC):
         """Select samples for prediction based on their confidence score.
 
         Samples are selected for prediction based on their confidence score compared
-        to a threshold. It is expected that the threshold was previously
-        calibrated on, e.g. validation samples.
+        to a threshold. Samples with scores lower than the threshold are selected,
+        while samples with scores higher than the threshold are excluded. It is
+        expected that the threshold was previously calibrated on, e.g. validation samples.
 
         ```python
         my_score = ConfidenceScore()
@@ -352,9 +361,11 @@ class EmbeddingScore(ConfidenceScore, ABC):
         """Select samples for prediction based on their confidence score.
 
         Samples are selected for prediction based on their confidence score compared
-        to a threshold. It is expected that the threshold was previously
-        calibrated on, e.g. validation samples. This method will embed input samples
-        on the fly using the supplied models `.embed()` method.
+        to a threshold. Samples with scores lower than the threshold are selected,
+        while samples with scores higher than the threshold are excluded. It is
+        expected that the threshold was previously calibrated on, e.g. validation
+        samples. This method will embed input samples on the fly using the supplied
+        models `.embed()` method.
 
         ```python
         my_score = ConfidenceScore()

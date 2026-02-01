@@ -12,6 +12,10 @@ from seapig.scores.embed import EmbeddingScore
 class PCAScore(EmbeddingScore):
     """Returns a confidence scores based on PCA-based reconstruction errors.
 
+    Computes reconstruction error-based confidence scores where low scores indicate
+    samples that can be well-reconstructed from principal components (likely inliers)
+    and high scores indicate samples with large reconstruction errors (likely outliers).
+
     See https://arxiv.org/pdf/2402.02949v3
 
     Parameters
@@ -144,11 +148,15 @@ class PCAScore(EmbeddingScore):
     def score(self, X: torch.Tensor) -> torch.Tensor:
         """Compute a confidence score based on sample embeddings.
 
+        Returns reconstruction error scores where low values indicate samples that
+        can be well-reconstructed (likely inliers) and high values indicate samples
+        with large reconstruction errors (likely outliers).
+
         Once instantiated, the object can be called to return confidence
         scores based on sample embeddings.
 
         ```python
-        my_score = KNNScore()
+        my_score = PCAScore()
         my_score.fit(train_data, val_data)
         scores = my_score.score(test_data)
         ```
