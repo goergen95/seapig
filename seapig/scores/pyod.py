@@ -138,12 +138,16 @@ class PyODScore(EmbeddingScore):
             assert (q >= 0.0) & (q <= 1.0)
             self.detector.fit(self.ref_embeddings.cpu().numpy())
             scores = torch.Tensor(self.detector.decision_scores_)
+            # Negate for confidence: lower decision score = higher confidence
+            scores = -scores
             threshold = torch.quantile(scores.float(), q=q)
-            index = scores < threshold
+            index = scores > threshold
             self.ref_embeddings = self.ref_embeddings[index, :]
 
         self.detector.fit(self.ref_embeddings.cpu().numpy())
         self.scores = torch.Tensor(self.detector.decision_scores_)
+        # Negate for confidence: lower decision score = higher confidence
+        self.scores = -self.scores
         self.set_trained()
 
         if self.cal_embeddings is not None:
@@ -152,6 +156,8 @@ class PyODScore(EmbeddingScore):
                     self.cal_embeddings.cpu().numpy()
                 )
             )
+            # Negate for confidence: lower decision score = higher confidence
+            self.scores = -self.scores
             self.set_calibrated()
 
     @override
@@ -178,4 +184,5 @@ class PyODScore(EmbeddingScore):
         if self.pca is not None:
             X = self.pca.predict(X)
         score = torch.Tensor(self.detector.decision_function(X.cpu().numpy()))
-        return score
+        # Negate PyOD decision scores to convert to confidence scores
+        return -score

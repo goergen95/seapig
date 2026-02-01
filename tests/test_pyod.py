@@ -37,7 +37,7 @@ class _MockDetectorRange:
 
 def test_fit_sets_trained_and_scores_without_cal() -> None:
     """When calibration is not required, _fit_impl should set trained state and
-    populate scores from detector.decision_scores_."""
+    populate scores from detector.decision_scores_ (negated for confidence)."""
     refs = torch.tensor([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
     det = _MockDetectorBasic(score_on_call=0.1)
     score = PyODScore(detector=det, exp_var=False)
@@ -49,13 +49,13 @@ def test_fit_sets_trained_and_scores_without_cal() -> None:
 
     assert score.is_trained()
     assert isinstance(score.scores, torch.Tensor)
-    # detector produced zeros on fit -> scores should be zeros
+    # detector produced zeros on fit -> scores should be negated zeros (still zeros)
     assert torch.allclose(score.scores, torch.zeros(3))
 
 
 def test_fit_with_calibration_sets_calibrated_and_scores_from_decision_function() -> None:
     """When calibration embeddings are present, final scores should come from
-    detector.decision_function and the score should be marked calibrated."""
+    detector.decision_function (negated) and the score should be marked calibrated."""
     refs = torch.tensor([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
     cal = torch.tensor([[10.0, 10.0], [20.0, 20.0]])
 
@@ -74,12 +74,13 @@ def test_fit_with_calibration_sets_calibrated_and_scores_from_decision_function(
     assert score.is_trained()
     assert score.is_calibrated()
     assert isinstance(score.scores, torch.Tensor)
-    assert torch.allclose(score.scores, torch.tensor([5.0, 6.0]))
+    # Scores are negated for confidence: higher decision score = lower confidence
+    assert torch.allclose(score.scores, torch.tensor([-5.0, -6.0]))
 
 
 def test_score_uses_detector_decision_function() -> None:
-    """score(X) should call the detector.decision_function and return a
-    torch.Tensor with those values."""
+    """score(X) should call the detector.decision_function, negate it,
+    and return a torch.Tensor with those values."""
 
     class DetFn(_MockDetectorBasic):
         def decision_function(self, X: np.ndarray) -> np.ndarray:
@@ -94,7 +95,8 @@ def test_score_uses_detector_decision_function() -> None:
     out = score.score(q)
 
     assert isinstance(out, torch.Tensor)
-    expected = torch.tensor([3.0, 7.0])
+    # Scores are negated for confidence
+    expected = torch.tensor([-3.0, -7.0])
     assert torch.allclose(out, expected)
 
 

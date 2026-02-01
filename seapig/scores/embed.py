@@ -340,7 +340,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
             self.set_threshold()
         assert self.threshold is not None
         score = self.score(X=X)
-        return {"score": score, "selected": score < self.threshold}
+        return {"score": score, "selected": score > self.threshold}
 
     def select_dl(
         self,
@@ -383,7 +383,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
             model=model, loader=loader, outdir=outdir, prefix=prefix
         )
         assert isinstance(self.threshold, torch.Tensor)
-        return {"score": scores, "selected": scores < self.threshold}
+        return {"score": scores, "selected": scores > self.threshold}
 
     def score_dl(
         self,

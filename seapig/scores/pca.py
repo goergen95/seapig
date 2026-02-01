@@ -126,8 +126,10 @@ class PCAScore(EmbeddingScore):
             self._fit_pca()
             assert self.pca is not None
             _, scores = self.pca.reconstruct(self.ref_embeddings)
+            # Negate for confidence: lower error = higher confidence
+            scores = -scores
             threshold = torch.quantile(scores.float(), q=q)
-            index = scores < threshold
+            index = scores > threshold
             self.ref_embeddings = self.ref_embeddings[index, :]
 
         self._fit_pca()
@@ -136,8 +138,12 @@ class PCAScore(EmbeddingScore):
 
         if self.cal_embeddings is None:
             _, self.scores = self.pca.reconstruct(self.ref_embeddings)
+            # Negate for confidence: lower error = higher confidence
+            self.scores = -self.scores
         else:
             _, self.scores = self.pca.reconstruct(self.cal_embeddings)
+            # Negate for confidence: lower error = higher confidence
+            self.scores = -self.scores
             self.set_calibrated()
 
     @override
@@ -162,4 +168,5 @@ class PCAScore(EmbeddingScore):
         assert self.pca is not None
         self.to(device=X.device)
         _, score = self.pca.reconstruct(X)
-        return score
+        # Return negative reconstruction error as confidence score
+        return -score

@@ -188,7 +188,7 @@ class RandomScore(ConfidenceScore):
             self.set_threshold()
         assert self.threshold is not None
         score = self.score(X=X)
-        return {"score": score, "selected": score < self.threshold}
+        return {"score": score, "selected": score > self.threshold}
 
     @override
     def set_threshold(self, q: float = 0.99) -> None:

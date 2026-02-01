@@ -149,8 +149,9 @@ class KNNScore(EmbeddingScore, ABC):
             if self.index is None:
                 self._setup_index()
             scores = self._distance(self.ref_embeddings, kpn=1)
+            # Note: scores are now negated confidence scores (higher = better)
             threshold = torch.quantile(scores.float(), q=q)
-            index = scores < threshold
+            index = scores > threshold
             self.ref_embeddings = self.ref_embeddings[index, :]
 
         self._setup_index()
@@ -258,7 +259,8 @@ class EuclideanScore(KNNScore):
         dist, _ = self.index.search(query.cpu(), k=self.k + kpn)
         dist = torch.Tensor(dist[:, kpn:])
         dist = self._stat(dist, stat=self.stat)
-        return torch.sqrt(dist)
+        # Return negative distance as confidence score: higher confidence = lower distance
+        return -torch.sqrt(dist)
 
 
 class CosineScore(KNNScore):
@@ -366,4 +368,5 @@ class MahalanobisScore(KNNScore):
         dist, _ = self.index.search(query, k=self.k + kpn)
         dist = torch.Tensor(dist[:, kpn:])
         dist = self._stat(dist, stat=self.stat)
-        return dist
+        # Return negative distance as confidence score: higher confidence = lower distance
+        return -dist

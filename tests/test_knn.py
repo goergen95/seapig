@@ -18,16 +18,17 @@ def approx(t1: torch.Tensor, t2: torch.Tensor, tol: float = 1e-6) -> None:
 
 
 def test_euclidean_distance_simple_nearest() -> None:
-    """Verify EuclideanScore returns the correct nearest distance."""
+    """Verify EuclideanScore returns the correct nearest confidence score."""
     # Two reference points: (0,0) and (3,4) -> distances to (6,8) -> nearest = (3,4) dist = 5
+    # Confidence score should be -5 (negated distance)
     ref = torch.tensor([[0.0, 0.0], [3.0, 4.0]])
     q = torch.tensor([[6.0, 8.0]])
     score = EuclideanScore(k=1, stat="min")
     score.ref_embeddings = ref
     score._setup_index()
-    # kpn default 0 => returns distance to k nearest (here k=1)
+    # kpn default 0 => returns confidence score (negated distance to k nearest)
     out = score._distance(q, kpn=0)
-    expected = torch.tensor([5.0])
+    expected = torch.tensor([-5.0])
     approx(out, expected)
 
 
@@ -55,7 +56,7 @@ def test_euclidean_k_and_stats(stat, expected_fn) -> None:
     # pick two smallest distances: 5 and 5 -> squared are 25 and 25
     two = torch.tensor([25.0, 25.0])
     stat_sq = expected_fn(two)
-    expected = torch.sqrt(stat_sq)
+    expected = -torch.sqrt(stat_sq)  # Negate for confidence score
     approx(out, expected.unsqueeze(0) if expected.dim() == 0 else expected)
 
 
@@ -102,7 +103,7 @@ def test_mahalanobis_matches_manual_calculation() -> None:
         val = torch.sqrt((diff @ cov_inv @ diff.T).squeeze())
         expected.append(val.item())
     expected = torch.tensor(expected)
-    expected_min = torch.min(expected).unsqueeze(0)
+    expected_min = -torch.min(expected).unsqueeze(0)  # Negate for confidence
     out = score._distance(query, kpn=0)
     approx(out, expected_min)
 
