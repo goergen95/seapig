@@ -89,9 +89,12 @@ Available scores
 
 Math
 
-Each method induces a selection function
+All confidence scores follow a consistent definition: low scores indicate likely
+inliers (samples similar to the training distribution) while high scores indicate
+likely outliers (samples deviating from the training distribution). Each method
+induces a selection function
 
-$g_{\lambda}(x|\kappa,f) = \mathbb{1}[\kappa(x|f)>\lambda]$, either
+$g_{\lambda}(x|\kappa,f) = \mathbb{1}[\kappa(x|f)<\lambda]$, either
 accepting or rejecting a query sample during prediction time. We thus
 derive a selective prediction system,
 

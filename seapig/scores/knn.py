@@ -14,6 +14,10 @@ from seapig.scores.embed import EmbeddingScore
 class KNNScore(EmbeddingScore, ABC):
     """Returns the KNN-distance to the nearest samples.
 
+    Computes distance-based confidence scores where low scores indicate samples
+    similar to the training distribution (likely inliers) and high scores indicate
+    samples deviating from the training distribution (likely outliers).
+
     Parameters
     ----------
     k:
@@ -30,9 +34,11 @@ class KNNScore(EmbeddingScore, ABC):
         A `torch.Tensor` representing reference embeddings.
     scores:
         A `torch.Tensor` with the confidence scores of the calibration samples.
+        Low scores indicate likely inliers, high scores indicate likely outliers.
         Defaults to `None`.
     threshold:
-        A `float` indicating the rejection threshold. Defaults to `None`.
+        A `float` indicating the rejection threshold. Samples with scores higher
+        than this threshold are excluded from prediction. Defaults to `None`.
     """
 
     k: int = 1
@@ -176,6 +182,10 @@ class KNNScore(EmbeddingScore, ABC):
     def score(self, X: torch.Tensor) -> torch.Tensor:
         """Compute a confidence score based on sample embeddings.
 
+        Returns scores where low values indicate likely inliers (samples similar
+        to training) and high values indicate likely outliers (samples deviating
+        from training).
+
         Once instantiated, the object can be called to return confidence
         scores based on sample embeddings.
 
@@ -215,6 +225,10 @@ class KNNScore(EmbeddingScore, ABC):
 class EuclideanScore(KNNScore):
     """Returns the KNN-distance based on the euclidean distance to the nearest samples.
 
+    Computes Euclidean distance-based confidence scores where low scores indicate
+    samples similar to the training distribution (likely inliers) and high scores
+    indicate samples deviating from the training distribution (likely outliers).
+
     Parameters
     ----------
     k:
@@ -231,9 +245,11 @@ class EuclideanScore(KNNScore):
         A `torch.Tensor` representing reference embeddings.
     scores:
         A `torch.Tensor` with the confidence scores of the calibration samples.
+        Low scores indicate likely inliers, high scores indicate likely outliers.
         Defaults to `None`.
     threshold:
-        A `float` indicating the rejection threshold. Defaults to `None`.
+        A `float` indicating the rejection threshold. Samples with scores higher
+        than this threshold are excluded from prediction. Defaults to `None`.
     """
 
     k: int
@@ -264,6 +280,13 @@ class EuclideanScore(KNNScore):
 class CosineScore(KNNScore):
     """Returns the KNN-distance based on the cosine distance to the nearest samples.
 
+    Computes cosine distance-based confidence scores where low scores indicate
+    samples similar to the training distribution (likely inliers) and high scores
+    indicate samples deviating from the training distribution (likely outliers).
+    
+    The cosine distance is calculated as (1 - cosine_similarity), ensuring that
+    identical vectors have distance 0 and orthogonal vectors have distance 1.
+
     Parameters
     ----------
     k:
@@ -280,9 +303,11 @@ class CosineScore(KNNScore):
         A `torch.Tensor` representing reference embeddings.
     scores:
         A `torch.Tensor` with the confidence scores of the calibration samples.
+        Low scores indicate likely inliers, high scores indicate likely outliers.
         Defaults to `None`.
     threshold:
-        A `float` indicating the rejection threshold. Defaults to `None`.
+        A `float` indicating the rejection threshold. Samples with scores higher
+        than this threshold are excluded from prediction. Defaults to `None`.
     """
 
     k: int = 1
@@ -306,14 +331,24 @@ class CosineScore(KNNScore):
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
         query = torch.nn.functional.normalize(query).cpu()
-        dist, _ = self.index.search(query, k=self.k + kpn)
-        dist = torch.Tensor(dist)[:, kpn:]
+        similarity, _ = self.index.search(query, k=self.k + kpn)
+        similarity = torch.Tensor(similarity)[:, kpn:]
+        # Convert cosine similarity to cosine distance (1 - similarity)
+        # Low distance = inlier, high distance = outlier
+        dist = 1 - similarity
         dist = self._stat(dist, stat=self.stat)
         return dist
 
 
 class MahalanobisScore(KNNScore):
     """Returns the Mahalanobis distance to the training samples distribution.
+
+    Computes Mahalanobis distance-based confidence scores where low scores indicate
+    samples similar to the training distribution (likely inliers) and high scores
+    indicate samples deviating from the training distribution (likely outliers).
+    
+    The Mahalanobis distance accounts for correlations in the training data by
+    using the covariance matrix of the training embeddings.
 
     Parameters
     ----------
@@ -331,9 +366,11 @@ class MahalanobisScore(KNNScore):
         A `torch.Tensor` representing reference embeddings.
     scores:
         A `torch.Tensor` with the confidence scores of the calibration samples.
+        Low scores indicate likely inliers, high scores indicate likely outliers.
         Defaults to `None`.
     threshold:
-        A `float` indicating the rejection threshold. Defaults to `None`.
+        A `float` indicating the rejection threshold. Samples with scores higher
+        than this threshold are excluded from prediction. Defaults to `None`.
     """
 
     k: int

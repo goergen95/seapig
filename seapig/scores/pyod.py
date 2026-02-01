@@ -12,6 +12,10 @@ from seapig.scores.embed import EmbeddingScore
 class PyODScore(EmbeddingScore):
     """Confidence Scores based on detectors supplied by PyOD.
 
+    Computes outlier scores using PyOD detectors where low scores indicate samples
+    similar to the training distribution (likely inliers) and high scores indicate
+    samples deviating from the training distribution (likely outliers).
+
     Parameters
     ----------
     detector:
@@ -27,9 +31,11 @@ class PyODScore(EmbeddingScore):
         A `torch.Tensor` representing reference embeddings.
     scores:
         A `torch.Tensor` with the confidence scores of the calibration samples.
+        Low scores indicate likely inliers, high scores indicate likely outliers.
         Defaults to `None`.
     threshold:
-        A `float` indicating the rejection threshold. Defaults to `None`.
+        A `float` indicating the rejection threshold. Samples with scores higher
+        than this threshold are excluded from prediction. Defaults to `None`.
     """
 
     trained: bool = False
@@ -158,6 +164,10 @@ class PyODScore(EmbeddingScore):
     @torch.inference_mode()
     def score(self, X: torch.Tensor) -> torch.Tensor:
         """Compute a confidence score based on sample embeddings.
+
+        Returns outlier scores where low values indicate likely inliers (samples
+        similar to training) and high values indicate likely outliers (samples
+        deviating from training).
 
         Once instantiated, the object can be called to return confidence
         scores based on sample embeddings.
