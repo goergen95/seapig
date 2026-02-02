@@ -1,9 +1,10 @@
 """Confidence score based on an arbitrary PyOD model."""
 
 from pathlib import Path
-from typing import Any, override
+from typing import override
 
 import torch
+from pyod.models.base import BaseDetector
 from torch.utils.data import DataLoader
 
 from seapig.scores.embed import EmbeddingScore
@@ -38,17 +39,16 @@ class PyODScore(EmbeddingScore):
         than this threshold are excluded from prediction. Defaults to `None`.
     """
 
-    trained: bool = False
     train_required: bool = True
-    calibrated: bool = False
     cal_required: bool = True
-    cal_embeddings: torch.Tensor | None = None
-    detector: Any
-    ident = "pyod"
+    detector: BaseDetector
+    ident: str = "pyod"
 
-    def __init__(self, detector: Any, exp_var: float | bool = False) -> None:
+    def __init__(
+        self, detector: BaseDetector, exp_var: float | bool = False
+    ) -> None:
+        super().__init__(exp_var=exp_var)
         self.detector = detector
-        self.exp_var = exp_var
         self.ident = f"{self.ident}-{detector.__class__.__name__}"
 
     @override

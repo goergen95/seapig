@@ -1,7 +1,5 @@
 """Selective Model Class."""
 
-from typing import override
-
 import torch
 
 from seapig.scores.base import ConfidenceScore
@@ -20,9 +18,9 @@ class SelectiveModel(torch.nn.Module):
         self.model = model
         self.csf = confidence_score
 
-    @override
     @torch.inference_mode()
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
+        """Implement forward pass with confidence score selection."""
         preds: torch.Tensor | dict[str, torch.Tensor] = self.model(x)
         if isinstance(preds, torch.Tensor):
             preds = {"predictions": preds}

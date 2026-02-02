@@ -34,6 +34,16 @@ class DummyEmbedding(EmbeddingScore):
         return X.sum(dim=1)
 
 
+def test_pca_correctly_initialized_with_exp_var():
+    e = DummyEmbedding(exp_var=False)
+    assert e.pca is None
+    assert not e.exp_var
+
+    e = DummyEmbedding(exp_var=0.5)
+    assert isinstance(e.pca, TensorPCA)
+    assert e.exp_var == 0.5
+
+
 def test_setup_path_creates_dir_and_returns_path(tmp_path):
     outdir = tmp_path / "subdir"
     path = EmbeddingScore._setup_path(outdir=outdir, prefix="myprefix")

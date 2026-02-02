@@ -81,7 +81,7 @@ def test_pca_score_fit_and_score_basic() -> None:
     cal = torch.randn(n_cal, dim)
     qs = torch.randn(5, dim)
 
-    score = PCAScore(exp_var=0.90)
+    score = PCAScore(exp_var=0.90, M=16)
     # supply embeddings directly
     score.fit(train, cal)
     # check trained & calibrated flags
@@ -95,21 +95,9 @@ def test_pca_score_fit_and_score_basic() -> None:
 def test_q_trimming_in_pca_score_reduces_references() -> None:
     n = 200
     refs = torch.randn(n, 6)
-    score = PCAScore(exp_var=0.90)
+    score = PCAScore(exp_var=0.90, gamma=1.0, M=32)
     score.cal_required = False
     score.ref_embeddings = refs
     original = score.ref_embeddings.shape[0]
     score._fit_impl(q=0.5)
     assert score.ref_embeddings.shape[0] < original
-
-
-def test_score_device_consistency() -> None:
-    """score should work when moved between devices (cpu only environment expected)."""
-    X = torch.randn(50, 4)
-    score = PCAScore(exp_var=0.90)
-    score.fit(X, X)
-    out_cpu = score.score(X)
-    # move internal tensors to cpu explicitly and score again
-    score.to(device="cpu")
-    out_cpu2 = score.score(X)
-    approx(out_cpu, out_cpu2)

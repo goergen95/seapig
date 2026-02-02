@@ -1,9 +1,12 @@
 """Utilities accessed by several modules."""
 
+from typing import final
+
 import torch
 
 
-class TensorPCA:
+@final
+class TensorPCA(torch.nn.Module):
     """Tensor based PCA with L2 normalized inputs.
 
     See https://arxiv.org/pdf/2505.15284.
@@ -14,28 +17,28 @@ class TensorPCA:
     u: torch.Tensor
     s: torch.Tensor
     s_acc: torch.Tensor
-    q: int
     u_q: torch.Tensor
     u_q_dot: torch.Tensor
+    q: int = 1
 
     def __init__(
         self,
         exp_var: float = 0.90,
-        gamma: int | None = None,
+        gamma: float | None = None,
         M: int | None = None,
     ):
-        self.exp_var = exp_var
+        super().__init__()
+        assert exp_var > 0.0 and exp_var <= 1.0
+        self.exp_var: float = exp_var
         self.gamma = gamma
         self.M = M
 
-    def to(self, device: str | torch.device = "cpu") -> None:
-        """Put all tensors to the specified device."""
-        self.mu = self.mu.to(device=device)
-        self.u = self.u.to(device=device)
-        self.s = self.s.to(device=device)
-        self.s_acc = self.s_acc.to(device=device)
-        self.u_q = self.u_q.to(device=device)
-        self.u_q_dot = self.u_q_dot.to(device=device)
+        self.register_buffer("mu", torch.tensor([]))
+        self.register_buffer("u", torch.tensor([]))
+        self.register_buffer("s", torch.tensor([]))
+        self.register_buffer("s_acc", torch.tensor([]))
+        self.register_buffer("u_q", torch.tensor([]))
+        self.register_buffer("u_q_dot", torch.tensor([]))
 
     @staticmethod
     def _l2_normalize(X: torch.Tensor) -> torch.Tensor:
@@ -68,6 +71,7 @@ class TensorPCA:
 
     def fit(self, X: torch.Tensor, Y: None = None) -> None:
         """Fitting the PCA based on an input tensor."""
+        assert X is not None
         X = self._l2_normalize(X)
         X = self._rff(X, gamma=self.gamma, M=self.M)
         self.mu = X.mean(dim=0)
@@ -86,6 +90,7 @@ class TensorPCA:
 
     def predict(self, X: torch.Tensor) -> torch.Tensor:
         """Reduce an input to its principal components."""
+        assert isinstance(X, torch.Tensor)
         X = self._preprocess(X)
         X = X @ self.u_q
         return X

@@ -6,7 +6,7 @@ from typing import Any, override
 import torch
 
 
-class ConfidenceScore(ABC):
+class ConfidenceScore(torch.nn.Module, ABC):
     """Abstract Base Class for Confidence Scores.
 
     Confidence scores quantify the deviation of query samples from the training
@@ -42,12 +42,14 @@ class ConfidenceScore(ABC):
     train_required: bool = False
     calibrated: bool = False
     cal_required: bool = False
-    scores: torch.Tensor | None = None
-    threshold: torch.Tensor | None = None
+    scores: torch.Tensor | None
+    threshold: torch.Tensor | None
     ident: str
 
     def __init__(self) -> None:
-        return
+        super().__init__()
+        self.register_buffer("threshold", None)
+        self.register_buffer("scores", None, persistent=False)
 
     def requires_training(self) -> bool:
         """Return boolean indicating if the score requires training."""
@@ -78,28 +80,17 @@ class ConfidenceScore(ABC):
         return self.threshold
 
     @abstractmethod
-    def to(self, device: str | torch.device = "cpu") -> None:
-        """Move all tensors to the specified device."""
-        pass
-
-    @staticmethod
-    def _to(
-        tensor: torch.Tensor | None, device: str | torch.device = "cpu"
-    ) -> torch.Tensor | None:
-        if tensor is None:
-            return None
-        return tensor.to(device=device)
-
-    @abstractmethod
     def set_threshold(self, q: float = 0.99) -> None:
         """Set a threshold based on a specific quantile on the available scores.
-        
+
         Samples with scores higher than this threshold are excluded from prediction.
         """
         pass
 
     @abstractmethod
-    def fit(self, X: Any, Y: Any | None, *args: Any, **kwargs: Any) -> None:
+    def fit(
+        self, X: torch.Tensor, Y: torch.Tensor | None, *args: Any, **kwargs: Any
+    ) -> None:
         """Fit a confidence score.
 
         Here, `X` is used as training samples to fit the downstream method,
@@ -111,7 +102,7 @@ class ConfidenceScore(ABC):
     @abstractmethod
     def score(self, X: torch.Tensor, *args: Any, **kwargs: Any) -> torch.Tensor:
         """Calculate the confidence score for a tensor of samples.
-        
+
         Returns scores where low values indicate likely inliers and high values
         indicate likely outliers.
         """
@@ -122,7 +113,7 @@ class ConfidenceScore(ABC):
         self, X: torch.Tensor, *args: Any, **kwargs: Any
     ) -> dict[str, torch.Tensor]:
         """Select samples for prediction based on their confidence score.
-        
+
         Samples with scores lower than the threshold are selected for prediction,
         while samples with scores higher than the threshold are excluded.
         """
@@ -149,12 +140,11 @@ class RandomScore(ConfidenceScore):
 
     train_required: bool = False
     cal_required: bool = False
-    threshold: torch.Tensor | None = torch.Tensor([0.099])
-    ident = "random"
+    threshold: torch.Tensor | None = torch.Tensor([0.99])
+    ident: str = "random"
 
-    @override
-    def to(self, device: str | torch.device = "cpu") -> None:
-        self.threshold = self._to(self.threshold, device=device)
+    def __init__(self) -> None:
+        super().__init__()
 
     @override
     def fit(

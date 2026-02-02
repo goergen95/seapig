@@ -42,22 +42,20 @@ class KNNScore(EmbeddingScore, ABC):
     """
 
     k: int = 1
-    train_required: bool = True
-    cal_required: bool = True
-    cal_embeddings: torch.Tensor | None = None
-    threshold: torch.Tensor | None = None
-    scores: torch.Tensor | None = None
-    index: faiss.IndexFlatL2 | None = None
+    index: faiss.Index | None = None
+    ref_embeddings: torch.Tensor
+    cal_embeddings: torch.Tensor | None
 
     def __init__(
         self, k: int = 1, stat: str = "max", exp_var: float | bool = False
     ) -> None:
-        super().__init__()
+        super().__init__(exp_var=exp_var)
         assert stat in ["max", "mean", "median", "min"]
-        self.stat = stat
+        self.stat: str = stat
         self.k = k
-        self.exp_var = exp_var
-        self.ident = f"{self.ident}-k{self.k}-{'full' if exp_var else 'pca'}"
+        self.ident: str = (
+            f"{self.ident}-k{self.k}-{'full' if exp_var else 'pca'}"
+        )
 
     @override
     def fit(
@@ -139,7 +137,7 @@ class KNNScore(EmbeddingScore, ABC):
     def _fit_impl(self, q: float | None = None) -> None:
         """Fit implementation."""
         assert self.ref_embeddings is not None
-        self.to(device=self.ref_embeddings.device)
+        self = self.to(device=self.ref_embeddings.device)
         if self.cal_required:
             assert self.cal_embeddings is not None
 
@@ -253,7 +251,7 @@ class EuclideanScore(KNNScore):
     """
 
     k: int
-    ident = "euclidean"
+    ident: str = "euclidean"
 
     def __init__(
         self, k: int = 1, stat: str = "max", exp_var: float | bool = False
@@ -287,6 +285,7 @@ class CosineScore(KNNScore):
     The cosine distance is calculated as (1 - cosine_similarity), with a range
     of [0, 2] where 0 indicates identical vectors, 1 indicates orthogonal
     vectors, and 2 indicates opposite vectors.
+
     Parameters
     ----------
     k:
@@ -311,7 +310,7 @@ class CosineScore(KNNScore):
     """
 
     k: int = 1
-    ident = "cosine"
+    ident: str = "cosine"
 
     def __init__(
         self, k: int = 1, stat: str = "max", exp_var: float | bool = False
@@ -346,7 +345,7 @@ class MahalanobisScore(KNNScore):
     Computes Mahalanobis distance-based confidence scores where low scores indicate
     samples similar to the training distribution (likely inliers) and high scores
     indicate samples deviating from the training distribution (likely outliers).
-    
+
     The Mahalanobis distance accounts for correlations in the training data by
     using the covariance matrix of the training embeddings.
 
@@ -375,16 +374,13 @@ class MahalanobisScore(KNNScore):
 
     k: int
     vi_zero: torch.Tensor
-    train_required: bool = True
-    cal_required: bool = True
-    threshold: torch.Tensor | None = None
-    scores: torch.Tensor
-    ident = "mahalanobis"
+    ident: str = "mahalanobis"
 
     def __init__(
         self, k: int = 1, stat: str = "max", exp_var: float | bool = False
     ) -> None:
         super().__init__(k=k, stat=stat, exp_var=exp_var)
+        self.register_buffer("vi_zero", None)
 
     @override
     def _setup_index(self) -> None:
