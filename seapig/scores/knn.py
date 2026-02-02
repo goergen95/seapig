@@ -265,7 +265,6 @@ class EuclideanScore(KNNScore):
         self.index.add(self.ref_embeddings.cpu())
 
     @override
-    @torch.inference_mode()
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
         dist, _ = self.index.search(query.cpu(), k=self.k + kpn)
@@ -325,7 +324,6 @@ class CosineScore(KNNScore):
         return
 
     @override
-    @torch.inference_mode()
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
         query = torch.nn.functional.normalize(query).cpu()
@@ -391,7 +389,6 @@ class MahalanobisScore(KNNScore):
         self.index.add((self.ref_embeddings @ self.vi_zero.T).cpu())
 
     @override
-    @torch.inference_mode()
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
         query = query.cpu() @ self.vi_zero.T.cpu()
