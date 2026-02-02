@@ -65,6 +65,6 @@ jobs:
           else
             pip install mypy
           fi
-
+          
       - name: Run mypy
-        run: mypy .
+        run:  mypy --install-types --non-interactive .

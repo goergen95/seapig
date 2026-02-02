@@ -77,25 +77,25 @@ split-on-trailing-comma = false
 
 [tool.mypy]
 ignore_missing_imports = true
-exclude = "(build|data|dist|tests|docs/.*|images|logo|.*logs|output|requirements|_extensions|_site|env|README_files|typings)/"
+exclude = "(build|data|dist|tests|env|dev|docs)/*"
+disable_error_code = "import-untyped"
 
-# Disallow dynamic typing
-disallow_any_unimported = false  # torch doesn't have type stubs
+# Strict typing
+disallow_any_unimported = false
 disallow_any_expr = false
-disallow_any_decorated = false  # torch decorators are untyped
+disallow_any_decorated = false
 disallow_any_explicit = false
 disallow_any_generics = true
-disallow_subclassing_any = false  # torch.nn.Module is untyped
-
-# Untyped definitions and calls
+disallow_subclassing_any = true
+disallow_incomplete_defs = true
 disallow_untyped_calls = true
 disallow_untyped_defs = true
-disallow_incomplete_defs = true
-disallow_untyped_decorators = false  # torch decorators are untyped
+disallow_untyped_decorators = true
 
 # Configuring warnings
 warn_redundant_casts = true
 warn_unused_ignores = true
+warn_unused_configs = true
 warn_no_return = true
 warn_return_any = true
 warn_unreachable = false
@@ -106,7 +106,3 @@ strict = true
 
 # Configuring error messages
 pretty = true
-
-# Miscellaneous
-warn_unused_configs = true
-
