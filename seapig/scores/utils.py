@@ -33,12 +33,12 @@ class TensorPCA(torch.nn.Module):
         self.gamma = gamma
         self.M = M
 
-        self.register_buffer("mu", torch.tensor([]))
-        self.register_buffer("u", torch.tensor([]))
-        self.register_buffer("s", torch.tensor([]))
-        self.register_buffer("s_acc", torch.tensor([]))
-        self.register_buffer("u_q", torch.tensor([]))
-        self.register_buffer("u_q_dot", torch.tensor([]))
+        self.register_buffer("mu", None)
+        self.register_buffer("u", None)
+        self.register_buffer("s", None)
+        self.register_buffer("s_acc", None)
+        self.register_buffer("u_q", None)
+        self.register_buffer("u_q_dot", None)
 
     @staticmethod
     def _l2_normalize(X: torch.Tensor) -> torch.Tensor:

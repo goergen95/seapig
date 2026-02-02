@@ -56,7 +56,6 @@ class EmbeddingScore(ConfidenceScore, ABC):
         self.exp_var = exp_var
         self.pca = None
         if self.exp_var:
-            print(self.exp_var)
             self.pca = TensorPCA(exp_var=exp_var)
         self.register_buffer("ref_embeddings", None)
         self.register_buffer("cal_embeddings", None, persistent=False)
@@ -283,7 +282,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
             outdir=outdir,
             prefix=prefix,
         )
-        self = self.to(device=self.ref_embeddings.device)
+        self.to(device=self.ref_embeddings.device)
 
     @override
     def set_threshold(self, q: float = 0.99) -> None:

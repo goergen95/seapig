@@ -140,11 +140,11 @@ class RandomScore(ConfidenceScore):
 
     train_required: bool = False
     cal_required: bool = False
-    threshold: torch.Tensor | None = torch.Tensor([0.99])
     ident: str = "random"
 
     def __init__(self) -> None:
         super().__init__()
+        self.set_threshold(q=0.99)
 
     @override
     def fit(

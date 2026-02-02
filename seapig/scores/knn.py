@@ -43,7 +43,6 @@ class KNNScore(EmbeddingScore, ABC):
 
     k: int = 1
     index: faiss.Index | None = None
-    ref_embeddings: torch.Tensor
     cal_embeddings: torch.Tensor | None
 
     def __init__(
@@ -137,7 +136,7 @@ class KNNScore(EmbeddingScore, ABC):
     def _fit_impl(self, q: float | None = None) -> None:
         """Fit implementation."""
         assert self.ref_embeddings is not None
-        self = self.to(device=self.ref_embeddings.device)
+        self.to(device=self.ref_embeddings.device)
         if self.cal_required:
             assert self.cal_embeddings is not None
 

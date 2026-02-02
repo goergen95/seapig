@@ -35,9 +35,10 @@ class PCAScore(EmbeddingScore):
         gamma: float | None = 3.0,
         M: int | None = 4096,
     ) -> None:
-        super().__init__(exp_var=exp_var)
-        self.pca = TensorPCA(exp_var=exp_var, gamma=gamma, M=M)
-        self.ident = f"{self.ident}-{exp_var}"
+        super().__init__(exp_var=False)
+        self.exp_var = exp_var
+        self.pca = TensorPCA(exp_var=self.exp_var, gamma=gamma, M=M)
+        self.ident = f"{self.ident}-{self.exp_var}"
 
     @override
     def fit(

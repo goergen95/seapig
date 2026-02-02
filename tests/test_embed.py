@@ -34,7 +34,7 @@ class DummyEmbedding(EmbeddingScore):
         return X.sum(dim=1)
 
 
-def test_pca_correctly_initialized_with_exp_var():
+def test_pca_correctly_initialized_with_exp_var() -> None:
     e = DummyEmbedding(exp_var=False)
     assert e.pca is None
     assert not e.exp_var
@@ -44,7 +44,7 @@ def test_pca_correctly_initialized_with_exp_var():
     assert e.exp_var == 0.5
 
 
-def test_setup_path_creates_dir_and_returns_path(tmp_path):
+def test_setup_path_creates_dir_and_returns_path(tmp_path) -> None:
     outdir = tmp_path / "subdir"
     path = EmbeddingScore._setup_path(outdir=outdir, prefix="myprefix")
     assert path is not None
@@ -66,7 +66,7 @@ def test_check_model_valid_and_invalid():
         EmbeddingScore._check_model(DummyBadSignature())
 
 
-def test_write_and_load_parquet_roundtrip(tmp_path):
+def test_write_and_load_parquet_roundtrip(tmp_path) -> None:
     x = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
     path = tmp_path / "embs.parquet"
     EmbeddingScore._write_parquet(x, path)
@@ -76,7 +76,7 @@ def test_write_and_load_parquet_roundtrip(tmp_path):
     assert torch.allclose(y, x)
 
 
-def test_embed_errors_and_success():
+def test_embed_errors_and_success() -> None:
     model = DummyModel()
     # dict missing "image" should raise KeyError
     with pytest.raises(KeyError):
@@ -98,7 +98,7 @@ def test_embed_errors_and_success():
     assert out.shape == (2, 2)
 
 
-def test_embed_dl_concatenates_batches():
+def test_embed_dl_concatenates_batches() -> None:
     model = DummyModel()
     # use TensorDataset so DataLoader yields (B,D)
     samples = torch.tensor([[float(i), float(i) + 0.1] for i in range(4)])
@@ -115,7 +115,7 @@ def test_embed_dl_concatenates_batches():
     assert embs.shape[1] == 2
 
 
-def test_embed_from_dict_errors_and_saves(tmp_path):
+def test_embed_from_dict_errors_and_saves(tmp_path) -> None:
     model = DummyModel()
     samples = torch.tensor([[1.0, 2.0]])
     dataset = TensorDataset(samples)
@@ -150,14 +150,14 @@ def test_embed_from_dict_errors_and_saves(tmp_path):
     assert expected.exists()
 
 
-def test_fit_pca_sets_pca_and_device():
+def test_fit_pca_sets_pca_and_device() -> None:
     e = DummyEmbedding(exp_var=0.5)
     e.ref_embeddings = torch.randn(10, 5)
     e._fit_pca()
     assert isinstance(e.pca, TensorPCA) or e.pca is not None
 
 
-def test_set_threshold_and_select_behavior():
+def test_set_threshold_and_select_behavior() -> None:
     e = DummyEmbedding()
     # avoid train/cal checks
     e.train_required = False
@@ -197,7 +197,7 @@ class MinimalEmbedding(EmbeddingScore):
         return X.sum(dim=1)
 
 
-def test_fit_dl_model_without_embed_raises(tmp_path):
+def test_fit_dl_model_without_embed_raises(tmp_path) -> None:
     class NoEmbedModel(torch.nn.Module):
         pass
 
@@ -211,7 +211,7 @@ def test_fit_dl_model_without_embed_raises(tmp_path):
         s.fit_dl(model=NoEmbedModel(), loaders=loaders)
 
 
-def test_score_dl_writes_and_returns_tensor(tmp_path):
+def test_score_dl_writes_and_returns_tensor(tmp_path) -> None:
     class IdentityModel(torch.nn.Module):
         def embed(self, x):
             if isinstance(x, dict):
@@ -238,7 +238,7 @@ def test_score_dl_writes_and_returns_tensor(tmp_path):
     assert (tmp_path / "pfx.parquet").exists()
 
 
-def test_select_dl_respects_threshold(tmp_path):
+def test_select_dl_respects_threshold(tmp_path) -> None:
     class IdentityModel(torch.nn.Module):
         def embed(self, x):
             if isinstance(x, dict):
