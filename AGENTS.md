@@ -64,7 +64,7 @@ seapig/
 ├── pyproject.toml            # Project metadata and tool configuration
 ├── Makefile                  # Development automation commands
 ├── README.qmd                # Quarto markdown source for README
-└── LICENSE                   # Apache 2.0 license
+└── LICENSE                   # MIT license
 ```
 
 ### Key Modules
@@ -654,7 +654,7 @@ make clean                        # Clean build artifacts
 
 - **Documentation**: Built via Quarto and deployed to GitHub Pages
 - **Issues**: GitHub issue tracker
-- **License**: Apache 2.0
+- **License**: MIT
 - **Python Version**: >=3.12
 
 ---

@@ -4,6 +4,9 @@ format: gfm
 title: 'seapig <img src="docs/assets/logo.png" align="right" height="138" />'
 ---
 
+[![codecov](https://codecov.io/gh/goergen95/seapig/graph/badge.svg?token=3T1UC49MYS)](https://codecov.io/gh/goergen95/seapig)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 seapig provides confidence-based selective inference for deep learning
 predictions by analysing latent-space embeddings. The library implements a set
 of lightweight, composable confidence scores that decide whether to accept or

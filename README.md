@@ -1,6 +1,10 @@
 # seapig <img src="docs/assets/logo.png" align="right" height="138" />
 
 
+[![codecov](https://codecov.io/gh/goergen95/seapig/graph/badge.svg?token=3T1UC49MYS)](https://codecov.io/gh/goergen95/seapig)
+[![License:
+MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 seapig provides confidence-based selective inference for deep learning
 predictions by analysing latent-space embeddings. The library implements
 a set of lightweight, composable confidence scores that decide whether
@@ -73,11 +77,13 @@ out = score.select_dl(model=model, loader=test_loader)
 out
 ```
 
-    Embedding 1 batches:   0%|          | 0/1 [00:00<?, ?batches/s]Embedding 1 batches: 100%|██████████| 1/1 [00:00<00:00, 19.46batches/s]
-    Embedding 1 batches:   0%|          | 0/1 [00:00<?, ?batches/s]Embedding 1 batches: 100%|██████████| 1/1 [00:00<00:00, 844.43batches/s]
-    Embedding 2 batches:   0%|          | 0/2 [00:00<?, ?batches/s]Embedding 2 batches: 100%|██████████| 2/2 [00:00<00:00, 883.85batches/s]
+    Embedding 1 batches:   0%|          | 0/1 [00:00<?, ?batches/s]Embedding 1 batches: 100%|██████████| 1/1 [00:00<00:00, 1450.81batches/s]
 
-    {'score': tensor([0.1252, 1.9164]), 'selected': tensor([False, False])}
+    Confidence score does not require calibration.
+
+    Embedding 2 batches:   0%|          | 0/2 [00:00<?, ?batches/s]Embedding 2 batches: 100%|██████████| 2/2 [00:00<00:00, 6359.82batches/s]
+
+    {'score': tensor([0.0277, 2.8308]), 'selected': tensor([ True, False])}
 
 Available scores
 
