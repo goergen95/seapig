@@ -6,3 +6,4 @@ mypy
 types-tqdm
 pytest-cov
 torchgeo
+pandas-stubs

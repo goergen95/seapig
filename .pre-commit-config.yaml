@@ -1,23 +1,21 @@
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.3.7
-    hooks:
-        - id: ruff
-          types_or:
-            - python
-            - jupyter
-          args:
-            - --fix
-        - id: ruff-format
-          types_or:
-            - python
-            - jupyter
-
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.10.0
+  - repo: local
     hooks:
       - id: mypy
-        types: [python]
-        args:
-          - --install-types
-          - --non-interactive
+        name: mypy
+        entry: mypy
+        language: system
+        args: ["--config-file", "pyproject.toml", "."]
+        types_or: [python]
+        verbose: true
+        pass_filenames: false
+      - id: ruff-check
+        name: ruff-check
+        entry: ruff check --force-exclude
+        language: system
+        types_or: [python]
+      - id: ruff-format
+        name: ruff-format
+        entry: ruff format --force-exclude
+        language: system
+        types_or: [python]
