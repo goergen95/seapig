@@ -6,7 +6,7 @@ import torch
 
 
 @final
-class TensorPCA(torch.nn.Module):
+class TensorPCA(torch.nn.Module):  # type: ignore[misc]
     """Tensor based PCA with L2 normalized inputs.
 
     See https://arxiv.org/pdf/2505.15284.

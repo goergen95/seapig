@@ -5,7 +5,7 @@ import torch
 from seapig.scores.base import ConfidenceScore
 
 
-class SelectiveModel(torch.nn.Module):
+class SelectiveModel(torch.nn.Module):  # type: ignore[misc]
     """Wrap a model to apply selection during inference."""
 
     model: torch.nn.Module

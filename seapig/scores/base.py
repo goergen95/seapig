@@ -6,7 +6,7 @@ from typing import Any, override
 import torch
 
 
-class ConfidenceScore(torch.nn.Module, ABC):
+class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
     """Abstract Base Class for Confidence Scores.
 
     Confidence scores quantify the deviation of query samples from the training
