@@ -7,6 +7,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from seapig.scores.embed import EmbeddingScore
+from seapig.scores.utils import TensorPCA
 
 
 class PCAScore(EmbeddingScore):
@@ -34,15 +35,17 @@ class PCAScore(EmbeddingScore):
         gamma: float | None = 3.0,
         M: int | None = 4096,
     ) -> None:
-        super().__init__()
+        super().__init__(exp_var=False)
         self.exp_var = exp_var
-        self.gamma = gamma
-        self.M = M
-        self.ident = f"{self.ident}-{exp_var}"
+        self.pca = TensorPCA(exp_var=self.exp_var, gamma=gamma, M=M)
+        self.ident = f"{self.ident}-{self.exp_var}"
 
     @override
     def fit(
-        self, X: torch.Tensor, Y: torch.Tensor | None, q: bool | float = False
+        self,
+        X: torch.Tensor,
+        Y: torch.Tensor | None = None,
+        q: bool | float = False,
     ) -> None:
         """Train a confidence score based on sample embeddings.
 
@@ -70,7 +73,6 @@ class PCAScore(EmbeddingScore):
             remove outliers from the training distribution. Defaults to `False`.
         """
         super().fit(X=X, Y=Y)
-        self._fit_pca()
         self._fit_impl(q=q)
 
     @override
@@ -169,5 +171,5 @@ class PCAScore(EmbeddingScore):
         """
         assert self.pca is not None
         self.to(device=X.device)
-        _, score = self.pca.reconstruct(X)
-        return score
+        _, error = self.pca.reconstruct(X)
+        return error

@@ -48,26 +48,17 @@ class EmbeddingScore(ConfidenceScore, ABC):
     ref_embeddings: torch.Tensor | None
     cal_embeddings: torch.Tensor | None
     train_required: bool = True
-    cal_required: bool = True
-    scores: torch.Tensor | None
-    pca: TensorPCA | None = None
+    pca: TensorPCA | None
+    exp_var: float | bool
 
     def __init__(self, exp_var: float | bool = False) -> None:
         super().__init__()
-        self.ref_embeddings = None
-        self.cal_embeddings = None
-        self.scores = None
         self.exp_var = exp_var
-
-    def to(self, device: str | torch.device = "cpu") -> None:
-        """Put all tensors to the specified device."""
-        self.ref_embeddings = self._to(self.ref_embeddings, device=device)
-        self.cal_embeddings = self._to(self.cal_embeddings, device=device)
-        self.scores = self._to(self.scores, device=device)
-        self.threshold = self._to(self.threshold, device=device)
-        self.cal_embeddings = self._to(self.cal_embeddings, device=device)
-        if self.pca is not None:
-            self.pca.to(device=device)
+        self.pca = None
+        if self.exp_var:
+            self.pca = TensorPCA(exp_var=exp_var)
+        self.register_buffer("ref_embeddings", None)
+        self.register_buffer("cal_embeddings", None, persistent=False)
 
     @staticmethod
     def _setup_path(
@@ -196,10 +187,11 @@ class EmbeddingScore(ConfidenceScore, ABC):
         return embs
 
     def _fit_pca(self) -> None:
+        if not self.exp_var:
+            return
         assert self.ref_embeddings is not None
-        self.pca = TensorPCA(exp_var=self.exp_var)
+        assert isinstance(self.pca, TensorPCA)
         self.pca.fit(self.ref_embeddings)
-        self.pca.to(device=self.ref_embeddings.device)
 
     @override
     def fit(

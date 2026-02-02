@@ -24,7 +24,7 @@ class _MockDetectorRange:
     """Detector that assigns increasing decision_scores_ during fit.
     Useful for q-trimming tests."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.decision_scores_ = None
 
     def fit(self, X: np.ndarray) -> None:
@@ -53,7 +53,9 @@ def test_fit_sets_trained_and_scores_without_cal() -> None:
     assert torch.allclose(score.scores, torch.zeros(3))
 
 
-def test_fit_with_calibration_sets_calibrated_and_scores_from_decision_function() -> None:
+def test_fit_with_calibration_sets_calibrated_and_scores_from_decision_function() -> (
+    None
+):
     """When calibration embeddings are present, final scores should come from
     detector.decision_function and the score should be marked calibrated."""
     refs = torch.tensor([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
@@ -125,16 +127,16 @@ def test_pca_predict_is_applied_before_detector_fit() -> None:
     score.cal_required = False
     score.ref_embeddings = refs.clone()
 
-    class _MockPCA:
+    class _MockPCA(torch.nn.Module):
         def predict(self, X: torch.Tensor) -> torch.Tensor:
             # simple, deterministic transform for the test
             return X * 2.0
 
     # override _fit_pca to attach our mock PCA instance
-    def _attach_pca():
+    def _attach_pca() -> None:
         score.pca = _MockPCA()
 
-    score._fit_pca = _attach_pca
+    score._fit_pca = _attach_pca  # type: ignore [method-assign]
 
     score._fit_impl(q=None)
 
