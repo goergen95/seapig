@@ -33,49 +33,61 @@ Key features include:
   using the *_dl helpers.
 
 
-If you have a trained model that exposes an .embed(x) method and PyTorch
-DataLoaders for train/val/test, you can let seapig extract embeddings on the
-fly. The DataLoader may yield plain tensors or dicts containing an "images"
-key.
+If you have a trained model that inherits from ``torchgeo`` tasks or your own
+lightning module, you can wrap your task in the `SelectiveInferenceTask` wrapper
+and use any of the provided confidence scores for selective inference. Here's a
+minimal example using toy data and a tiny task:
 
 ```{python}
 import torch
-from torch.utils.data import TensorDataset, DataLoader
 from torch import nn
-from seapig import EuclideanScore
+from torch.utils.data import TensorDataset, DataLoader
+from pytorch_lightning import LightningModule
 
-class TinyModel(nn.Module):
-    """Minimal model exposing an `embed(x)` method returning (B, D) tensors."""
-    def __init__(self):
+from seapig.scores.knn import EuclideanScore
+from seapig.model import SelectiveInferenceTask
+
+
+# the task could by any task supplied by torchgeo or your own LightningModule
+class TinyTask(LightningModule):
+    """Minimal LightningModule task exposing `predict(x)`."""
+
+    def __init__(self, num_classes: int = 2) -> None:
         super().__init__()
         self.backbone = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(2, 8),
-            nn.ReLU(),
-            nn.Linear(8, 4),
+            nn.Linear(2, 8), nn.ReLU(), nn.Linear(8, num_classes)
         )
-    def embed(self, x):
-        if isinstance(x, dict):
-            x = x["image"]
-        return self.backbone(x)
+        self.test_metrics = None
 
-# create small datasets (N x 2 features)
+    def predict(self, x: torch.Tensor) -> torch.Tensor:
+        logits = self.backbone(x)
+        return torch.argmax(logits, dim=1)
+
+
+# toy "embedding" datasets (N x 2 features) with labels
 train = torch.tensor([[0.0, 0.0], [1.0, 1.0]], dtype=torch.float32)
 val = torch.tensor([[0.1, 0.0], [0.9, 1.1]], dtype=torch.float32)
-test = torch.tensor([[0.2, 0.1], [10.0, 10.0]], dtype=torch.float32)
+test = torch.tensor([[0.0, 0.1], [10.0, 10.0]], dtype=torch.float32)
+train_y = torch.tensor([0, 1])
+val_y = torch.tensor([0, 1])
+test_y = torch.tensor([0, 1])
 
-# ensure DataLoader returns tensors (not lists) by providing a collate_fn
-collate = lambda b: torch.stack([x[0] if isinstance(x, (list, tuple)) else x for x in b], 0)
-train_loader = DataLoader(TensorDataset(train), batch_size=2, collate_fn=collate)
-val_loader = DataLoader(TensorDataset(val), batch_size=2, collate_fn=collate)
-test_loader = DataLoader(TensorDataset(test), batch_size=1, collate_fn=collate)
+# fit confidence score on embeddings and calibrate a threshold
+score = EuclideanScore(k=1, stat="max")
+score.fit(X=train, Y=val)
+score.set_threshold(q=0.50)
 
-model = TinyModel()
-score = EuclideanScore(k=1, stat="max", exp_var=False)
-score.fit_dl(model=model, loaders={"train": train_loader, "val": val_loader}, outdir=None, prefix=None)
-score.set_threshold(q=0.75)
+# wrap the task with the score; default keys match torchgeo-style batches
+task = TinyTask(num_classes=2)
+wrapper = SelectiveInferenceTask(
+    task=task, score=score, input_key="image", target_key="label"
+)
 
-out = score.select_dl(model=model, loader=test_loader)
+# construct an inference/test batch
+batch = {"image": test, "label": test_y}
+
+# attach selection to predictions, and update/log the metric in test_step
+out = wrapper.predict_step(batch, batch_idx=0)
 out
 ```
 

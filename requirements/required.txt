@@ -8,3 +8,4 @@ tqdm
 pyarrow
 faiss-cpu
 pyod
+lightning

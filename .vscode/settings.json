@@ -1,5 +1,6 @@
 {
     "cSpell.words": [
+        "allclose",
         "autocast",
         "cdist",
         "embs",
@@ -24,6 +25,7 @@
         "pydocstyle",
         "pyod",
         "pytest",
+        "rtol",
         "scikit",
         "sdist",
         "seapig",
