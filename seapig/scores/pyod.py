@@ -8,6 +8,7 @@ from pyod.models.base import BaseDetector
 from torch.utils.data import DataLoader
 
 from seapig.scores.embed import EmbeddingScore
+from seapig.scores.utils import TensorPCA
 
 
 class PyODScore(EmbeddingScore):
@@ -21,10 +22,11 @@ class PyODScore(EmbeddingScore):
     ----------
     detector:
         An `BaseDetector` instance from PyOD.
-    exp_var:
-        A `float` indicating the percentage of explained variance to retain
-        if dimensionality reduction via PCA shall be applied. Defaults to `False`,
-        indicating that dimensionality reduction is not applied.
+    pca:
+        A `TensorPCA` instance or `None`. If provided, this `TensorPCA` object will
+        be used to perform dimensionality reduction on embeddings prior to
+        scoring (for example, to retain a specified explained variance).
+        Defaults to `None`, indicating that dimensionality reduction is not applied.
 
     Attributes
     ----------
@@ -45,9 +47,9 @@ class PyODScore(EmbeddingScore):
     ident: str = "pyod"
 
     def __init__(
-        self, detector: BaseDetector, exp_var: float | bool = False
+        self, detector: BaseDetector, pca: TensorPCA | None = None
     ) -> None:
-        super().__init__(exp_var=exp_var)
+        super().__init__(pca=pca)
         self.detector = detector
         self.ident = f"{self.ident}-{detector.__class__.__name__}"
 
@@ -133,9 +135,8 @@ class PyODScore(EmbeddingScore):
 
         # TODO: serialize detector to disk to avoid refitting and ensure deterministic results
 
-        if self.exp_var:
+        if self.pca is not None:
             self._fit_pca()
-            assert self.pca is not None
             self.ref_embeddings = self.pca.predict(self.ref_embeddings)
             if self.cal_embeddings is not None:
                 self.cal_embeddings = self.pca.predict(self.cal_embeddings)

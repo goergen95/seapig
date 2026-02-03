@@ -11,6 +11,7 @@ import pytest
 import torch
 
 from seapig.scores.knn import CosineScore, EuclideanScore, MahalanobisScore
+from seapig.scores.utils import TensorPCA
 
 
 def approx(t1: torch.Tensor, t2: torch.Tensor, tol: float = 1e-6) -> None:
@@ -152,11 +153,11 @@ def test_setup_index_creates_faiss_index_types() -> None:
     assert m.index is not None
 
 
-def test_exp_var_reduces_dimension_and_preserves_euclidean() -> None:
-    """Ensure exp_var triggers PCA dimensionality reduction and preserves distances.
+def test_pca_reduces_dimension_and_preserves_euclidean() -> None:
+    """Ensure PCA triggers dimensionality reduction and preserves distances.
 
     We build reference embeddings that lie (mostly) on a single latent direction
-    in a higher-dimensional space. Setting exp_var should reduce the stored
+    in a higher-dimensional space. Setting pca should reduce the stored
     reference embeddings' dimensionality. We also verify that a score computed
     with PCA enabled equals the score computed after manually applying the
     learned projection and using a score with PCA disabled.
@@ -170,7 +171,7 @@ def test_exp_var_reduces_dimension_and_preserves_euclidean() -> None:
 
     q = torch.randn(1, D)
 
-    s_pca = EuclideanScore(k=1, exp_var=0.90)
+    s_pca = EuclideanScore(k=1, pca=TensorPCA(exp_var=0.90))
     s_pca.cal_required = False
     s_pca.ref_embeddings = refs.float()
     s_pca._fit_impl(q=None)
@@ -180,7 +181,7 @@ def test_exp_var_reduces_dimension_and_preserves_euclidean() -> None:
     assert reduced_dim < original_dim
 
     # build a second score that uses the already-projected embeddings
-    s_proj = EuclideanScore(k=1, exp_var=False)
+    s_proj = EuclideanScore(k=1, pca=None)
     s_proj.ref_embeddings = s_pca.ref_embeddings.clone()
     s_proj._setup_index()
 
@@ -193,7 +194,7 @@ def test_exp_var_reduces_dimension_and_preserves_euclidean() -> None:
     approx(out_with_pca, out_manual)
 
 
-def test_exp_var_preserves_cosine_similarity() -> None:
+def test_pca_preserves_cosine_similarity() -> None:
     """Same check for cosine-based scores."""
     torch.manual_seed(1)
     n, D = 40, 8
@@ -203,7 +204,7 @@ def test_exp_var_preserves_cosine_similarity() -> None:
 
     q = torch.randn(1, D)
 
-    s_pca = CosineScore(k=2, exp_var=0.95)
+    s_pca = CosineScore(k=2, pca=TensorPCA(exp_var=0.95))
     s_pca.cal_required = False
     s_pca.ref_embeddings = refs.float()
     s_pca._fit_impl(q=None)
@@ -211,7 +212,7 @@ def test_exp_var_preserves_cosine_similarity() -> None:
     reduced_dim = s_pca.ref_embeddings.shape[1]
     assert reduced_dim < D
 
-    s_proj = CosineScore(k=2, exp_var=False)
+    s_proj = CosineScore(k=2, pca=None)
     s_proj.ref_embeddings = s_pca.ref_embeddings.clone()
     s_proj._setup_index()
 

@@ -26,22 +26,20 @@ class DummyBadSignature(torch.nn.Module):
 
 
 class DummyEmbedding(EmbeddingScore):
-    def __init__(self, exp_var=False):
-        super().__init__(exp_var=exp_var)
+    def __init__(self, pca=None):
+        super().__init__(pca=pca)
 
     def score(self, X: torch.Tensor) -> torch.Tensor:
         # simple deterministic score: sum over features per row
         return X.sum(dim=1)
 
 
-def test_pca_correctly_initialized_with_exp_var() -> None:
-    e = DummyEmbedding(exp_var=False)
+def test_pca_correctly_initialized() -> None:
+    e = DummyEmbedding(pca=None)
     assert e.pca is None
-    assert not e.exp_var
 
-    e = DummyEmbedding(exp_var=0.5)
+    e = DummyEmbedding(TensorPCA(exp_var=0.5))
     assert isinstance(e.pca, TensorPCA)
-    assert e.exp_var == 0.5
 
 
 def test_setup_path_creates_dir_and_returns_path(tmp_path) -> None:
@@ -151,10 +149,10 @@ def test_embed_from_dict_errors_and_saves(tmp_path) -> None:
 
 
 def test_fit_pca_sets_pca_and_device() -> None:
-    e = DummyEmbedding(exp_var=0.5)
+    e = DummyEmbedding(pca=TensorPCA(exp_var=0.5))
     e.ref_embeddings = torch.randn(10, 5)
     e._fit_pca()
-    assert isinstance(e.pca, TensorPCA) or e.pca is not None
+    assert isinstance(e.pca, TensorPCA)
 
 
 def test_set_threshold_and_select_behavior() -> None:

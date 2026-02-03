@@ -81,7 +81,7 @@ def test_pca_score_fit_and_score_basic() -> None:
     cal = torch.randn(n_cal, dim)
     qs = torch.randn(5, dim)
 
-    score = PCAScore(exp_var=0.90, M=16)
+    score = PCAScore(pca=TensorPCA(exp_var=0.90, M=16))
     # supply embeddings directly
     score.fit(train, cal)
     # check trained & calibrated flags
@@ -95,7 +95,7 @@ def test_pca_score_fit_and_score_basic() -> None:
 def test_q_trimming_in_pca_score_reduces_references() -> None:
     n = 200
     refs = torch.randn(n, 6)
-    score = PCAScore(exp_var=0.90, gamma=1.0, M=32)
+    score = PCAScore(pca=TensorPCA(exp_var=0.90, gamma=1.0, M=32))
     score.cal_required = False
     score.ref_embeddings = refs
     original = score.ref_embeddings.shape[0]

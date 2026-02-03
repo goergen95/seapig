@@ -21,24 +21,19 @@ class PCAScore(EmbeddingScore):
 
     Parameters
     ----------
-    exp_var:
-        A `float` indicating the explained variance to keep when PCA-based
-        dimensionality reduction shall be applied. Defaults to `False`, meaning
-        that no dimensionality reduction will be conducted.
+    pca:
+        A `TensorPCA` instance or `None`. If provided, this `TensorPCA` object will
+        be used to perform dimensionality reduction on embeddings prior to
+        scoring (for example, to retain a specified explained variance).
+        Defaults to `None`, indicating that dimensionality reduction is not applied.
     """
 
     ident = "pca"
 
     def __init__(
-        self,
-        exp_var: float = 0.50,
-        gamma: float | None = 3.0,
-        M: int | None = 4096,
+        self, pca: TensorPCA = TensorPCA(exp_var=0.50, gamma=3.0, M=4096)
     ) -> None:
-        super().__init__(exp_var=False)
-        self.exp_var = exp_var
-        self.pca = TensorPCA(exp_var=self.exp_var, gamma=gamma, M=M)
-        self.ident = f"{self.ident}-{self.exp_var}"
+        super().__init__(pca=pca)
 
     @override
     def fit(
@@ -129,8 +124,8 @@ class PCAScore(EmbeddingScore):
 
         if q:
             assert (q >= 0.0) & (q <= 1.0)
-            self._fit_pca()
             assert self.pca is not None
+            self._fit_pca()
             _, scores = self.pca.reconstruct(self.ref_embeddings)
             threshold = torch.quantile(scores.float(), q=q)
             index = scores < threshold
