@@ -31,59 +31,77 @@ Key features include:
 - Embeddings can be saved to / loaded from disk with outdir and prefix
   when using the \*\_dl helpers.
 
-If you have a trained model that exposes an .embed(x) method and PyTorch
-DataLoaders for train/val/test, you can let seapig extract embeddings on
-the fly. The DataLoader may yield plain tensors or dicts containing an
-“images” key.
+If you have a trained model that inherits from `torchgeo` tasks or your
+own lightning module, you can wrap your task in the
+`SelectiveInferenceTask` wrapper and use any of the provided confidence
+scores for selective inference. Here’s a minimal example using toy data
+and a tiny task:
 
 ``` python
 import torch
-from torch.utils.data import TensorDataset, DataLoader
 from torch import nn
-from seapig import EuclideanScore
+from torch.utils.data import TensorDataset, DataLoader
+from pytorch_lightning import LightningModule
+from torchmetrics import Accuracy, MetricCollection
 
-class TinyModel(nn.Module):
-    """Minimal model exposing an `embed(x)` method returning (B, D) tensors."""
-    def __init__(self):
+from seapig.scores.knn import EuclideanScore
+from seapig.model import SelectiveInferenceTask
+from seapig.metric import SelectiveMetric
+
+
+# Define a minimal LightningModule task
+class TinyTask(LightningModule):
+    """Minimal LightningModule task exposing `predict(x)`."""
+
+    def __init__(self, num_classes: int = 2) -> None:
         super().__init__()
         self.backbone = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(2, 8),
-            nn.ReLU(),
-            nn.Linear(8, 4),
+            nn.Linear(2, 8), nn.ReLU(), nn.Linear(8, num_classes)
         )
-    def embed(self, x):
-        if isinstance(x, dict):
-            x = x["image"]
-        return self.backbone(x)
+        self.test_metrics = MetricCollection(
+            {"accuracy": Accuracy(task="binary")}
+        )
 
-# create small datasets (N x 2 features)
+    def predict(self, x: torch.Tensor) -> torch.Tensor:
+        logits = self.backbone(x)
+        return torch.argmax(logits, dim=1)
+
+
+# Toy "embedding" datasets (N x 2 features) with labels
 train = torch.tensor([[0.0, 0.0], [1.0, 1.0]], dtype=torch.float32)
 val = torch.tensor([[0.1, 0.0], [0.9, 1.1]], dtype=torch.float32)
-test = torch.tensor([[0.2, 0.1], [10.0, 10.0]], dtype=torch.float32)
+test = torch.tensor([[0.0, 0.1], [10.0, 10.0]], dtype=torch.float32)
+train_y = torch.tensor([0, 1])
+val_y = torch.tensor([0, 1])
+test_y = torch.tensor([0, 1])
 
-# ensure DataLoader returns tensors (not lists) by providing a collate_fn
-collate = lambda b: torch.stack([x[0] if isinstance(x, (list, tuple)) else x for x in b], 0)
-train_loader = DataLoader(TensorDataset(train), batch_size=2, collate_fn=collate)
-val_loader = DataLoader(TensorDataset(val), batch_size=2, collate_fn=collate)
-test_loader = DataLoader(TensorDataset(test), batch_size=1, collate_fn=collate)
+# Fit confidence score on embeddings and calibrate a threshold
+score = EuclideanScore(k=1, stat="max")
+score.fit(X=train, Y=val)
+score.set_threshold(q=0.50)
 
-model = TinyModel()
-score = EuclideanScore(k=1, stat="max", exp_var=False)
-score.fit_dl(model=model, loaders={"train": train_loader, "val": val_loader}, outdir=None, prefix=None)
-score.set_threshold(q=0.75)
+# Wrap the task with the score; default keys match torchgeo-style batches
+task = TinyTask(num_classes=2)
+wrapper = SelectiveInferenceTask(
+    task=task, score=score, input_key="image", target_key="label"
+)
 
-out = score.select_dl(model=model, loader=test_loader)
-out
+# Construct an inference/test batch
+batch = {"image": test, "label": test_y}
+
+# Attach selection to predictions, and update/log the metric in test_step
+out = wrapper.predict_step(batch, batch_idx=0)
+
+# Evaluate selective performance using SelectiveMetric
+metrics = MetricCollection({"accuracy": Accuracy(task="binary")})
+selective_metric = SelectiveMetric(metrics)
+selective_metric.update(out, test_y)
+results = selective_metric.compute()
+
+print("Selective evaluation results:", results)
 ```
 
-    Embedding 1 batches:   0%|          | 0/1 [00:00<?, ?batches/s]Embedding 1 batches: 100%|██████████| 1/1 [00:00<00:00, 1450.81batches/s]
-
-    Confidence score does not require calibration.
-
-    Embedding 2 batches:   0%|          | 0/2 [00:00<?, ?batches/s]Embedding 2 batches: 100%|██████████| 2/2 [00:00<00:00, 6359.82batches/s]
-
-    {'score': tensor([0.0277, 2.8308]), 'selected': tensor([ True, False])}
+    Selective evaluation results: {'full/accuracy': tensor(0.5000), 'selected/accuracy': tensor(1.)}
 
 Available scores
 
