@@ -90,6 +90,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         df.to_parquet(path, index=False)
 
     @staticmethod
+    @torch.inference_mode()
     def _load_parquet(path: Path) -> torch.Tensor:
         """Read a parquet file to a `torch.Tensor`."""
         df = pd.read_parquet(path)
@@ -114,6 +115,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         return v
 
     @classmethod
+    @torch.inference_mode()
     def _embed(
         self, X: torch.Tensor | dict[str, torch.Tensor], model: torch.nn.Module
     ) -> torch.Tensor:
