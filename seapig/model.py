@@ -18,7 +18,7 @@ class SelectiveModel(torch.nn.Module):  # type: ignore[misc]
         self.model = model
         self.csf = confidence_score
 
-    @torch.inference_mode()
+    @torch.inference_mode()  # type: ignore[untyped-decorator]
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         """Implement forward pass with confidence score selection."""
         preds: torch.Tensor | dict[str, torch.Tensor] = self.model(x)
