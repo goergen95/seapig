@@ -154,7 +154,7 @@ class RandomScore(ConfidenceScore):
         pass
 
     @override
-    @torch.inference_mode()
+    @torch.inference_mode()  # type: ignore[untyped-decorator]
     def score(self, X: torch.Tensor) -> torch.Tensor:
         """Compute a confidence score for every sample in a batch.
 
@@ -178,7 +178,7 @@ class RandomScore(ConfidenceScore):
         return torch.rand(X.shape[0])
 
     @override
-    @torch.inference_mode()
+    @torch.inference_mode()  # type: ignore[untyped-decorator]
     def select(self, X: torch.Tensor) -> dict[str, torch.Tensor]:
         """Select samples for prediction based on their confidence score.
 
