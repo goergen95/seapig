@@ -6,6 +6,8 @@ from abc import ABC
 from pathlib import Path
 from typing import Any, Literal, override
 
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader
@@ -422,3 +424,89 @@ class EmbeddingScore(ConfidenceScore, ABC):
         X = self._loadorembed(path, model, loader)
         score = self.score(X)
         return score
+
+    def plot(self, query_embeddings: torch.Tensor | None = None) -> None:
+        """Plot densities for embeddings.
+
+        By default, this method plots densities for `ref_embeddings` and `cal_embeddings` (if available).
+        Optionally, it can also plot densities for `query_embeddings`.
+
+        Parameters
+        ----------
+        query_embeddings:
+            A `torch.Tensor` representing query embeddings to include in the plot. Defaults to `None`.
+        """
+        assert self.ref_embeddings is not None, (
+            "Reference embeddings (ref_embeddings) must be available to plot."
+        )
+
+        # Convert tensors to numpy arrays for plotting
+        ref_data = self.ref_embeddings.cpu().numpy()
+        cal_data = (
+            self.cal_embeddings.cpu().numpy()
+            if self.cal_embeddings is not None
+            else None
+        )
+        query_data = (
+            query_embeddings.cpu().numpy()
+            if query_embeddings is not None
+            else None
+        )
+
+        # Flatten embeddings for density plotting
+        ref_data = ref_data.flatten()
+        cal_data = cal_data.flatten() if cal_data is not None else None
+        query_data = query_data.flatten() if query_data is not None else None
+
+        # Define a function to compute density
+        def compute_density(
+            data: np.ndarray, bins: int = 100
+        ) -> tuple[np.ndarray, np.ndarray]:
+            density, edges = np.histogram(data, bins=bins, density=True)
+            centers = (edges[:-1] + edges[1:]) / 2
+            return centers, density
+
+        # Initialize the plot
+        plt.figure(figsize=(10, 6))
+
+        # Plot reference embeddings density
+        ref_centers, ref_density = compute_density(ref_data)
+        plt.fill_between(
+            ref_centers,
+            ref_density,
+            alpha=0.5,
+            color="steelblue",
+            label="Reference Embeddings",
+        )
+
+        # Plot calibration embeddings density if available
+        if cal_data is not None:
+            cal_centers, cal_density = compute_density(cal_data)
+            plt.fill_between(
+                cal_centers,
+                cal_density,
+                alpha=0.5,
+                color="skyblue",
+                label="Calibration Embeddings",
+            )
+
+        # Plot query embeddings density if provided
+        if query_data is not None:
+            query_centers, query_density = compute_density(query_data)
+            plt.fill_between(
+                query_centers,
+                query_density,
+                alpha=0.5,
+                color="darkorange",
+                label="Query Embeddings",
+            )
+
+        # Add labels and legend
+        plt.title("Confidence Score Densities")
+        plt.xlabel("Confidence Score")
+        plt.ylabel("Density")
+        plt.legend()
+        plt.grid(True, linestyle="--", alpha=0.6)
+
+        # Show the plot
+        plt.show()
