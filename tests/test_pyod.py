@@ -2,6 +2,7 @@ import numpy as np
 import torch
 
 from seapig.scores.pyod import PyODScore
+from seapig.scores.utils import TensorPCA
 
 
 class _MockDetectorBasic:
@@ -40,7 +41,7 @@ def test_fit_sets_trained_and_scores_without_cal() -> None:
     populate scores from detector.decision_scores_."""
     refs = torch.tensor([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
     det = _MockDetectorBasic(score_on_call=0.1)
-    score = PyODScore(detector=det, exp_var=False)
+    score = PyODScore(detector=det, pca=None)
     score.cal_required = False
     score.ref_embeddings = refs
 
@@ -67,7 +68,7 @@ def test_fit_with_calibration_sets_calibrated_and_scores_from_decision_function(
             return np.arange(X.shape[0]) + 5.0
 
     det = DetCal()
-    score = PyODScore(detector=det, exp_var=False)
+    score = PyODScore(detector=det, pca=None)
     score.ref_embeddings = refs
     score.cal_embeddings = cal
 
@@ -89,7 +90,7 @@ def test_score_uses_detector_decision_function() -> None:
             return X.sum(axis=1)
 
     det = DetFn()
-    score = PyODScore(detector=det, exp_var=False)
+    score = PyODScore(detector=det, pca=None)
     # ensure detector present; no need to call _fit_impl for score()
     q = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
 
@@ -106,7 +107,7 @@ def test_q_trimming_reduces_reference_set() -> None:
     n = 100
     refs = torch.randn(n, 5)
     det = _MockDetectorRange()
-    score = PyODScore(detector=det, exp_var=False)
+    score = PyODScore(detector=det, pca=None)
     score.cal_required = False
     score.ref_embeddings = refs.float()
 
@@ -121,23 +122,10 @@ def test_q_trimming_reduces_reference_set() -> None:
 def test_pca_predict_is_applied_before_detector_fit() -> None:
     """If PCA is configured, _fit_impl should call _fit_pca and replace
     ref_embeddings with the PCA.predict result before fitting the detector."""
-    refs = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+    refs = torch.randn(100, 64)
     det = _MockDetectorBasic()
-    score = PyODScore(detector=det, exp_var=True)
+    score = PyODScore(detector=det, pca=TensorPCA(exp_var=0.90))
     score.cal_required = False
     score.ref_embeddings = refs.clone()
-
-    class _MockPCA(torch.nn.Module):
-        def predict(self, X: torch.Tensor) -> torch.Tensor:
-            # simple, deterministic transform for the test
-            return X * 2.0
-
-    # override _fit_pca to attach our mock PCA instance
-    def _attach_pca() -> None:
-        score.pca = _MockPCA()
-
-    score._fit_pca = _attach_pca  # type: ignore [method-assign]
-
     score._fit_impl(q=None)
-
-    assert torch.allclose(score.ref_embeddings, refs * 2.0)
+    assert score.ref_embeddings.shape[1] < refs.shape[1]

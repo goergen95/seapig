@@ -9,6 +9,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from seapig.scores.embed import EmbeddingScore
+from seapig.scores.utils import TensorPCA
 
 
 class KNNScore(EmbeddingScore, ABC):
@@ -23,10 +24,11 @@ class KNNScore(EmbeddingScore, ABC):
     k:
         An `int`eger indicating the number of neighbors to calculate the distance.
         Defaults to 1, e.g. the distance to the closest neighbor.
-    exp_var:
-        A `float` indicating the percentage of explained variance to retain
-        if dimensionality reduction via PCA shall be applied. Defaults to `False`,
-        indicating that dimensionality reduction is not applied.
+    pca:
+        A `TensorPCA` instance or `None`. If provided, this `TensorPCA` object will
+        be used to perform dimensionality reduction on embeddings prior to
+        scoring (for example, to retain a specified explained variance).
+        Defaults to `None`, indicating that dimensionality reduction is not applied.
 
     Attributes
     ----------
@@ -46,14 +48,14 @@ class KNNScore(EmbeddingScore, ABC):
     cal_embeddings: torch.Tensor | None
 
     def __init__(
-        self, k: int = 1, stat: str = "max", exp_var: float | bool = False
+        self, k: int = 1, stat: str = "max", pca: TensorPCA | None = None
     ) -> None:
-        super().__init__(exp_var=exp_var)
+        super().__init__(pca=pca)
         assert stat in ["max", "mean", "median", "min"]
         self.stat: str = stat
         self.k = k
         self.ident: str = (
-            f"{self.ident}-k{self.k}-{'full' if exp_var else 'pca'}"
+            f"{self.ident}-k{self.k}-{'full' if pca is not None else 'pca'}"
         )
 
     @override
@@ -140,9 +142,8 @@ class KNNScore(EmbeddingScore, ABC):
         if self.cal_required:
             assert self.cal_embeddings is not None
 
-        if self.exp_var:
+        if self.pca is not None:
             self._fit_pca()
-            assert self.pca is not None
             self.ref_embeddings = self.pca.predict(self.ref_embeddings)
             if self.cal_embeddings is not None:
                 self.cal_embeddings = self.pca.predict(self.cal_embeddings)
@@ -231,10 +232,11 @@ class EuclideanScore(KNNScore):
     k:
         An `int`eger indicating the number of neighbors to calculate the distance.
         Defaults to 1, e.g. the distance to the closest neighbor.
-    exp_var:
-        A `float` indicating the percentage of explained variance to retain
-        if dimensionality reduction via PCA shall be applied. Defaults to `False`,
-        indicating that dimensionality reduction is not applied.
+    pca:
+        A `TensorPCA` instance or `None`. If provided, this `TensorPCA` object will
+        be used to perform dimensionality reduction on embeddings prior to
+        scoring (for example, to retain a specified explained variance).
+        Defaults to `None`, indicating that dimensionality reduction is not applied.
 
     Attributes
     ----------
@@ -253,9 +255,9 @@ class EuclideanScore(KNNScore):
     ident: str = "euclidean"
 
     def __init__(
-        self, k: int = 1, stat: str = "max", exp_var: float | bool = False
+        self, k: int = 1, stat: str = "max", pca: TensorPCA | None = None
     ) -> None:
-        super().__init__(k=k, stat=stat, exp_var=exp_var)
+        super().__init__(k=k, stat=stat, pca=pca)
 
     @override
     def _setup_index(self) -> None:
@@ -290,10 +292,11 @@ class CosineScore(KNNScore):
     k:
         An `int`eger indicating the number of neighbors to calculate the distance.
         Defaults to 1, e.g. the distance to the closest neighbor.
-    exp_var:
-        A `float` indicating the percentage of explained variance to retain
-        if dimensionality reduction via PCA shall be applied. Defaults to `False`,
-        indicating that dimensionality reduction is not applied.
+    pca:
+        A `TensorPCA` instance or `None`. If provided, this `TensorPCA` object will
+        be used to perform dimensionality reduction on embeddings prior to
+        scoring (for example, to retain a specified explained variance).
+        Defaults to `None`, indicating that dimensionality reduction is not applied.
 
     Attributes
     ----------
@@ -312,9 +315,9 @@ class CosineScore(KNNScore):
     ident: str = "cosine"
 
     def __init__(
-        self, k: int = 1, stat: str = "max", exp_var: float | bool = False
+        self, k: int = 1, stat: str = "max", pca: TensorPCA | None = None
     ) -> None:
-        super().__init__(k=k, stat=stat, exp_var=exp_var)
+        super().__init__(k=k, stat=stat, pca=pca)
 
     @override
     def _setup_index(self) -> None:
@@ -353,10 +356,11 @@ class MahalanobisScore(KNNScore):
     k:
         An `int`eger indicating the number of neighbors to calculate the distance.
         Defaults to 1, e.g. the distance to the closest neighbor.
-    exp_var:
-        A `float` indicating the percentage of explained variance to retain
-        if dimensionality reduction via PCA shall be applied. Defaults to `False`,
-        indicating that dimensionality reduction is not applied.
+    pca:
+        A `TensorPCA` instance or `None`. If provided, this `TensorPCA` object will
+        be used to perform dimensionality reduction on embeddings prior to
+        scoring (for example, to retain a specified explained variance).
+        Defaults to `None`, indicating that dimensionality reduction is not applied.
 
     Attributes
     ----------
@@ -376,9 +380,9 @@ class MahalanobisScore(KNNScore):
     ident: str = "mahalanobis"
 
     def __init__(
-        self, k: int = 1, stat: str = "max", exp_var: float | bool = False
+        self, k: int = 1, stat: str = "max", pca: TensorPCA | None = None
     ) -> None:
-        super().__init__(k=k, stat=stat, exp_var=exp_var)
+        super().__init__(k=k, stat=stat, pca=pca)
         self.register_buffer("vi_zero", None)
 
     @override

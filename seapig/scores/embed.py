@@ -25,10 +25,11 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
     Parameters
     ----------
-    exp_var:
-        A `float` indicating the percentage of explained variance to retain
-        if dimensionality reduction via PCA shall be applied. Defaults to `False`,
-        indicating that dimensionality reduction is not applied.
+    pca:
+        A `TensorPCA` instance or `None`. If provided, this `TensorPCA` object will
+        be used to perform dimensionality reduction on embeddings prior to
+        scoring (for example, to retain a specified explained variance).
+        Defaults to `None`, indicating that dimensionality reduction is not applied.
 
     Attributes
     ----------
@@ -49,14 +50,10 @@ class EmbeddingScore(ConfidenceScore, ABC):
     cal_embeddings: torch.Tensor | None
     train_required: bool = True
     pca: TensorPCA | None
-    exp_var: float | bool
 
-    def __init__(self, exp_var: float | bool = False) -> None:
+    def __init__(self, pca: TensorPCA | None = None) -> None:
         super().__init__()
-        self.exp_var = exp_var
-        self.pca = None
-        if self.exp_var:
-            self.pca = TensorPCA(exp_var=exp_var)
+        self.pca = pca
         self.register_buffer("ref_embeddings", None)
         self.register_buffer("cal_embeddings", None, persistent=False)
 
@@ -187,8 +184,6 @@ class EmbeddingScore(ConfidenceScore, ABC):
         return embs
 
     def _fit_pca(self) -> None:
-        if not self.exp_var:
-            return
         assert self.ref_embeddings is not None
         assert isinstance(self.pca, TensorPCA)
         self.pca.fit(self.ref_embeddings)
