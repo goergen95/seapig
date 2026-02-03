@@ -43,12 +43,14 @@ import torch
 from torch import nn
 from torch.utils.data import TensorDataset, DataLoader
 from pytorch_lightning import LightningModule
+from torchmetrics import Accuracy, MetricCollection
 
 from seapig.scores.knn import EuclideanScore
 from seapig.model import SelectiveInferenceTask
+from seapig.metric import SelectiveMetric
 
 
-# the task could by any task supplied by torchgeo or your own LightningModule
+# Define a minimal LightningModule task
 class TinyTask(LightningModule):
     """Minimal LightningModule task exposing `predict(x)`."""
 
@@ -57,14 +59,16 @@ class TinyTask(LightningModule):
         self.backbone = nn.Sequential(
             nn.Linear(2, 8), nn.ReLU(), nn.Linear(8, num_classes)
         )
-        self.test_metrics = None
+        self.test_metrics = MetricCollection(
+            {"accuracy": Accuracy(task="binary")}
+        )
 
     def predict(self, x: torch.Tensor) -> torch.Tensor:
         logits = self.backbone(x)
         return torch.argmax(logits, dim=1)
 
 
-# toy "embedding" datasets (N x 2 features) with labels
+# Toy "embedding" datasets (N x 2 features) with labels
 train = torch.tensor([[0.0, 0.0], [1.0, 1.0]], dtype=torch.float32)
 val = torch.tensor([[0.1, 0.0], [0.9, 1.1]], dtype=torch.float32)
 test = torch.tensor([[0.0, 0.1], [10.0, 10.0]], dtype=torch.float32)
@@ -72,23 +76,30 @@ train_y = torch.tensor([0, 1])
 val_y = torch.tensor([0, 1])
 test_y = torch.tensor([0, 1])
 
-# fit confidence score on embeddings and calibrate a threshold
+# Fit confidence score on embeddings and calibrate a threshold
 score = EuclideanScore(k=1, stat="max")
 score.fit(X=train, Y=val)
 score.set_threshold(q=0.50)
 
-# wrap the task with the score; default keys match torchgeo-style batches
+# Wrap the task with the score; default keys match torchgeo-style batches
 task = TinyTask(num_classes=2)
 wrapper = SelectiveInferenceTask(
     task=task, score=score, input_key="image", target_key="label"
 )
 
-# construct an inference/test batch
+# Construct an inference/test batch
 batch = {"image": test, "label": test_y}
 
-# attach selection to predictions, and update/log the metric in test_step
+# Attach selection to predictions, and update/log the metric in test_step
 out = wrapper.predict_step(batch, batch_idx=0)
-out
+
+# Evaluate selective performance using SelectiveMetric
+metrics = MetricCollection({"accuracy": Accuracy(task="binary")})
+selective_metric = SelectiveMetric(metrics)
+selective_metric.update(out, test_y)
+results = selective_metric.compute()
+
+print("Selective evaluation results:", results)
 ```
 
 Available scores

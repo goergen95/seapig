@@ -4,7 +4,7 @@ import torch
 from torchmetrics import Metric, MetricCollection
 
 
-class SelectiveMetric(Metric):
+class SelectiveMetric(Metric):  # type: ignore[misc]
     """Wrap a torchmetrics metric for selective evaluation.
 
     This wrapper keeps two independent instances of an underlying
