@@ -147,3 +147,30 @@ def test_selective_metric_with_metric_collection_output_naming() -> None:
     # Check that all values are scalars
     for value in res.values():
         assert isinstance(value, torch.Tensor) and value.ndim == 0
+
+
+def test_selective_metric_reset() -> None:
+    base = Accuracy(task="binary")
+    sel = SelectiveMetric(base)
+
+    # Update the metric with some data
+    outputs = {
+        "predictions": torch.tensor([0.9, 0.4, 0.6, 0.8]),
+        "selected": torch.tensor([1, 0, 1, 0]),
+    }
+    target = torch.tensor([1, 0, 1, 0])
+    sel.update(outputs, target)
+
+    # Ensure the metric has non-zero state
+    res_before_reset = sel.compute()
+    assert sel._full.fp == torch.tensor(1)
+    assert sel._selected.tp == torch.tensor(2)
+
+    # Reset the metric
+    sel.reset()
+
+    # Compute after reset and ensure the state is cleared
+    res_after_reset = sel.compute()
+    assert sel._full.fp == torch.tensor(0)
+    assert sel._selected.tp == torch.tensor(0)
+    assert res_before_reset == res_after_reset  # returns last cached result
