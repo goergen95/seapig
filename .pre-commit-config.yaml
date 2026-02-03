@@ -19,3 +19,8 @@ repos:
         entry: ruff format --force-exclude
         language: system
         types_or: [python]
+      - id: pytest
+        name: pytest
+        entry: pytest --cov
+        language: system
+        pass_filenames: false
