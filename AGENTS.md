@@ -38,7 +38,8 @@ Developer and Coding Agent Guide for seapig
 seapig/
 ├── seapig/                    # Main package directory
 │   ├── __init__.py           # Package initialization, version, exports
-│   ├── model.py              # SelectiveModel wrapper class
+│   ├── metric.py             # SelectiveMetric wrapper class
+│   ├── model.py              # SelectiveInference wrapper class
 │   └── scores/               # Score implementations
 │       ├── __init__.py
 │       ├── base.py           # Base classes (BaseScore, RandomScore)
@@ -72,7 +73,8 @@ seapig/
 - **`seapig.scores.base.BaseScore`**: Abstract base class defining the score interface (`fit`, `score`, `select`, `set_threshold`)
 - **`seapig.scores.embed.EmbeddingScore`**: Mixin providing `fit_dl`, `score_dl`, `select_dl` methods for DataLoader-based workflows
 - **`seapig.scores.knn.KNNScore`**: Base class for KNN-based distance metrics with FAISS indexing
-- **`seapig.model.SelectiveModel`**: High-level wrapper combining a predictor model with a confidence score
+- **`seapig.model.SelectiveInferenceTask`**: High-level wrapper combining a LightningModule with a confidence score
+- **`seapig.metric.SelectiveMetric`**: A wrapper around torchmetrics Metrics and MetricCollection to return full and selective risk estimates
 
 ---
 

@@ -49,8 +49,19 @@ quartodoc:
     display_name: relative
   sidebar: docs/reference/_sidebar.yml
   sections:
-    - title: Selective Models
+    - title: Selective Inference
       desc: ""
+      contents:
+        - name: SelectiveInferenceTask
+          members:
+            - forward
+            - test_step
+            - predict_step
+        - name: SelectiveMetric
+          members:
+            - update
+            - compute
+            - reset
     - title: Confidence Scores
       desc: ""
       contents:
