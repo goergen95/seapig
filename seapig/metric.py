@@ -109,11 +109,12 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
             out = m.compute()
             if isinstance(out, dict):
                 return {f"{prefix}/{k}": v for k, v in out.items()}
-            return {"full_risk" if prefix == "full" else "selective_risk": out}
+            return {f"{prefix}_risk": out}
 
         total_map = _to_mapping(self._full, "full")
         selected_map = _to_mapping(self._selected, "selected")
-        return {**total_map, **selected_map}
+        rejected_map = _to_mapping(self._rejected, "rejected")
+        return {**total_map, **selected_map, **rejected_map}
 
     def reset(self) -> None:
         """Reset both internal metric instances."""
