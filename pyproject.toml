@@ -39,7 +39,11 @@ version = {attr = "seapig.__version__"}
 suggested = {file = ["requirements/suggested.txt"]}
 dev = { file = ["requirements/dev.txt"] }
 docs = { file = ["requirements/docs.txt"]}
-all = ["seapig[suggested,dev,docs]"]
+all = [
+    ".[suggested]",
+    ".[dev]",
+    ".[docs]",
+]
 
 [tool.setuptools.package-data]
 seapig = ["py.typed"]
