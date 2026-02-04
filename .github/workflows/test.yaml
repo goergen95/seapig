@@ -2,20 +2,8 @@ name: tests
 on:
   push:
     branches: [ main ]
-    paths:
-      - "seapig/**"
-      - "tests/**"
-      - "requirements/**"
-      - "pyproject.toml"
-      - ".github/workflows/test.yaml"
   pull_request:
     branches: [ main ]
-    paths:
-      - "seapig/**"
-      - "tests/**"
-      - "requirements/**"
-      - "pyproject.toml"
-      - ".github/workflows/test.yaml"
 
 jobs:
   test:
