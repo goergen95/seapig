@@ -165,20 +165,25 @@ def test_selective_metric_reset() -> None:
     sel.update(outputs, target)
 
     # Compute to initialize internal states
-    _ = sel.compute()
+    res = sel.compute()
+    # should not raise
+    _ = sel._full.compute()
 
     # Reset the metric
     sel.reset()
 
-    # After reset, compute should return zeros/scalars from a fresh state
-    res_after_reset = sel.compute()
-    assert set(res_after_reset.keys()) == {"full_risk", "selective_risk"}
-    for v in res_after_reset.values():
-        assert isinstance(v, torch.Tensor) and v.ndim == 0
+    # we test if the base metric state was reset
+    with pytest.warns(
+        UserWarning, match="was called before the ``update`` method"
+    ):
+        res = sel._full.compute()
+    assert isinstance(res, torch.Tensor)
+    assert res == 0.0
 
 
-def test_risk_coverage_metric_basic_functionality() -> None:
-    metric = RiskCoverageMetric()
+@pytest.mark.parametrize("risk", ["generalized", "selective"])
+def test_risk_coverage_metric_basic_functionality(risk) -> None:
+    metric = RiskCoverageMetric(risk=risk)
 
     outputs = {
         "predictions": torch.tensor([0.9, 0.4, 0.6, 0.8]),
@@ -188,6 +193,10 @@ def test_risk_coverage_metric_basic_functionality() -> None:
 
     # Update the metric
     metric.update(outputs, target)
+
+    # check that scores and residuals are correct
+    assert metric.scores.numel() == 4
+    assert metric.residuals.numel() == 4
 
     # Compute the results
     res = metric.compute()
@@ -223,24 +232,6 @@ def test_risk_coverage_metric_missing_keys() -> None:
         AssertionError, match="RiskCoverageMetric requires 'predictions'"
     ):
         metric.update(outputs, target)
-
-
-def test_risk_coverage_metric_risk_definitions() -> None:
-    for risk in ["generalized", "selective"]:
-        metric = RiskCoverageMetric(risk=risk)
-
-        outputs = {
-            "predictions": torch.tensor([0.9, 0.4, 0.6, 0.8]),
-            "score": torch.tensor([0.1, 0.2, 0.3, 0.4]),
-        }
-        target = torch.tensor([1.0, 0.0, 1.0, 0.0])
-
-        metric.update(outputs, target)
-        res = metric.compute()
-
-        assert "rc/auc_empirical" in res
-        assert "rc/auc_reference" in res
-        assert "rc/auc_excess" in res
 
 
 def test_risk_coverage_metric_custom_error_function() -> None:

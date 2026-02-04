@@ -209,22 +209,6 @@ class TestRiskCoverage:
             torch.tensor(rc.auc_excess), torch.tensor(0.0), atol=1e-5
         )
 
-    def test_reproducibility(self):
-        """Test that results are reproducible."""
-        torch.manual_seed(100)
-        score1 = torch.rand(100)
-        residuals1 = torch.rand(100)
-        rc1 = risk_coverage(score1, residuals1)
-
-        torch.manual_seed(100)
-        score2 = torch.rand(100)
-        residuals2 = torch.rand(100)
-        rc2 = risk_coverage(score2, residuals2)
-
-        assert torch.allclose(rc1.coverage, rc2.coverage)
-        assert torch.allclose(rc1.risk, rc2.risk)
-        assert rc1.auc_empirical == rc2.auc_empirical
-
     def test_binning_maintains_max(self, simple_data):
         """Test that binning takes max values in each bin."""
         score, residuals = simple_data

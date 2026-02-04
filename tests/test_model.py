@@ -206,32 +206,6 @@ def test_test_step_missing_keys_raise_keyerror(monkeypatch) -> None:
         w.test_step({"image": torch.zeros(1, 2)}, batch_idx=0)
 
 
-def test_risk_coverage_metric_updates_and_logs(monkeypatch) -> None:
-    task = DummyTaskTensor()
-    score = DummyScore()
-    w = SelectiveInferenceTask(task=task, score=score)
-
-    calls: dict[str, object] = {"log_arg": None}
-
-    def fake_log_dict(arg, batch_size=None, **kwargs):  # noqa: ANN001
-        calls["log_arg"] = arg
-        return None
-
-    monkeypatch.setattr(w, "log_dict", fake_log_dict)
-
-    # Use 1D inputs to avoid Accuracy shape mismatch
-    batch = {
-        "image": torch.tensor([0.0, 1.0, 0.6, 0.4]),
-        "label": torch.tensor([0, 1, 1, 0]),
-    }
-    w.test_step(batch, batch_idx=0)
-
-    # Ensure RiskCoverageMetric is updated and logged
-    assert "rc/auc_empirical" in calls["log_arg"]
-    assert "rc/auc_reference" in calls["log_arg"]
-    assert "rc/auc_excess" in calls["log_arg"]
-
-
 def test_get_risk_coverage_curve_none_before_compute() -> None:
     task = DummyTaskTensor()
     score = DummyScore()

@@ -7,12 +7,10 @@ from seapig.scores.utils import TensorPCA
 
 
 class DummyModel(torch.nn.Module):
-    # NOTE: signature must include 'x' to satisfy _check_model
-    def embed(self, x):
-        # accept dicts with "image" or plain tensor
+    def embed(self, x):  # must accept 'x' param
         if isinstance(x, dict):
             x = x["image"]
-        return x  # expect (B,D) tensor
+        return x
 
 
 class DummyBadModel(torch.nn.Module):
@@ -50,6 +48,8 @@ def test_setup_path_creates_dir_and_returns_path(tmp_path) -> None:
     assert path.suffix == ".parquet"
     assert outdir.is_dir()
     assert "myprefix" in path.name
+    # cleanup
+    outdir.rmdir()
 
 
 def test_check_model_valid_and_invalid():
@@ -72,6 +72,8 @@ def test_write_and_load_parquet_roundtrip(tmp_path) -> None:
     y = EmbeddingScore._load_parquet(path)
     assert isinstance(y, torch.Tensor)
     assert torch.allclose(y, x)
+    # cleanup
+    path.unlink()
 
 
 def test_embed_errors_and_success() -> None:
@@ -146,6 +148,8 @@ def test_embed_from_dict_errors_and_saves(tmp_path) -> None:
     # file should have been written
     expected = tmp_path / "pfx-embeddings-train.parquet"
     assert expected.exists()
+    # cleanup
+    expected.unlink()
 
 
 def test_fit_pca_sets_pca_and_device() -> None:
@@ -170,7 +174,9 @@ def test_set_threshold_and_select_behavior() -> None:
     res = e.select(X)
     assert "score" in res and "selected" in res
     assert res["score"].shape[0] == X.shape[0]
+    assert len(res["score"].shape) == 1
     assert res["selected"].dtype == torch.bool
+    assert len(res["selected"].shape) == 1
 
 
 class MinimalEmbedding(EmbeddingScore):
@@ -234,6 +240,8 @@ def test_score_dl_writes_and_returns_tensor(tmp_path) -> None:
     assert isinstance(out, torch.Tensor)
     assert out.shape[0] == 2
     assert (tmp_path / "pfx.parquet").exists()
+    # cleanup
+    (tmp_path / "pfx.parquet").unlink()
 
 
 def test_select_dl_respects_threshold(tmp_path) -> None:
