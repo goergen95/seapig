@@ -29,12 +29,8 @@ jobs:
       - name: Install ruff (via pyproject dev extras if present)
         run: |
           python -m pip install --upgrade pip
-          if grep -q "\[project.optional-dependencies\]" pyproject.toml 2>/dev/null; then
-            pip install .[dev]
-          else
-            pip install ruff
-          fi
-
+          pip install .[dev]
+          
       - name: Run ruff
         run: ruff check .
 
