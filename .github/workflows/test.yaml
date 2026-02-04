@@ -30,7 +30,7 @@ jobs:
       - name: Install dependencies from pyproject (dev extras)
         run: |
           python -m pip install --upgrade pip build
-          pip install .[dev]
+          pip install .[all]
 
       - name: Run tests
         run: |
