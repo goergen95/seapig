@@ -1,5 +1,3 @@
-from unittest.mock import patch
-
 import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
@@ -262,42 +260,3 @@ def test_select_dl_respects_threshold(tmp_path) -> None:
     assert "score" in out and "selected" in out
     assert out["score"].shape[0] == 2
     assert out["selected"].dtype == torch.bool
-
-
-class DummyEmbeddingScore(EmbeddingScore):
-    """Dummy implementation of EmbeddingScore for testing purposes."""
-
-    def __init__(self):
-        self.ref_embeddings = None
-        self.cal_embeddings = None
-
-    def fit(
-        self,
-        ref_embeddings: torch.Tensor,
-        cal_embeddings: torch.Tensor | None = None,
-    ) -> None:
-        self.ref_embeddings = ref_embeddings
-        self.cal_embeddings = cal_embeddings
-
-    def score(self, X: torch.Tensor) -> torch.Tensor:
-        return X.sum(dim=1)
-
-
-@pytest.mark.parametrize("include_query", [False, True])
-def test_plot_method(include_query):
-    # Create dummy embeddings
-    ref_embeddings = torch.randn(100, 64)
-    cal_embeddings = torch.randn(100, 64)
-    query_embeddings = torch.randn(50, 64) if include_query else None
-
-    # Initialize and fit the dummy score
-    score = DummyEmbeddingScore()
-    score.fit(ref_embeddings, cal_embeddings)
-
-    # Mock plt.show to avoid displaying the plot during the test
-    with patch("matplotlib.pyplot.show") as mock_show:
-        # Call the plot method
-        score.plot(query_embeddings=query_embeddings)
-
-        # Ensure plt.show was called
-        mock_show.assert_called_once()

@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 from typing import Any, override
 
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 
 
@@ -118,6 +120,77 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
         while samples with scores higher than the threshold are excluded.
         """
         pass
+
+    def plot(
+        self, query_scores: torch.Tensor | None = None, bins: int = 100
+    ) -> None:
+        """Plot densities for confidence scores.
+
+        By default, this method plots densities for the confidence scores.
+        Optionally, it can also plot densities for `query_scores`.
+
+        Parameters
+        ----------
+        query_scores:
+            A `torch.Tensor` representing query scores to include in the plot. Defaults to `None`.
+        bins:
+            An `int` indicating the number of bins to use for density estimation. Defaults to `100`.
+        """
+        assert self.scores is not None, (
+            "Calibration scores (scores) must be available to plot."
+        )
+
+        # Convert tensors to numpy arrays for plotting
+        scores = self.scores.cpu().numpy()
+        q_scores = (
+            query_scores.cpu().numpy() if query_scores is not None else None
+        )
+
+        # Flatten embeddings for density plotting
+        scores = scores.flatten()
+        q_scores = q_scores.flatten() if q_scores is not None else None
+
+        # Define a function to compute density
+        def compute_density(
+            data: np.ndarray, bins: int = 100
+        ) -> tuple[np.ndarray, np.ndarray]:
+            density, edges = np.histogram(data, bins=bins, density=True)
+            centers = (edges[:-1] + edges[1:]) / 2
+            return centers, density
+
+        # Initialize the plot
+        plt.figure(figsize=(10, 6))
+
+        # Plot reference embeddings density
+        centers, density = compute_density(scores, bins=bins)
+        plt.fill_between(
+            centers,
+            density,
+            alpha=0.5,
+            color="steelblue",
+            label="Calibration Scores",
+        )
+
+        # Plot query embeddings density if provided
+        if q_scores is not None:
+            query_centers, query_density = compute_density(q_scores, bins=bins)
+            plt.fill_between(
+                query_centers,
+                query_density,
+                alpha=0.5,
+                color="darkorange",
+                label="Query Scores",
+            )
+
+        # Add labels and legend
+        plt.title("Confidence Score Densities")
+        plt.xlabel("Confidence Score")
+        plt.ylabel("Density")
+        plt.legend()
+        plt.grid(True, linestyle="--", alpha=0.6)
+
+        # Show the plot
+        plt.show()
 
 
 class RandomScore(ConfidenceScore):
