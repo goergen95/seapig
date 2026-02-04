@@ -42,12 +42,7 @@ jobs:
       - name: Install dependencies from pyproject (dev extras)
         run: |
           python -m pip install --upgrade pip build
-          if grep -q "\[project.optional-dependencies\]" pyproject.toml 2>/dev/null; then
-            pip install .[dev]
-          else
-            pip install -e .
-            pip install pytest pytest-cov
-          fi
+          pip install .[dev]
 
       - name: Run tests
         run: |
