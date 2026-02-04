@@ -1,18 +1,20 @@
 .ONESHELL:
 SHELL := bash
-.PHONY: env req dev doc install all ruff mypy cov checks docs build clean
+.PHONY: env req sug dev doc install all ruff mypy cov checks docs build clean
 
 env:
 	virtualenv ./env; . env/bin/activate;
 req:
-	pip install -Ur requirements/required.txt
+	pip install .
+sug:
+	pip install .[suggested]
 dev: 
-	pip install -Ur requirements/dev.txt
+	pip install .[dev]
 doc:
-	pip install -Ur requirements/docs.txt; quarto add machow/quartodoc --no-prompt 
-install:
-	pip install -e .
-all: env req dev doc install
+	pip install .[doc]; quarto add machow/quartodoc --no-prompt 
+
+all:
+	pip install .[all]
 
 ruff:
 	ruff format; ruff check
