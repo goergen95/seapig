@@ -49,6 +49,14 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         targets, by default "label".
     """
 
+    def __new__(cls, *args, **kwargs):
+        # Create the instance of the class
+        instance = super().__new__(cls)
+        # Initialize the instance
+        instance.__init__(*args, **kwargs)
+        # Return the modified task object instead of the instance
+        return instance.task
+
     def __init__(
         self,
         task: LightningModule,
@@ -89,6 +97,11 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
             prediction_key="predictions",
             score_key="score",  # falls back to 'scores' if absent
         )
+        self._org_forward = task.forward
+        task.forward = self.forward
+        task.test_step = self.test_step
+        task.predict_step = self.predict_step
+        task.get_risk_coverage_curve = self.get_risk_coverage_curve
 
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
@@ -106,7 +119,7 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
             A dictionary containing the original predictions together with the
             selection scores.
         """
-        preds: dict[str, torch.Tensor] | torch.Tensor = self.task.predict(x)
+        preds = self._org_forward(x)
         if isinstance(preds, torch.Tensor):
             preds = {"predictions": preds}
         assert isinstance(preds, dict)
