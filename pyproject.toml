@@ -37,8 +37,13 @@ version = {attr = "seapig.__version__"}
 
 [tool.setuptools.dynamic.optional-dependencies]
 suggested = {file = ["requirements/suggested.txt"]}
-dev = { file = ["requirements/dev.txt", "requirements/suggested.txt"] }
-docs = { file = ["requirements/docs.txt"] }
+dev = { file = ["requirements/dev.txt"] }
+docs = { file = ["requirements/docs.txt"]}
+all  = { file = [
+    "requirements/suggested.txt",
+    "requirements/dev.txt",
+    "requirements/docs.txt",
+] }
 
 [tool.setuptools.package-data]
 seapig = ["py.typed"]
