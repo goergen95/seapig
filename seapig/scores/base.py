@@ -3,7 +3,6 @@
 from abc import ABC, abstractmethod
 from typing import Any, override
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
@@ -136,6 +135,12 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
         bins:
             An `int` indicating the number of bins to use for density estimation. Defaults to `100`.
         """
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            raise ImportError(
+                "matplotlib is not installed. Please install it with `pip install matplotlib`."
+            )
         assert self.scores is not None, (
             "Calibration scores (scores) must be available to plot."
         )

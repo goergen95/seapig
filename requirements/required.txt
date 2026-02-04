@@ -1,11 +1,8 @@
-matplotlib
 numpy
 pandas
 torch
 torchmetrics
-scikit-learn
 tqdm
 pyarrow
 faiss-cpu
-pyod
 lightning
