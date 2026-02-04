@@ -4,11 +4,17 @@ from pathlib import Path
 from typing import override
 
 import torch
-from pyod.models.base import BaseDetector
 from torch.utils.data import DataLoader
 
 from seapig.scores.embed import EmbeddingScore
 from seapig.scores.utils import TensorPCA
+
+try:
+    from pyod.models.base import BaseDetector
+except ImportError:
+    raise ImportError(
+        "pyod is not installed. Please install it with `pip install pyod`."
+    )
 
 
 class PyODScore(EmbeddingScore):

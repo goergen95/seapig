@@ -36,7 +36,8 @@ dependencies = { file = ["requirements/required.txt"] }
 version = {attr = "seapig.__version__"}
 
 [tool.setuptools.dynamic.optional-dependencies]
-dev = { file = ["requirements/dev.txt"] }
+suggested = {file = ["requirements/suggested.txt"]}
+dev = { file = ["requirements/dev.txt", "requirements/suggested.txt"] }
 docs = { file = ["requirements/docs.txt"] }
 
 [tool.setuptools.package-data]

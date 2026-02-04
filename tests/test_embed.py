@@ -1,3 +1,6 @@
+from unittest.mock import patch
+
+import matplotlib.pyplot as plt
 import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
@@ -268,3 +271,47 @@ def test_select_dl_respects_threshold(tmp_path) -> None:
     assert "score" in out and "selected" in out
     assert out["score"].shape[0] == 2
     assert out["selected"].dtype == torch.bool
+
+
+def test_visualize_embeddings():
+    # Mock embeddings
+    ref_embeddings = torch.randn(100, 64)
+    cal_embeddings = torch.randn(50, 64)
+    query_embeddings = torch.randn(20, 64)
+
+    pca = TensorPCA(exp_var=0.75)
+
+    score = DummyEmbedding(pca=pca)
+    score.ref_embeddings = ref_embeddings
+    score.cal_embeddings = cal_embeddings
+    score._fit_pca()
+
+    # Mock method arguments
+    tsne_args = {"perplexity": 30, "random_state": 42}
+    umap_args = {"n_neighbors": 5, "min_dist": 0.1}
+
+    with pytest.raises(ValueError):
+        score.plot_embs(
+            query_embeddings=query_embeddings,
+            method="invalid_method",
+            method_args={},
+        )
+
+    # Mock the plotting function to avoid rendering during tests
+    with patch.object(plt, "show"):
+        # Test with t-SNE
+        score.plot_embs(
+            query_embeddings=query_embeddings,
+            method="tsne",
+            method_args=tsne_args,
+        )
+
+        # Test with UMAP
+        score.plot_embs(
+            query_embeddings=query_embeddings,
+            method="umap",
+            method_args=umap_args,
+        )
+
+    # Ensure no exceptions were raised
+    assert True

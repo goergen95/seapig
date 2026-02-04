@@ -35,6 +35,8 @@
         "torchgeo",
         "torchmetrics",
         "tqdm",
+        "TSNE",
+        "UMAP",
         "venv",
         "virtualenv"
     ],

@@ -422,3 +422,90 @@ class EmbeddingScore(ConfidenceScore, ABC):
         X = self._loadorembed(path, model, loader)
         score = self.score(X)
         return score
+
+    def plot_embs(
+        self,
+        query_embeddings: torch.Tensor | None,
+        method: Literal["tsne", "umap"] = "tsne",
+        method_args: dict[str, Any] | None = None,
+    ) -> None:
+        """Visualize training, validation, and query embeddings in 2D.
+
+        Parameters
+        ----------
+        query_embeddings : torch.Tensor | None, optional
+            Embeddings of query samples to visualize.
+        method : {"tsne", "umap"}, optional
+            Dimensionality reduction method, by default "tsne".
+        method_args : dict[str, Any] | None, optional
+            A dictionary of arguments to pass to the dimensionality
+            reduction method, by default None.
+        """
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            raise ImportError(
+                "matplotlib is not installed. Please install it with `pip install matplotlib`."
+            )
+        assert self.ref_embeddings is not None, (
+            "Training embeddings are not set."
+        )
+        # Combine embeddings
+        embeddings = [self.ref_embeddings]
+        labels = ["train"] * len(self.ref_embeddings)
+
+        if self.cal_embeddings is not None:
+            embeddings.append(self.cal_embeddings)
+            labels.extend(["cal"] * len(self.cal_embeddings))
+
+        if query_embeddings is not None:
+            embeddings.append(query_embeddings)
+            labels.extend(["query"] * len(query_embeddings))
+
+        all_embeddings: torch.Tensor = torch.cat(embeddings, dim=0)
+
+        if self.pca is not None:
+            assert isinstance(self.pca, TensorPCA), (
+                "Provided PCA instance is invalid."
+            )
+            all_embeddings = self.pca.predict(all_embeddings)
+
+        method_args = method_args or {}
+        if method == "tsne":
+            try:
+                from sklearn.manifold import TSNE
+            except ImportError:
+                raise ImportError(
+                    "t-SNE is not installed. Please install it with `pip install scikit-learn`."
+                )
+            reducer = TSNE(n_components=2, **method_args)
+        elif method == "umap":
+            try:
+                from umap import UMAP
+            except ImportError:
+                raise ImportError(
+                    "UMAP is not installed. Please install it with `pip install umap-learn`."
+                )
+            reducer = UMAP(n_components=2, **method_args)
+        else:
+            raise ValueError("Invalid method. Choose 'tsne' or 'umap'.")
+
+        reduced_embeddings = reducer.fit_transform(all_embeddings.cpu())
+
+        label2col = {"train": "#1d7990", "cal": "#25901D", "query": "#f18e26"}
+
+        plt.figure(figsize=(10, 8))
+        for label in set(labels):
+            idx = [i for i, la in enumerate(labels) if la == label]
+            plt.scatter(
+                reduced_embeddings[idx, 0],
+                reduced_embeddings[idx, 1],
+                label=label,
+                color=label2col[label],
+                alpha=0.7,
+            )
+        plt.legend()
+        plt.title(f"Embedding Visualization ({method})")
+        plt.xlabel("Component 1")
+        plt.ylabel("Component 2")
+        plt.show()
