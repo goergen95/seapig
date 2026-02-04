@@ -2,7 +2,7 @@ name: "Quarto site — render & deploy (quartodoc)"
 
 on:
   push:
-    branches: ["main"]
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
