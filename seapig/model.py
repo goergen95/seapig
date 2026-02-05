@@ -116,7 +116,7 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
             preds = {"predictions": preds}
         assert isinstance(preds, dict)
 
-        embs: torch.Tensor = self.task.embed(x)  # type: ignore[operator]
+        embs: torch.Tensor = self.task.embed(x)
         selection = self.score.select(embs)
 
         return preds | selection
@@ -153,12 +153,12 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
 
         # Update metrics:
         self.test_metrics(outputs, y)
-        self.log_dict(self.test_metrics, batch_size=batch_size)  # type: ignore[arg-type]
+        self.log_dict(self.test_metrics, batch_size=batch_size)
 
         # Update risk‑coverage metric and log AUCs
         if self.rc_metric is not None:
             self.rc_metric(outputs, y)
-            self.log_dict(self.rc_metric, batch_size=batch_size)  # type: ignore[arg-type]
+            self.log_dict(self.rc_metric, batch_size=batch_size)
 
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def predict_step(
