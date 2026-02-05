@@ -396,7 +396,7 @@ class MahalanobisScore(KNNScore):
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
-        query = query.cpu() @ self.vi_zero.T.cpu()
+        query = query.float().cpu() @ self.vi_zero.T.cpu()
         dist, _ = self.index.search(query, k=self.k + kpn)
         dist = torch.Tensor(dist[:, kpn:])
         dist = self._stat(dist, stat=self.stat)
