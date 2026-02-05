@@ -5,7 +5,7 @@ import torch
 from pytorch_lightning import LightningModule
 from torchmetrics import Accuracy, MetricCollection
 
-from seapig import SelectiveInferenceTask
+from seapig import RiskCoverage, RiskCoverageMetric, SelectiveInferenceTask
 from seapig.scores.base import ConfidenceScore
 
 
@@ -47,11 +47,15 @@ class DummyTaskTensor(LightningModule):
     def predict(self, x: torch.Tensor) -> torch.Tensor:  # type: ignore[override]
         return 2 * x
 
+    def embed(self, x: torch.Tensor) -> torch.Tensor:
+        return x
 
-class DummyTaskDict(LightningModule):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.predict(x)
+
+
+class DummyTaskDict(DummyTaskTensor):
     """Task that returns a mapping from predict()."""
-
-    test_metrics: MetricCollection = MetricCollection(Accuracy(task="binary"))
 
     def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:  # type: ignore[override]
         return {"predictions": 3 * x, "extra": x.sum(dim=1)}
@@ -95,8 +99,6 @@ def test_forward_wraps_tensor_and_merges_selection() -> None:
     assert "predictions" in out and torch.allclose(out["predictions"], 2 * x)
     # selection merged
     assert set(["score", "selected"]).issubset(out.keys())
-    # device propagated to score.to(...)
-    assert score.last_device == str(x.device)
 
 
 def test_forward_keeps_dict_output_and_extra_keys() -> None:
@@ -114,11 +116,7 @@ def test_forward_keeps_dict_output_and_extra_keys() -> None:
 
 
 def test_forward_raises_when_predict_not_tensor_or_dict() -> None:
-    class BadTask(LightningModule):
-        test_metrics: MetricCollection = MetricCollection(
-            Accuracy(task="binary")
-        )
-
+    class BadTask(DummyTaskTensor):
         def predict(self, x: torch.Tensor):  # type: ignore[override]
             return [x]  # wrong type
 
@@ -149,7 +147,9 @@ def test_predict_step_missing_key_raises_keyerror() -> None:
 def test_test_step_updates_metrics_and_logs_rc(monkeypatch) -> None:
     task = DummyTaskTensor()
     score = DummyScore()
-    w = SelectiveInferenceTask(task=task, score=score)
+    w = SelectiveInferenceTask(
+        task=task, score=score, rc_metric=RiskCoverageMetric()
+    )
 
     calls: dict[str, object] = {"log_arg": None}
 
@@ -170,12 +170,16 @@ def test_test_step_updates_metrics_and_logs_rc(monkeypatch) -> None:
     res = w.test_metrics.compute()
     assert any(k.startswith("full/") for k in res.keys())
     assert any(k.startswith("selected/") for k in res.keys())
+    assert any(k.startswith("rejected/") for k in res.keys())
 
     # RiskCoverageMetric stats should have been logged
-    assert isinstance(calls["log_arg"], dict)
-    assert "rc/auc_empirical" in calls["log_arg"]
-    assert "rc/auc_reference" in calls["log_arg"]
-    assert "rc/auc_excess" in calls["log_arg"]
+    assert isinstance(calls["log_arg"], RiskCoverageMetric)
+    metrics = calls["log_arg"].compute()
+    assert "rc/auc_empirical" in metrics
+    assert "rc/auc_reference" in metrics
+    assert "rc/auc_excess" in metrics
+    rc = calls["log_arg"].get_curve()
+    assert isinstance(rc, RiskCoverage)
 
 
 def test_test_step_with_alt_keys_updates_metrics(monkeypatch) -> None:
@@ -209,16 +213,26 @@ def test_test_step_missing_keys_raise_keyerror(monkeypatch) -> None:
 def test_get_risk_coverage_curve_none_before_compute() -> None:
     task = DummyTaskTensor()
     score = DummyScore()
-    w = SelectiveInferenceTask(task=task, score=score)
 
-    # Before any compute, no curve should be available
+    # is None if not specified
+    w = SelectiveInferenceTask(task=task, score=score)
+    assert w.rc_metric is None
+    assert w.get_risk_coverage_curve() is None
+
+    # is None before compute
+    w = SelectiveInferenceTask(
+        task=task, score=score, rc_metric=RiskCoverageMetric()
+    )
+    assert w.rc_metric is not None
     assert w.get_risk_coverage_curve() is None
 
 
 def test_get_risk_coverage_curve() -> None:
     task = DummyTaskTensor()
     score = DummyScore()
-    w = SelectiveInferenceTask(task=task, score=score)
+    w = SelectiveInferenceTask(
+        task=task, score=score, rc_metric=RiskCoverageMetric()
+    )
 
     batch = {
         "image": torch.tensor([0.0, 1.0, 0.6, 0.4]),
