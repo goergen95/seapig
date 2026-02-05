@@ -296,9 +296,9 @@ class EmbeddingScore(ConfidenceScore, ABC):
             samples to set the rejection threshold to.
         """
         if self.train_required:
-            assert self.is_trained()  # type: ignore [truthy-function]
+            assert self.is_trained()
         if self.cal_required:
-            assert self.is_calibrated()  # type: ignore [truthy-function]
+            assert self.is_calibrated()
         assert self.scores is not None
         self.threshold = self.scores.float().quantile(q=q)
 
