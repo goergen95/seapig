@@ -105,6 +105,8 @@ class EmbeddingScore(ConfidenceScore, ABC):
         if path is not None and path.is_file():
             print(f"Loading pre-existing embeddings from {path}.")
             v = self._load_parquet(path)
+            device = next(model.parameters()).device
+            v = v.to(device)
         else:
             v = self._embed_dl(model=model, loader=loader)
             if path is not None:
