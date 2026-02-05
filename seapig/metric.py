@@ -1,5 +1,6 @@
 """Selective evaluation metric wrapper."""
 
+from typing import Iterable
 from collections.abc import Callable
 from typing import final
 
@@ -59,6 +60,18 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
 
         self.prediction_key = prediction_key
         self.selection_key = selection_key
+
+    def items(self) -> Iterable[tuple[str, torch.Tensor]]:
+        """Return items of the computed results."""
+        return self.compute().items()
+
+    def keys(self) -> Iterable[str]:
+        """Return keys of the computed results."""
+        return self.compute().keys()
+
+    def values(self) -> Iterable[torch.Tensor]:
+        """Return values of the computed results."""
+        return self.compute().values()
 
     def update(
         self, outputs: dict[str, torch.Tensor], target: torch.Tensor
@@ -176,6 +189,18 @@ class RiskCoverageMetric(Metric):  # type: ignore[misc]
         # Last computed curve (non‑tensor; kept for retrieval only)
         self._last_curve: RiskCoverage | None = None
 
+    def items(self) -> Iterable[tuple[str, torch.Tensor]]:
+        """Return items of the computed results."""
+        return self.compute().items()
+
+    def keys(self) -> Iterable[str]:
+        """Return keys of the computed results."""
+        return self.compute().keys()
+
+    def values(self) -> Iterable[torch.Tensor]:
+        """Return values of the computed results."""
+        return self.compute().values()
+
     @staticmethod
     def _default_error_fn(
         preds: torch.Tensor, target: torch.Tensor
@@ -202,11 +227,11 @@ class RiskCoverageMetric(Metric):  # type: ignore[misc]
         )
 
         device = preds.device
-        scores = scores.detach().to(device).flatten()
-        target = target.detach().to(device)
+        scores = scores.to(device)
+        target = target.to(device)
 
         err_fn = self._error_fn or self._default_error_fn
-        residuals = err_fn(preds.detach(), target).to(device).flatten()
+        residuals = err_fn(preds, target).to(device)
 
         # Concatenate into states
         if self.scores.numel() == 0:
@@ -237,11 +262,10 @@ class RiskCoverageMetric(Metric):  # type: ignore[misc]
             n_bins=self.n_bins,
         )
         self._last_curve = rc
-        device = self.scores.device
         return {
-            "rc/auc_empirical": torch.tensor(rc.auc_empirical, device=device),
-            "rc/auc_reference": torch.tensor(rc.auc_reference, device=device),
-            "rc/auc_excess": torch.tensor(rc.auc_excess, device=device),
+            "rc/auc_empirical": rc.auc_empirical,
+            "rc/auc_reference": rc.auc_reference,
+            "rc/auc_excess": rc.auc_excess,
         }
 
     def get_curve(self) -> RiskCoverage | None:
