@@ -124,17 +124,17 @@ class TestRiskCoverage:
 
         # Generalized risk
         rc_gen = risk_coverage(score, residuals, risk="generalized")
-        assert isinstance(rc_gen.auc_empirical, float)
-        assert isinstance(rc_gen.auc_reference, float)
-        assert isinstance(rc_gen.auc_excess, float)
+        assert isinstance(rc_gen.auc_empirical, torch.Tensor)
+        assert isinstance(rc_gen.auc_reference, torch.Tensor)
+        assert isinstance(rc_gen.auc_excess, torch.Tensor)
         assert rc_gen.auc_empirical > 0
         assert rc_gen.auc_reference > 0
 
         # Selective risk
         rc_sel = risk_coverage(score, residuals, risk="selective")
-        assert isinstance(rc_sel.auc_empirical, float)
-        assert isinstance(rc_sel.auc_reference, float)
-        assert isinstance(rc_sel.auc_excess, float)
+        assert isinstance(rc_sel.auc_empirical, torch.Tensor)
+        assert isinstance(rc_sel.auc_reference, torch.Tensor)
+        assert isinstance(rc_sel.auc_excess, torch.Tensor)
         assert rc_sel.auc_empirical > 0
         assert rc_sel.auc_reference > 0
 

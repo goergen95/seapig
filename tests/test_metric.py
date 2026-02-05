@@ -34,6 +34,12 @@ class DummyTaskTensor(LightningModule):
     def predict(self, x: torch.Tensor) -> torch.Tensor:  # type: ignore[override]
         return 2 * x
 
+    def embed(self, x: torch.Tensor) -> torch.Tensor:
+        return x
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.predict(x)
+
 
 class DummyTaskDict(LightningModule):
     """Task that returns a mapping from predict()."""
@@ -63,8 +69,11 @@ def test_selective_metric_binary_accuracy_full_vs_selected() -> None:
         res["full_risk"], torch.tensor(0.75)
     )
     # Selected accuracy considers first two only, both correct => 1.0
-    assert "selective_risk" in res and torch.allclose(
-        res["selective_risk"], torch.tensor(1.0)
+    assert "selected_risk" in res and torch.allclose(
+        res["selected_risk"], torch.tensor(1.0)
+    )
+    assert "rejected_risk" in res and torch.allclose(
+        res["rejected_risk"], torch.tensor(0.5)
     )
 
 
@@ -111,7 +120,7 @@ def test_selective_metric_end_to_end_with_task_outputs() -> None:
     # Full accuracy across all 4 predictions: half correct => 0.5
     assert torch.allclose(res["full_risk"], torch.tensor(0.5))
     # Selected accuracy on first two samples: both correct => 1.0
-    assert torch.allclose(res["selective_risk"], torch.tensor(1.0))
+    assert torch.allclose(res["selected_risk"], torch.tensor(1.0))
 
 
 def test_selective_metric_with_metric_collection_output_naming() -> None:
@@ -144,6 +153,9 @@ def test_selective_metric_with_metric_collection_output_naming() -> None:
         "selected/precision",
         "full/recall",
         "selected/recall",
+        "rejected/accuracy",
+        "rejected/precision",
+        "rejected/recall",
     }
     assert set(res.keys()) == expected_keys
 
