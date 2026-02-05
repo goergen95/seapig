@@ -8,7 +8,7 @@ selection results.
 from typing import Any, Literal, get_args
 
 import torch
-from pytorch_lightning import LightningModule
+from lightning import LightningModule
 from torchmetrics import Metric, MetricCollection
 
 from seapig.metric import RiskCoverageMetric, SelectiveMetric
@@ -49,14 +49,6 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         targets, by default "label".
     """
 
-    def __new__(cls, *args, **kwargs) -> LightningModule:
-        # Create the instance of the class
-        instance = super().__new__(cls)
-        # Initialize the instance
-        instance.__init__(*args, **kwargs)
-        # Return the modified task object instead of the instance
-        return instance.task
-
     def __init__(
         self,
         task: LightningModule,
@@ -91,23 +83,17 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
             )
         self.target_key = target_key
 
-        self.test_metrics = SelectiveMetric(
-            base=task.test_metrics,
-            prediction_key="predictions",
-            selection_key="selected",
-        )
+        if hasattr(task, "test_metrics"):
+            self.test_metrics = SelectiveMetric(
+                base=task.test_metrics,
+                prediction_key="predictions",
+                selection_key="selected",
+            )
 
-        # self.rc_metric = rc_metric or RiskCoverageMetric(
-        #    risk="generalized",
-        #    n_bins=100,
-        #    prediction_key="predictions",
-        #    score_key="score",
-        # )
-        self._org_forward = task.forward
-        self.task.forward = self.forward
-        self.task.test_step = self.test_step
-        self.task.predict_step = self.predict_step
-        # self.task.get_risk_coverage_curve = self.get_risk_coverage_curve
+        assert rc_metric is None or isinstance(rc_metric, RiskCoverageMetric), (
+            "rc_metric must be a seapig RiskCoverageMetric instance or None"
+        )
+        self.rc_metric = rc_metric
 
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
@@ -125,12 +111,12 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
             A dictionary containing the original predictions together with the
             selection scores.
         """
-        preds = self._org_forward(x)
+        preds = self.task(x)
         if isinstance(preds, torch.Tensor):
             preds = {"predictions": preds}
         assert isinstance(preds, dict)
 
-        embs: torch.Tensor = self.task.embed(x)
+        embs: torch.Tensor = self.task.embed(x)  # type: ignore[operator]
         selection = self.score.select(embs)
 
         return preds | selection
@@ -167,11 +153,12 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
 
         # Update metrics:
         self.test_metrics(outputs, y)
-        self.task.log_dict(self.test_metrics, batch_size=batch_size)
+        self.log_dict(self.test_metrics, batch_size=batch_size)  # type: ignore[arg-type]
 
         # Update risk‑coverage metric and log AUCs
-        # self.rc_metric(outputs, y)
-        # self.log_dict(self.rc_metric, batch_size=batch_size)
+        if self.rc_metric is not None:
+            self.rc_metric(outputs, y)
+            self.log_dict(self.rc_metric, batch_size=batch_size)  # type: ignore[arg-type]
 
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def predict_step(
@@ -203,6 +190,8 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         outputs: dict[str, torch.Tensor] = self.forward(x)
         return outputs
 
-    # def get_risk_coverage_curve(self) -> RiskCoverage | None:
-    #    """Return the latest computed risk‑coverage curve (if any)."""
-    #    return self.rc_metric.get_curve()
+    def get_risk_coverage_curve(self) -> RiskCoverage | None:
+        """Return the latest computed risk‑coverage curve (if any)."""
+        if self.rc_metric is None:
+            return None
+        return self.rc_metric.get_curve()

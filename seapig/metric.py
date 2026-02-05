@@ -138,19 +138,6 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
         rejected_map = _to_mapping(self._rejected, "rejected")
         return {**total_map, **selected_map, **rejected_map}
 
-        def _to_mapping(
-            m: Metric | MetricCollection, prefix: str
-        ) -> dict[str, torch.Tensor]:
-            out = m.compute()
-            if isinstance(out, dict):
-                return {f"{prefix}/{k}": v for k, v in out.items()}
-            return {"full_risk" if prefix == "full" else "selective_risk": out}
-
-        total_map = _to_mapping(self._full, "full")
-        selected_map = _to_mapping(self._selected, "selected")
-        rejected_map = _to_mapping(self._rejected, "rejected")
-        return {**total_map, **selected_map}
-
     def reset(self) -> None:
         """Reset both internal metric instances."""
         self._full.reset()
