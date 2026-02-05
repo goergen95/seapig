@@ -49,7 +49,7 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         targets, by default "label".
     """
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args, **kwargs) -> LightningModule:
         # Create the instance of the class
         instance = super().__new__(cls)
         # Initialize the instance
@@ -66,7 +66,19 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         rc_metric: RiskCoverageMetric | None = None,
     ) -> None:
         super().__init__()
+        assert callable(getattr(task, "embed", None)), (
+            "Wrapped task must have an embed() method"
+        )
+        assert hasattr(task, "test_metrics"), (
+            "Wrapped task must have test_metrics"
+        )
+        assert isinstance(task.test_metrics, (MetricCollection, Metric)), (
+            "Wrapped task's test_metrics must be a Metric or MetricCollection"
+        )
         self.task = task
+        assert isinstance(score, ConfidenceScore), (
+            "score must be a seapig ConfidenceScore instance"
+        )
         self.score = score
         if input_key not in get_args(INPUT_KEYS):
             raise ValueError(
@@ -78,30 +90,24 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
                 f"target_key must be one of {get_args(TARGET_KEYS)}; got {target_key!r}"
             )
         self.target_key = target_key
-        # TODO: wrap metrics to be selective metrics here
-        assert hasattr(task, "test_metrics"), (
-            "Wrapped task must have test_metrics"
-        )
-        assert isinstance(task.test_metrics, (MetricCollection, Metric)), (
-            "Wrapped task's test_metrics must be a Metric or MetricCollection"
-        )
+
         self.test_metrics = SelectiveMetric(
             base=task.test_metrics,
             prediction_key="predictions",
             selection_key="selected",
         )
 
-        self.rc_metric = rc_metric or RiskCoverageMetric(
-            risk="generalized",
-            n_bins=100,
-            prediction_key="predictions",
-            score_key="score",  # falls back to 'scores' if absent
-        )
+        # self.rc_metric = rc_metric or RiskCoverageMetric(
+        #    risk="generalized",
+        #    n_bins=100,
+        #    prediction_key="predictions",
+        #    score_key="score",
+        # )
         self._org_forward = task.forward
-        task.forward = self.forward
-        task.test_step = self.test_step
-        task.predict_step = self.predict_step
-        task.get_risk_coverage_curve = self.get_risk_coverage_curve
+        self.task.forward = self.forward
+        self.task.test_step = self.test_step
+        self.task.predict_step = self.predict_step
+        # self.task.get_risk_coverage_curve = self.get_risk_coverage_curve
 
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
@@ -124,8 +130,8 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
             preds = {"predictions": preds}
         assert isinstance(preds, dict)
 
-        self.score.to(device=str(x.device))
-        selection = self.score.select(x)
+        embs: torch.Tensor = self.task.embed(x)
+        selection = self.score.select(embs)
 
         return preds | selection
 
@@ -160,12 +166,12 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         outputs = self.forward(x)
 
         # Update metrics:
-        self.test_metrics.update(outputs, y)
+        self.test_metrics(outputs, y)
+        self.task.log_dict(self.test_metrics, batch_size=batch_size)
 
         # Update risk‑coverage metric and log AUCs
-        self.rc_metric.update(outputs, y)
-        rc_stats = self.rc_metric.compute()
-        self.log_dict(rc_stats, batch_size=batch_size, prog_bar=True)
+        # self.rc_metric(outputs, y)
+        # self.log_dict(self.rc_metric, batch_size=batch_size)
 
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def predict_step(
@@ -197,6 +203,6 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         outputs: dict[str, torch.Tensor] = self.forward(x)
         return outputs
 
-    def get_risk_coverage_curve(self) -> RiskCoverage | None:
-        """Return the latest computed risk‑coverage curve (if any)."""
-        return self.rc_metric.get_curve()
+    # def get_risk_coverage_curve(self) -> RiskCoverage | None:
+    #    """Return the latest computed risk‑coverage curve (if any)."""
+    #    return self.rc_metric.get_curve()
