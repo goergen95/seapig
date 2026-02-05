@@ -202,7 +202,7 @@ class KNNScore(EmbeddingScore, ABC):
         if self.pca is not None:
             X = self.pca.predict(X)
         score = self._distance(query=X)
-        return score
+        return score.to(device=self.threshold.device)
 
     @classmethod
     def _stat(self, x: torch.Tensor, stat: str = "max") -> torch.Tensor:
