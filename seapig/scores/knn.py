@@ -138,7 +138,6 @@ class KNNScore(EmbeddingScore, ABC):
     def _fit_impl(self, q: float | None = None) -> None:
         """Fit implementation."""
         assert self.ref_embeddings is not None
-        self.to(device=self.ref_embeddings.device)
         if self.cal_required:
             assert self.cal_embeddings is not None
 
@@ -200,11 +199,10 @@ class KNNScore(EmbeddingScore, ABC):
             are (B,D).
         """
         assert self.index is not None
-        self.to(device=X.device)
         if self.pca is not None:
             X = self.pca.predict(X)
         score = self._distance(query=X)
-        return score
+        return score.to(device=X.device)
 
     @classmethod
     def _stat(self, x: torch.Tensor, stat: str = "max") -> torch.Tensor:
@@ -398,7 +396,7 @@ class MahalanobisScore(KNNScore):
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
-        query = query.cpu() @ self.vi_zero.T.cpu()
+        query = query.float().cpu() @ self.vi_zero.T.cpu()
         dist, _ = self.index.search(query, k=self.k + kpn)
         dist = torch.Tensor(dist[:, kpn:])
         dist = self._stat(dist, stat=self.stat)
