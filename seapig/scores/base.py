@@ -252,7 +252,6 @@ class RandomScore(ConfidenceScore):
         X:
             A `torch.Tensor`.
         """
-        self.to(device=X.device)
         return torch.rand(X.shape[0])
 
     @override

@@ -64,6 +64,7 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
         return X.contiguous()
 
     def _preprocess(self, X: torch.Tensor) -> torch.Tensor:
+        self.to(device=X.device)
         X = self._l2_normalize(X)
         X = self._rff(X, gamma=self.gamma, M=self.M)
         X = X - self.mu

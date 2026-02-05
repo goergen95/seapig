@@ -118,7 +118,6 @@ class PCAScore(EmbeddingScore):
     def _fit_impl(self, q: float | None = None) -> None:
         """Fit implementation."""
         assert self.ref_embeddings is not None
-        self.to(device=self.ref_embeddings.device)
         if self.cal_required:
             assert self.cal_embeddings is not None
 
@@ -165,6 +164,5 @@ class PCAScore(EmbeddingScore):
             are (B,D).
         """
         assert self.pca is not None
-        self.to(device=X.device)
         _, error = self.pca.reconstruct(X)
         return error

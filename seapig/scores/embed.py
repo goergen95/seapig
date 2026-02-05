@@ -105,6 +105,8 @@ class EmbeddingScore(ConfidenceScore, ABC):
         if path is not None and path.is_file():
             print(f"Loading pre-existing embeddings from {path}.")
             v = self._load_parquet(path)
+            device = next(model.parameters()).device
+            v = v.to(device)
         else:
             v = self._embed_dl(model=model, loader=loader)
             if path is not None:
@@ -216,7 +218,6 @@ class EmbeddingScore(ConfidenceScore, ABC):
         """
         self.ref_embeddings = X
         self.cal_embeddings = Y
-        self.to(device=self.ref_embeddings.device)
 
     def fit_dl(
         self,
@@ -277,7 +278,6 @@ class EmbeddingScore(ConfidenceScore, ABC):
             outdir=outdir,
             prefix=prefix,
         )
-        self.to(device=self.ref_embeddings.device)
 
     @override
     def set_threshold(self, q: float = 0.99) -> None:
@@ -502,7 +502,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
                 reduced_embeddings[idx, 1],
                 label=label,
                 color=label2col[label],
-                alpha=0.7,
+                alpha=0.1,
             )
         plt.legend()
         plt.title(f"Embedding Visualization ({method})")
