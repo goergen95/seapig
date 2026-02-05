@@ -460,12 +460,6 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
         all_embeddings: torch.Tensor = torch.cat(embeddings, dim=0)
 
-        if self.pca is not None:
-            assert isinstance(self.pca, TensorPCA), (
-                "Provided PCA instance is invalid."
-            )
-            all_embeddings = self.pca.predict(all_embeddings)
-
         method_args = method_args or {}
         if method == "tsne":
             try:
