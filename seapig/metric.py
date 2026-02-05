@@ -1,7 +1,6 @@
 """Selective evaluation metric wrapper."""
 
-from typing import Iterable
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import final
 
 import torch
@@ -13,10 +12,10 @@ from seapig.risk_coverage import RiskCoverage, risk_coverage
 class SelectiveMetric(Metric):  # type: ignore[misc]
     """Wrap a torchmetrics metric for selective evaluation.
 
-    This wrapper keeps two independent instances of an underlying
+    This wrapper keeps three independent instances of an underlying
     ``Metric`` or ``MetricCollection`` and updates them with (1) all
-    samples and (2) only the selected samples indicated by a boolean
-    mask inside the provided output dictionary.
+    samples, (2) only the selected samples, and (3) only the rejected
+    samples indicated by a boolean mask inside the provided output dictionary.
 
     The ``update`` method accepts a mapping like the output of
     :meth:`SelectiveInferenceTask.forward`, containing:
@@ -29,8 +28,8 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
     Parameters
     ----------
     base : Metric | MetricCollection
-        The metric (or collection) to evaluate. Two deep-copied instances
-        are maintained internally for full and selective risk computation.
+        The metric (or collection) to evaluate. Three deep-copied instances
+        are maintained internally for full, selective, and rejected risk computation.
     prediction_key : str, optional
         Key for predictions inside the outputs dict, by default "predictions".
     selection_key : str, optional
@@ -41,7 +40,7 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
     -----
     - If the selection mask is a float/integer tensor, values ``> 0``
       are treated as selected.
-    - If no samples are selected, the selected metric is not updated for
+    - If no samples are selected or rejected, the respective metric is not updated for
         that call.
     """
 
@@ -54,9 +53,10 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
         super().__init__()
         import copy as _copy
 
-        # Two independent metric instances (full vs selection)
+        # Three independent metric instances (full, selection, rejection)
         self._full: Metric | MetricCollection = _copy.deepcopy(base)
         self._selected: Metric | MetricCollection = _copy.deepcopy(base)
+        self._rejected: Metric | MetricCollection = _copy.deepcopy(base)
 
         self.prediction_key = prediction_key
         self.selection_key = selection_key
@@ -76,7 +76,7 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
     def update(
         self, outputs: dict[str, torch.Tensor], target: torch.Tensor
     ) -> None:
-        """Update both full and selected metrics.
+        """Update full, selected, and rejected metrics.
 
         Parameters
         ----------
@@ -88,9 +88,10 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
         mask = outputs[self.selection_key]
 
         device = preds.device
-        # Ensure both metrics are on the right device
+        # Ensure all metrics are on the right device
         self._full = self._full.to(device)
         self._selected = self._selected.to(device)
+        self._rejected = self._rejected.to(device)
 
         # Update total
         self._full.update(preds, target)
@@ -105,16 +106,37 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
             target_sel = target[mask]
             self._selected.update(preds_sel, target_sel)
 
+        # Update rejected subset (if any)
+        rejected_mask = ~mask
+        if rejected_mask.any():
+            preds_rej = preds[rejected_mask]
+            target_rej = target[rejected_mask]
+            self._rejected.update(preds_rej, target_rej)
+
     def compute(self) -> dict[str, torch.Tensor]:
-        """Compute and return results for total and selected.
+        """Compute and return results for total, selected, and rejected.
 
         Returns
         -------
         dict[str, torch.Tensor]
             Prefixed results. For a single metric, keys are
-            ``"full_risk"`` and ``"selective_risk"``. For a collection,
-            keys are prefixed as ``"full/<name>"`` and ``"selected/<name>"``.
+            ``"full_risk"``, ``"selective_risk"``, and ``"rejected_risk"``.
+            For a collection, keys are prefixed as ``"full/<name>"``,
+            ``"selected/<name>"``, and ``"rejected/<name>"``.
         """
+
+        def _to_mapping(
+            m: Metric | MetricCollection, prefix: str
+        ) -> dict[str, torch.Tensor]:
+            out = m.compute()
+            if isinstance(out, dict):
+                return {f"{prefix}/{k}": v for k, v in out.items()}
+            return {f"{prefix}_risk": out}
+
+        total_map = _to_mapping(self._full, "full")
+        selected_map = _to_mapping(self._selected, "selected")
+        rejected_map = _to_mapping(self._rejected, "rejected")
+        return {**total_map, **selected_map, **rejected_map}
 
         def _to_mapping(
             m: Metric | MetricCollection, prefix: str
@@ -126,12 +148,14 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
 
         total_map = _to_mapping(self._full, "full")
         selected_map = _to_mapping(self._selected, "selected")
+        rejected_map = _to_mapping(self._rejected, "rejected")
         return {**total_map, **selected_map}
 
     def reset(self) -> None:
         """Reset both internal metric instances."""
         self._full.reset()
         self._selected.reset()
+        self._rejected.reset()
 
 
 @final
