@@ -302,6 +302,7 @@ def risk_coverage(
         "risk must be 'generalized' or 'selective'"
     )
     device = score.device
+    residuals.to(device=device)
 
     # Calculate empirical risk-coverage curve
     coverage_emp, threshold_emp, risk_emp = _rc_curve(score, residuals, risk)
@@ -318,16 +319,16 @@ def risk_coverage(
     # Calculate excess risk
     excess = risk_emp - risk_ref
     # Calculate AUC using trapezoidal rule
-    auc_emp = _trapz(coverage_emp.to(device=device), risk_emp).to(device=device)
-    auc_ref = _trapz(coverage_emp.to(device=device), risk_ref.to(device=device))
-    auc_exs = _trapz(coverage_emp.to(device=device), excess.to(device=device))
+    auc_emp = _trapz(coverage_emp, risk_emp)
+    auc_ref = _trapz(coverage_emp, risk_ref)
+    auc_exs = _trapz(coverage_emp, excess)
 
     return RiskCoverage(
-        coverage=coverage_emp.to(device=device),
-        threshold=threshold_emp.to(device=device),
-        risk=risk_emp.to(device=device),
-        reference=risk_ref.to(device=device),
-        excess=excess.to(device=device),
+        coverage=coverage_emp,
+        threshold=threshold_emp,
+        risk=risk_emp,
+        reference=risk_ref,
+        excess=excess,
         risk_type=risk,
         auc_empirical=auc_emp,
         auc_reference=auc_ref,
@@ -355,13 +356,14 @@ def _rc_curve(
         Coverage, threshold, and risk tensors.
     """
     # Sort by score (descending, so we reject highest scores first)
+    device = score.device
     order = torch.argsort(score, descending=True)
     score_sorted = score[order]
     residuals_sorted = residuals[order]
 
     # Calculate coverage
     n = len(score)
-    coverage = torch.arange(1, n + 1, dtype=torch.float32) / n
+    coverage = torch.arange(1, n + 1, dtype=torch.float32, device=device) / n
 
     # Calculate cumulative risk
     cumsum_residuals = torch.cumsum(residuals_sorted, dim=0)
@@ -371,7 +373,11 @@ def _rc_curve(
     if risk_type == "selective":
         risk = risk / coverage
 
-    return coverage, score_sorted, risk
+    return (
+        coverage.to(device=device),
+        score_sorted.to(device=device),
+        risk.to(device=device),
+    )
 
 
 def _downsample_curves(
@@ -402,15 +408,16 @@ def _downsample_curves(
         Downsampled coverage, threshold, empirical risk, and reference risk.
     """
     # Create bins
-    bins = torch.linspace(0, 1, n_bins + 1)
+    device = coverage.device
+    bins = torch.linspace(0, 1, n_bins + 1, device=device)
     bin_indices = torch.searchsorted(bins, coverage, right=False)
     bin_indices = torch.clamp(bin_indices - 1, min=0, max=n_bins - 1)
 
     # Aggregate by taking max in each bin
-    coverage_out = torch.zeros(n_bins)
-    threshold_out = torch.zeros(n_bins)
-    risk_emp_out = torch.zeros(n_bins)
-    risk_ref_out = torch.zeros(n_bins)
+    coverage_out = torch.zeros(n_bins, device=device)
+    threshold_out = torch.zeros(n_bins, device=device)
+    risk_emp_out = torch.zeros(n_bins, device=device)
+    risk_ref_out = torch.zeros(n_bins, device=device)
 
     for i in range(n_bins):
         mask = bin_indices == i
