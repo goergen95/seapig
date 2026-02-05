@@ -216,7 +216,6 @@ class EmbeddingScore(ConfidenceScore, ABC):
         """
         self.ref_embeddings = X
         self.cal_embeddings = Y
-        self.to(device=self.ref_embeddings.device)
 
     def fit_dl(
         self,
@@ -277,7 +276,6 @@ class EmbeddingScore(ConfidenceScore, ABC):
             outdir=outdir,
             prefix=prefix,
         )
-        self.to(device=self.ref_embeddings.device)
 
     @override
     def set_threshold(self, q: float = 0.99) -> None:
@@ -502,7 +500,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
                 reduced_embeddings[idx, 1],
                 label=label,
                 color=label2col[label],
-                alpha=0.7,
+                alpha=0.1,
             )
         plt.legend()
         plt.title(f"Embedding Visualization ({method})")
