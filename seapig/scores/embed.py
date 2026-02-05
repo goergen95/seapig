@@ -266,16 +266,14 @@ class EmbeddingScore(ConfidenceScore, ABC):
             outdir=outdir,
             prefix=prefix,
         )
-        if not self.cal_required:
-            print("Confidence score does not require calibration.")
-            return
-        self.cal_embeddings = self._embed_from_dict(
-            loaders=loaders,
-            model=model,
-            key="val",
-            outdir=outdir,
-            prefix=prefix,
-        )
+        if "val" in loaders.keys():
+            self.cal_embeddings = self._embed_from_dict(
+                loaders=loaders,
+                model=model,
+                key="val",
+                outdir=outdir,
+                prefix=prefix,
+            )
 
     @override
     def set_threshold(self, q: float = 0.99) -> None:
@@ -296,9 +294,9 @@ class EmbeddingScore(ConfidenceScore, ABC):
             samples to set the rejection threshold to.
         """
         if self.train_required:
-            assert self.is_trained  # type: ignore [truthy-function]
+            assert self.is_trained()  # type: ignore [truthy-function]
         if self.cal_required:
-            assert self.is_calibrated  # type: ignore [truthy-function]
+            assert self.is_calibrated()  # type: ignore [truthy-function]
         assert self.scores is not None
         self.threshold = self.scores.float().quantile(q=q)
 
