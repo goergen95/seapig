@@ -62,9 +62,9 @@ class RiskCoverage:
         reference: torch.Tensor,
         excess: torch.Tensor,
         risk_type: str,
-        auc_empirical: float,
-        auc_reference: float,
-        auc_excess: float,
+        auc_empirical: torch.Tensor,
+        auc_reference: torch.Tensor,
+        auc_excess: torch.Tensor,
     ) -> None:
         """Initialize RiskCoverage object.
 
@@ -301,6 +301,7 @@ def risk_coverage(
     assert risk in ["generalized", "selective"], (
         "risk must be 'generalized' or 'selective'"
     )
+    device = score.device
 
     # Calculate empirical risk-coverage curve
     coverage_emp, threshold_emp, risk_emp = _rc_curve(score, residuals, risk)
@@ -316,22 +317,21 @@ def risk_coverage(
 
     # Calculate excess risk
     excess = risk_emp - risk_ref
-
     # Calculate AUC using trapezoidal rule
-    auc_emp = _trapz(coverage_emp, risk_emp)
-    auc_ref = _trapz(coverage_emp, risk_ref)
-    auc_exs = _trapz(coverage_emp, excess)
+    auc_emp = _trapz(coverage_emp.to(device=device), risk_emp).to(device=device)
+    auc_ref = _trapz(coverage_emp.to(device=device), risk_ref.to(device=device))
+    auc_exs = _trapz(coverage_emp.to(device=device), excess.to(device=device))
 
     return RiskCoverage(
-        coverage=coverage_emp,
-        threshold=threshold_emp,
-        risk=risk_emp,
-        reference=risk_ref,
-        excess=excess,
+        coverage=coverage_emp.to(device=device),
+        threshold=threshold_emp.to(device=device),
+        risk=risk_emp.to(device=device),
+        reference=risk_ref.to(device=device),
+        excess=excess.to(device=device),
         risk_type=risk,
-        auc_empirical=float(auc_emp),
-        auc_reference=float(auc_ref),
-        auc_excess=float(auc_exs),
+        auc_empirical=auc_emp,
+        auc_reference=auc_ref,
+        auc_excess=auc_exs,
     )
 
 
