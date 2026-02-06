@@ -2,9 +2,9 @@
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import override
+from typing import Any, override
 
-import faiss
+import nmslib
 import torch
 from torch.utils.data import DataLoader
 
@@ -44,8 +44,8 @@ class KNNScore(EmbeddingScore, ABC):
     """
 
     k: int = 1
-    index: faiss.Index | None = None
     cal_embeddings: torch.Tensor | None
+    index: Any | None = None
 
     def __init__(
         self, k: int = 1, stat: str = "max", pca: TensorPCA | None = None
@@ -259,19 +259,22 @@ class EuclideanScore(KNNScore):
 
     @override
     def _setup_index(self) -> None:
-        """Initialize faiss index based on embeddings."""
+        """Initialize an index based on reference embeddings."""
         assert isinstance(self.ref_embeddings, torch.Tensor)
-        self.index = faiss.IndexFlatL2(self.ref_embeddings.shape[1])
-        self.index.add(self.ref_embeddings.cpu())
+        self.index = nmslib.init(method="hnsw", space="l2")
+        self.index.addDataPointBatch(self.ref_embeddings.cpu())
+        self.index.createIndex({"post": 2}, print_progress=False)
 
     @override
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
-        dist, _ = self.index.search(query.cpu(), k=self.k + kpn)
-        dist = torch.Tensor(dist[:, kpn:])
-        dist = self._stat(dist, stat=self.stat)
-        return torch.sqrt(dist)
+        results = self.index.knnQueryBatch(query.cpu(), k=self.k + kpn)
+        distances = torch.cat(
+            [torch.tensor(res[1]).unsqueeze(0) for res in results]
+        )
+        distances = self._stat(distances[:, kpn:], stat=self.stat)
+        return torch.sqrt(distances)
 
 
 class CosineScore(KNNScore):
@@ -319,24 +322,26 @@ class CosineScore(KNNScore):
 
     @override
     def _setup_index(self) -> None:
-        """Initialize faiss index based on embeddings."""
+        """Initialize an index based on reference embeddings."""
         assert isinstance(self.ref_embeddings, torch.Tensor)
-        self.index = faiss.IndexFlatIP(self.ref_embeddings.shape[1])
-        self.index.add(torch.nn.functional.normalize(self.ref_embeddings).cpu())
-        return
+        self.index = nmslib.init(method="hnsw", space="cosinesimil")
+        normalized_embeddings = torch.nn.functional.normalize(
+            self.ref_embeddings
+        )
+        self.index.addDataPointBatch(normalized_embeddings.cpu())
+        self.index.createIndex({"post": 2}, print_progress=False)
 
     @override
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
-        query = torch.nn.functional.normalize(query).cpu()
-        similarity, _ = self.index.search(query, k=self.k + kpn)
-        similarity = torch.Tensor(similarity)[:, kpn:]
-        # Convert cosine similarity to cosine distance (1 - similarity)
-        # Low distance = inlier, high distance = outlier
-        dist = 1 - similarity
-        dist = self._stat(dist, stat=self.stat)
-        return dist
+        query = torch.nn.functional.normalize(query)
+        results = self.index.knnQueryBatch(query.cpu(), k=self.k + kpn)
+        distance = torch.cat(
+            [torch.tensor(res[1]).unsqueeze(0) for res in results]
+        )
+        distance = self._stat(distance[:, kpn:], stat=self.stat)
+        return distance
 
 
 class MahalanobisScore(KNNScore):
@@ -385,19 +390,25 @@ class MahalanobisScore(KNNScore):
 
     @override
     def _setup_index(self) -> None:
-        """Initialize faiss index based on embeddings."""
+        """Initialize an index based on reference embeddings."""
         assert isinstance(self.ref_embeddings, torch.Tensor)
         cov_zero = self.ref_embeddings.T.cov()
         self.vi_zero = torch.linalg.inv(torch.linalg.cholesky(cov_zero))
-        self.index = faiss.IndexFlatL2(self.ref_embeddings.shape[1])
-        self.index.add((self.ref_embeddings @ self.vi_zero.T).cpu())
+        transformed_embeddings = self.ref_embeddings @ self.vi_zero.T
+        self.index = nmslib.init(method="hnsw", space="l2")
+        self.index.addDataPointBatch(transformed_embeddings.cpu())
+        self.index.createIndex({"post": 2}, print_progress=False)
 
     @override
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
-        query = query.float().cpu() @ self.vi_zero.T.cpu()
-        dist, _ = self.index.search(query, k=self.k + kpn)
-        dist = torch.Tensor(dist[:, kpn:])
-        dist = self._stat(dist, stat=self.stat)
-        return dist
+        transformed_query = query.float() @ self.vi_zero.T
+        results = self.index.knnQueryBatch(
+            transformed_query.cpu(), k=self.k + kpn
+        )
+        distance = torch.cat(
+            [torch.tensor(res[1]).unsqueeze(0) for res in results]
+        )
+        distance = self._stat(distance, stat=self.stat)
+        return distance
