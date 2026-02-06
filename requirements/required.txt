@@ -4,5 +4,5 @@ torch
 torchmetrics
 tqdm
 pyarrow
-faiss-cpu
+nmslib
 lightning
