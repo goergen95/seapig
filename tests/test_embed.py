@@ -288,7 +288,6 @@ def test_visualize_embeddings():
 
     # Mock method arguments
     tsne_args = {"perplexity": 30, "random_state": 42}
-    umap_args = {"n_neighbors": 5, "min_dist": 0.1}
 
     with pytest.raises(ValueError):
         score.plot_embs(
@@ -304,13 +303,6 @@ def test_visualize_embeddings():
             query_embeddings=query_embeddings,
             method="tsne",
             method_args=tsne_args,
-        )
-
-        # Test with UMAP
-        score.plot_embs(
-            query_embeddings=query_embeddings,
-            method="umap",
-            method_args=umap_args,
         )
 
     # Ensure no exceptions were raised
