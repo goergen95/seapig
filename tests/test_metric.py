@@ -1,10 +1,15 @@
 import pytest
 import torch
 from pytorch_lightning import LightningModule
-from torchmetrics import Accuracy, MetricCollection, Precision, Recall
+from torchmetrics import (
+    Accuracy,
+    MeanMetric,
+    MetricCollection,
+    Precision,
+    Recall,
+)
 
-from seapig import SelectiveInferenceTask, SelectiveMetric
-from seapig.metric import RiskCoverageMetric
+from seapig import RiskCoverageMetric, SelectiveInferenceTask, SelectiveMetric
 from seapig.scores.base import RandomScore
 
 
@@ -65,15 +70,15 @@ def test_selective_metric_binary_accuracy_full_vs_selected() -> None:
     res = sel.compute()
 
     # Expect full accuracy: correct on 0.9, 0.4, 0.6; wrong on 0.8 => 3/4 = 0.75
-    assert "full_risk" in res and torch.allclose(
-        res["full_risk"], torch.tensor(0.75)
+    assert "full/BinaryAccuracy" in res and torch.allclose(
+        res["full/BinaryAccuracy"], torch.tensor(0.75)
     )
     # Selected accuracy considers first two only, both correct => 1.0
-    assert "selected_risk" in res and torch.allclose(
-        res["selected_risk"], torch.tensor(1.0)
+    assert "selected/BinaryAccuracy" in res and torch.allclose(
+        res["selected/BinaryAccuracy"], torch.tensor(1.0)
     )
-    assert "rejected_risk" in res and torch.allclose(
-        res["rejected_risk"], torch.tensor(0.5)
+    assert "rejected/BinaryAccuracy" in res and torch.allclose(
+        res["rejected/BinaryAccuracy"], torch.tensor(0.5)
     )
 
 
@@ -118,9 +123,9 @@ def test_selective_metric_end_to_end_with_task_outputs() -> None:
     res = sel.compute()
 
     # Full accuracy across all 4 predictions: half correct => 0.5
-    assert torch.allclose(res["full_risk"], torch.tensor(0.5))
+    assert torch.allclose(res["full/BinaryAccuracy"], torch.tensor(0.5))
     # Selected accuracy on first two samples: both correct => 1.0
-    assert torch.allclose(res["selected_risk"], torch.tensor(1.0))
+    assert torch.allclose(res["selected/BinaryAccuracy"], torch.tensor(1.0))
 
 
 def test_selective_metric_with_metric_collection_output_naming() -> None:
@@ -307,3 +312,45 @@ def test_risk_coverage_metric_state_concatenation() -> None:
 
     assert torch.equal(metric.scores, torch.tensor([0.1, 0.2, 0.3, 0.4]))
     assert metric.scores.numel() == 4
+
+
+@pytest.mark.parametrize(
+    "selection_behavior", ["always_select", "always_reject"]
+)
+def test_selective_metric_with_mock_metric_collection(selection_behavior):
+    # Create a mock metric collection
+    base_metrics = MetricCollection({"mean": MeanMetric()})
+    selective_metric = SelectiveMetric(base=base_metrics)
+
+    # Generate mock data
+    batch_size = 10
+    predictions = torch.randn(batch_size)
+    target = torch.randn(batch_size)
+
+    if selection_behavior == "always_select":
+        selection_mask = torch.ones(batch_size, dtype=torch.bool)
+    elif selection_behavior == "always_reject":
+        selection_mask = torch.zeros(batch_size, dtype=torch.bool)
+
+    # Update the metric with the mock data
+    outputs = {"predictions": predictions, "selected": selection_mask}
+    selective_metric.update(outputs, target)
+
+    # Compute the results
+    results = selective_metric.compute()
+
+    # Assertions
+    if selection_behavior == "always_select":
+        # Ensure the selected metric is updated
+        assert "selected/mean" in results
+        assert results["selected/mean"] != 0
+        # Ensure the rejected metric is not updated
+        assert "rejected/mean" in results
+        assert results["rejected/mean"] == 0
+    elif selection_behavior == "always_reject":
+        # Ensure the rejected metric is updated
+        assert "rejected/mean" in results
+        assert results["rejected/mean"] != 0
+        # Ensure the selected metric is not updated
+        assert "selected/mean" in results
+        assert results["selected/mean"] == 0
