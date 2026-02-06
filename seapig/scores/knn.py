@@ -288,6 +288,9 @@ class EuclideanScore(KNNScore):
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
+        nmslib.setQueryTimeParams(
+            self.index, {"efSearch": int(1.1 * self.k)}
+        )  # set efSearch to a value slightly higher than k
         results = self.index.knnQueryBatch(query.cpu(), k=self.k + kpn)
         distances = self._zeropad(results, kpn=kpn)
         distances = self._stat(distances[:, kpn:], stat=self.stat)
@@ -353,6 +356,9 @@ class CosineScore(KNNScore):
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
         query = torch.nn.functional.normalize(query)
+        nmslib.setQueryTimeParams(
+            self.index, {"efSearch": int(1.1 * self.k)}
+        )  # set efSearch to a value slightly higher than k
         results = self.index.knnQueryBatch(query.cpu(), k=self.k + kpn)
         distances = self._zeropad(results, kpn=kpn)
         distances = self._stat(distances[:, kpn:], stat=self.stat)
@@ -419,6 +425,9 @@ class MahalanobisScore(KNNScore):
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
         transformed_query = query.float() @ self.vi_zero.T
+        nmslib.setQueryTimeParams(
+            self.index, {"efSearch": int(1.1 * self.k)}
+        )  # set efSearch to a value slightly higher than k
         results = self.index.knnQueryBatch(
             transformed_query.cpu(), k=self.k + kpn
         )
