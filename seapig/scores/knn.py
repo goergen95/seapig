@@ -1,5 +1,6 @@
 """KNN-based confidence scores."""
 
+import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, override
@@ -175,6 +176,24 @@ class KNNScore(EmbeddingScore, ABC):
         """Calculate the KNN distance of a query against a populated index."""
         pass
 
+    def _zeropad(
+        self, query_results: list[tuple[torch.Tensor, torch.Tensor]], kpn: int
+    ) -> torch.Tensor:
+        distances = []
+
+        for i, res in enumerate(query_results):
+            dist_tensor = torch.tensor(res[1])
+            if len(dist_tensor) < self.k + kpn:
+                warnings.warn(
+                    f"Query {i} returned fewer than {self.k + kpn} neighbors. "
+                    f"Applying zero padding to the distance tensor.",
+                    UserWarning,
+                )
+                padding = torch.zeros(self.k + kpn - len(dist_tensor))
+                dist_tensor = torch.cat([dist_tensor, padding])
+            distances.append(dist_tensor.unsqueeze(0))
+        return torch.cat(distances)
+
     @override
     def score(self, X: torch.Tensor) -> torch.Tensor:
         """Compute a confidence score based on sample embeddings.
@@ -270,9 +289,7 @@ class EuclideanScore(KNNScore):
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
         results = self.index.knnQueryBatch(query.cpu(), k=self.k + kpn)
-        distances = torch.cat(
-            [torch.tensor(res[1]).unsqueeze(0) for res in results]
-        )
+        distances = self._zeropad(results, kpn=kpn)
         distances = self._stat(distances[:, kpn:], stat=self.stat)
         return torch.sqrt(distances)
 
@@ -337,11 +354,9 @@ class CosineScore(KNNScore):
         assert self.index is not None
         query = torch.nn.functional.normalize(query)
         results = self.index.knnQueryBatch(query.cpu(), k=self.k + kpn)
-        distance = torch.cat(
-            [torch.tensor(res[1]).unsqueeze(0) for res in results]
-        )
-        distance = self._stat(distance[:, kpn:], stat=self.stat)
-        return distance
+        distances = self._zeropad(results, kpn=kpn)
+        distances = self._stat(distances[:, kpn:], stat=self.stat)
+        return distances
 
 
 class MahalanobisScore(KNNScore):
@@ -407,8 +422,6 @@ class MahalanobisScore(KNNScore):
         results = self.index.knnQueryBatch(
             transformed_query.cpu(), k=self.k + kpn
         )
-        distance = torch.cat(
-            [torch.tensor(res[1]).unsqueeze(0) for res in results]
-        )
-        distance = self._stat(distance, stat=self.stat)
-        return distance
+        distances = self._zeropad(results, kpn=kpn)
+        distances = self._stat(distances, stat=self.stat)
+        return distances
