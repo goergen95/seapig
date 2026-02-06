@@ -163,6 +163,22 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
             centers = (edges[:-1] + edges[1:]) / 2
             return centers, density
 
+        # Calculate rejected samples
+        if self.threshold is not None:
+            threshold_value = self.threshold.cpu().item()
+            rejected_calibration = np.sum(scores > threshold_value)
+            rejected_query = (
+                np.sum(q_scores > threshold_value)
+                if q_scores is not None
+                else 0
+            )
+        else:
+            rejected_calibration = 0
+            rejected_query = 0
+
+        total_calibration = len(scores)
+        total_query = len(q_scores) if q_scores is not None else 0
+
         # Initialize the plot
         plt.figure(figsize=(10, 6))
 
@@ -173,7 +189,7 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
             density,
             alpha=0.5,
             color="steelblue",
-            label="Calibration Scores",
+            label=f"Calibration Scores (N={total_calibration}, Rejected={rejected_calibration})",
         )
 
         # Plot query embeddings density if provided
@@ -184,7 +200,16 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
                 query_density,
                 alpha=0.5,
                 color="darkorange",
-                label="Query Scores",
+                label=f"Query Scores (N={total_query}, Rejected={rejected_query})",
+            )
+
+        # Add a vertical line for the threshold if it exists
+        if self.threshold is not None:
+            plt.axvline(
+                x=self.threshold.cpu().item(),
+                color="black",
+                linestyle="--",
+                label=f"Threshold ({self.threshold.cpu().item():.2f})",
             )
 
         # Add labels and legend
