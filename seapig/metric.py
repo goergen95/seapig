@@ -84,34 +84,22 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
             Mapping containing predictions, a target tensor, and selection
             mask.
         """
-        preds = outputs[self.prediction_key]
-        mask = outputs[self.selection_key]
+        predictions = outputs[self.prediction_key]
+        selected = outputs[self.selection_key]
 
-        device = preds.device
-        # Ensure all metrics are on the right device
+        device = predictions.device
         self._full = self._full.to(device)
         self._selected = self._selected.to(device)
         self._rejected = self._rejected.to(device)
 
-        # Update total
-        self._full.update(preds, target)
+        self._full.update(predictions, target)
 
-        # Update selected subset (if any)
-        if mask.ndim != 1:
-            mask = mask.view(-1)
-        if mask.any():
-            if mask.dtype is not torch.bool:
-                mask = mask == 1
-            preds_sel = preds[mask]
-            target_sel = target[mask]
-            self._selected.update(preds_sel, target_sel)
+        if selected.any():
+            self._selected.update(predictions[selected], target[selected])
 
-        # Update rejected subset (if any)
-        rejected_mask = ~mask
-        if rejected_mask.any():
-            preds_rej = preds[rejected_mask]
-            target_rej = target[rejected_mask]
-            self._rejected.update(preds_rej, target_rej)
+        rejected = ~selected
+        if rejected.any():
+            self._rejected.update(predictions[rejected], target[rejected])
 
     def compute(self) -> dict[str, torch.Tensor]:
         """Compute and return results for total, selected, and rejected.
@@ -120,7 +108,8 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
         -------
         dict[str, torch.Tensor]
             Prefixed results. For a single metric, keys are
-            ``"full_risk"``, ``"selective_risk"``, and ``"rejected_risk"``.
+            ``"full/<metric_name>"``, ``"selected/<metric_name>"``,
+            and ``"rejected/<metric_name>"``.
             For a collection, keys are prefixed as ``"full/<name>"``,
             ``"selected/<name>"``, and ``"rejected/<name>"``.
         """
@@ -128,10 +117,22 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
         def _to_mapping(
             m: Metric | MetricCollection, prefix: str
         ) -> dict[str, torch.Tensor]:
-            out = m.compute()
-            if isinstance(out, dict):
-                return {f"{prefix}/{k}": v for k, v in out.items()}
-            return {f"{prefix}_risk": out}
+            if isinstance(m, MetricCollection):
+                # Generate outputs for all metrics in the collection
+                out = {}
+                for name, metric in m.items():
+                    if metric._update_called:  # Check if the metric was updated
+                        out[f"{prefix}/{name}"] = metric.compute()
+                    else:
+                        out[f"{prefix}/{name}"] = torch.tensor(0.0)
+                return out
+            else:
+                # Generate output for a single metric
+                metric_name = type(m).__name__
+                if m._update_called:  # Check if the metric was updated
+                    return {f"{prefix}/{metric_name}": m.compute()}
+                else:
+                    return {f"{prefix}/{metric_name}": torch.tensor(0.0)}
 
         total_map = _to_mapping(self._full, "full")
         selected_map = _to_mapping(self._selected, "selected")
