@@ -163,12 +163,48 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
             centers = (edges[:-1] + edges[1:]) / 2
             return centers, density
 
+        # Define a function to compute point size based on logarithmic scaling
+        def compute_point_size(
+            n_points: int, base_size: float = 100.0
+        ) -> float:
+            """Compute point size that decreases logarithmically with number of points.
+
+            The point size inversely correlates with the base-10 logarithm of the
+            number of points. For small numbers (<=1), a default base size is returned
+            to avoid mathematical errors with logarithms.
+
+            Parameters
+            ----------
+            n_points:
+                The total number of points being plotted.
+            base_size:
+                The base point size used for scaling. Defaults to 100.0.
+
+            Returns
+            -------
+            float
+                The computed point size for scatter plots.
+            """
+            # Handle edge cases: if n_points <= 1, return base_size directly
+            # This avoids log10(0) = -inf and log10(1) = 0 which would cause issues
+            if n_points <= 1:
+                return base_size
+
+            # Compute point size inversely proportional to log10(n_points)
+            # As n_points increases, log10(n_points) increases, so the size decreases
+            # Example: n=10 -> log10=1 -> size=100/1=100
+            #          n=100 -> log10=2 -> size=100/2=50
+            #          n=1000 -> log10=3 -> size=100/3=33.3
+            log_scale = np.log10(n_points)
+            point_size = float(base_size / log_scale)
+            return point_size
+
         # Calculate rejected samples
         if self.threshold is not None:
             threshold_value = self.threshold.cpu().item()
-            rejected_calibration = np.sum(scores > threshold_value)
+            rejected_calibration = int(np.sum(scores > threshold_value))
             rejected_query = (
-                np.sum(q_scores > threshold_value)
+                int(np.sum(q_scores > threshold_value))
                 if q_scores is not None
                 else 0
             )
@@ -192,6 +228,21 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
             label=f"Calibration Scores (N={total_calibration}, Rejected={rejected_calibration})",
         )
 
+        # Add scatter plot points for calibration scores with logarithmic size scaling
+        # Compute point size based on the number of calibration points
+        cal_point_size = compute_point_size(total_calibration)
+        # Create y-values at the bottom of the plot for scatter points
+        y_offset_cal = np.zeros_like(scores)
+        plt.scatter(
+            scores,
+            y_offset_cal,
+            s=cal_point_size,
+            alpha=0.3,
+            color="steelblue",
+            edgecolors="navy",
+            linewidths=0.5,
+        )
+
         # Plot query embeddings density if provided
         if q_scores is not None:
             query_centers, query_density = compute_density(q_scores, bins=bins)
@@ -201,6 +252,21 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
                 alpha=0.5,
                 color="darkorange",
                 label=f"Query Scores (N={total_query}, Rejected={rejected_query})",
+            )
+
+            # Add scatter plot points for query scores with logarithmic size scaling
+            # Compute point size based on the number of query points
+            query_point_size = compute_point_size(total_query)
+            # Create y-values slightly above the calibration scatter points
+            y_offset_query = np.full_like(q_scores, 0.05 * np.max(density))
+            plt.scatter(
+                q_scores,
+                y_offset_query,
+                s=query_point_size,
+                alpha=0.3,
+                color="darkorange",
+                edgecolors="darkred",
+                linewidths=0.5,
             )
 
         # Add a vertical line for the threshold if it exists
