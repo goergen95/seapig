@@ -1,4 +1,29 @@
 {
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestArgs": [
+        "tests"
+    ],
+    "python.languageServer": "Pylance",
+    "telemetry.telemetryLevel": "off",
+    "python.formatting.provider": "ruff",
+    "python.linting.enabled": true,
+    "python.linting.ruffEnabled": true,
+    "python.linting.ruffArgs": [
+        "--fix"
+    ],
+    "python.linting.mypyEnabled": true,
+    "python.linting.mypyArgs": [
+        "--ignore-missing-imports"
+    ],
+    "python.terminal.activateEnvInCurrentTerminal": true,
+    "python.venvFolders": [
+        "env"
+    ],
+    "ruff.lineLength": 80,
+    "ruff.organizeImports": true,
+    "diffEditor.ignoreTrimWhitespace": false,
+    "python.analysis.typeCheckingMode": "strict",
     "cSpell.words": [
         "allclose",
         "autocast",
@@ -40,9 +65,4 @@
         "venv",
         "virtualenv"
     ],
-    "python.testing.pytestArgs": [
-        "tests"
-    ],
-    "python.testing.unittestEnabled": false,
-    "python.testing.pytestEnabled": true
 }
