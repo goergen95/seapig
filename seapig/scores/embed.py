@@ -490,8 +490,8 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
         # Logarithmic scaling for point size and alpha
         log_total = np.log10(max(total_points, 10))
-        point_size = max(100 / log_total, 1)
-        alpha = min(0.1 * log_total, 1.0)
+        point_size = max(100 / log_total, 1.0)
+        alpha = max(1.0 / log_total, 0.01)
 
         plt.figure(figsize=(10, 8))
         for label in set(labels):
@@ -503,6 +503,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
                 color=label2col[label],
                 s=point_size,
                 alpha=alpha,
+                marker="o" if total_points < 50000 else ".",
             )
         plt.legend()
         plt.title(f"Embedding Visualization ({method})")
