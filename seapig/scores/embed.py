@@ -441,6 +441,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         """
         try:
             import matplotlib.pyplot as plt
+            import numpy as np
         except ImportError:
             raise ImportError(
                 "matplotlib is not installed. Please install it with `pip install matplotlib`."
@@ -461,6 +462,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
             labels.extend(["query"] * len(query_embeddings))
 
         all_embeddings: torch.Tensor = torch.cat(embeddings, dim=0)
+        total_points = len(all_embeddings)
 
         method_args = method_args or {}
         if method == "tsne":
@@ -486,6 +488,11 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
         label2col = {"train": "#1d7990", "cal": "#25901D", "query": "#f18e26"}
 
+        # Logarithmic scaling for point size and alpha
+        log_total = np.log10(max(total_points, 10))
+        point_size = max(100 / log_total, 1)
+        alpha = min(0.1 * log_total, 1.0)
+
         plt.figure(figsize=(10, 8))
         for label in set(labels):
             idx = [i for i, la in enumerate(labels) if la == label]
@@ -494,7 +501,8 @@ class EmbeddingScore(ConfidenceScore, ABC):
                 reduced_embeddings[idx, 1],
                 label=label,
                 color=label2col[label],
-                alpha=0.1,
+                s=point_size,
+                alpha=alpha,
             )
         plt.legend()
         plt.title(f"Embedding Visualization ({method})")
