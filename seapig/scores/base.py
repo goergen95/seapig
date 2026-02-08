@@ -80,13 +80,20 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
         """Get the current threshold value."""
         return self.threshold
 
-    @abstractmethod
     def set_threshold(self, q: float = 0.99) -> None:
         """Set a threshold based on a specific quantile on the available scores.
 
         Samples with scores higher than this threshold are excluded from prediction.
         """
-        pass
+        assert 0.0 < q < 1.0, "Quantile (q) must be between 0 and 1."
+        q = float(q)
+        if self.scores is None:
+            raise ValueError(
+                "Calibration scores (scores) must be available to set a threshold."
+            )
+        qval = torch.quantile(self.scores, q=q)
+        self.threshold = qval
+        self.set_calibrated()
 
     @abstractmethod
     def fit(
@@ -98,7 +105,7 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
         while `Y` as an optional parameter that can be used to calculate
         reference scores for the decision threshold.
         """
-        pass
+        raise NotImplementedError()
 
     @abstractmethod
     def score(self, X: torch.Tensor, *args: Any, **kwargs: Any) -> torch.Tensor:
@@ -107,9 +114,8 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
         Returns scores where low values indicate likely inliers and high values
         indicate likely outliers.
         """
-        pass
+        raise NotImplementedError()
 
-    @abstractmethod
     def select(
         self, X: torch.Tensor, *args: Any, **kwargs: Any
     ) -> dict[str, torch.Tensor]:
@@ -118,7 +124,12 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
         Samples with scores lower than the threshold are selected for prediction,
         while samples with scores higher than the threshold are excluded.
         """
-        pass
+        if self.threshold is None:
+            self.set_threshold()
+        assert self.threshold is not None
+        scores = self.score(X, *args, **kwargs)
+        selected = scores < self.threshold
+        return {"score": scores, "selected": selected}
 
     def plot(
         self, query_scores: torch.Tensor | None = None, bins: int = 100
