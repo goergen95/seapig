@@ -15,6 +15,13 @@ from seapig.model import SelectiveInferenceTask
 from seapig.risk_coverage import RiskCoverage, risk_coverage
 from seapig.scores.base import RandomScore
 from seapig.scores.knn import CosineScore, EuclideanScore, MahalanobisScore
+from seapig.scores.logits import (
+    EnergyScore,
+    EntropyScore,
+    LogitScore,
+    MarginScore,
+    SoftmaxScore,
+)
 from seapig.scores.pca import PCAScore
 from seapig.scores.pyod import PyODScore
 
@@ -30,4 +37,9 @@ __all__ = [
     "PCAScore",
     "risk_coverage",
     "RiskCoverage",
+    "SoftmaxScore",
+    "MarginScore",
+    "EntropyScore",
+    "EnergyScore",
+    "LogitScore",
 ]

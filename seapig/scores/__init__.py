@@ -8,6 +8,13 @@ from seapig.scores.knn import (
     KNNScore,
     MahalanobisScore,
 )
+from seapig.scores.logits import (
+    EnergyScore,
+    EntropyScore,
+    LogitScore,
+    MarginScore,
+    SoftmaxScore,
+)
 from seapig.scores.pca import PCAScore
 from seapig.scores.pyod import PyODScore
 
@@ -21,4 +28,9 @@ __all__ = [
     "MahalanobisScore",
     "PyODScore",
     "PCAScore",
+    "SoftmaxScore",
+    "EnergyScore",
+    "EntropyScore",
+    "MarginScore",
+    "LogitScore",
 ]
