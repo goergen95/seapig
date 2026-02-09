@@ -310,6 +310,14 @@ def test_top_level_score_imports():
     (EntropyScore, "binary", torch.randn(9), (9,)),
     (EntropyScore, "binary", torch.randn(9, 2), (9,)),
     (EntropyScore, "multilabel", torch.randn(4, 2), (4,)),
+    (SoftmaxScore, "multiclass", torch.randn(7, 4), (7,)),
+    (SoftmaxScore, "binary", torch.randn(8), (8,)),
+    (SoftmaxScore, "binary", torch.randn(8, 2), (8,)),
+    (SoftmaxScore, "multilabel", torch.randn(5, 3), (5,)),
+    (MarginScore, "multiclass", torch.randn(6, 5), (6,)),
+    (MarginScore, "binary", torch.randn(9), (9,)),
+    (MarginScore, "binary", torch.randn(9, 2), (9,)),
+    (MarginScore, "multilabel", torch.randn(4, 2), (4,)),
 ])
 def test_score_shapes(score_class, task, logits, expected_shape):
     score = score_class(task=task)
@@ -351,3 +359,27 @@ def test_energy_numerical_stability():
     score = EnergyScore(task="multiclass")
     out = score.score(logits)
     assert torch.isfinite(out).all()
+
+def test_softmax_multilabel_min_aggregation():
+    logits = torch.tensor([[10.0, 0.0], [0.0, 0.0]])
+    score = SoftmaxScore(task="multilabel")
+    out = score.score(logits)
+    assert torch.isclose(out[0], out[1], atol=1e-6)
+
+def test_margin_multilabel_min_aggregation():
+    logits = torch.tensor([[10.0, 0.0], [0.0, 0.0]])
+    score = MarginScore(task="multilabel")
+    out = score.score(logits)
+    assert torch.isclose(out[0], out[1], atol=1e-6)
+
+def test_margin_directionality():
+    confident = torch.tensor([[10.0, -5.0, -5.0]])
+    uncertain = torch.tensor([[0.1, 0.0, -0.1]])
+    score = MarginScore(task="multiclass")
+    assert score.score(confident) < score.score(uncertain)
+
+def test_softmax_binary_single_logit():
+    logits = torch.tensor([10.0, 0.0, -10.0])
+    score = SoftmaxScore(task="binary")
+    out = score.score(logits)
+    assert out[0] < out[1] and out[2] < out[1]

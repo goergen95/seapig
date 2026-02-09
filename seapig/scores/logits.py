@@ -402,22 +402,31 @@ class LogitScore(ConfidenceScore, abc.ABC):
 
 
 class SoftmaxScore(LogitScore):
-    """Maximum softmax probability confidence score.
+    """Maximum softmax probability confidence score (task-aware).
+
+    Supports multiclass, binary (single/two-logit), and multilabel tasks.
 
     Parameters
     ----------
     temperature : float | None
         Optional initial temperature. If None no temperature scaling is
         applied until :meth:`fit` calls :meth:`fit_temperature`.
+    task : {"multiclass", "binary", "multilabel"}, default "multiclass"
+        Task type which determines score computation.
     """
 
     ident: str = "softmax"
 
-    def __init__(self, temperature: float | None = None) -> None:
-        super().__init__(temperature=temperature)
+    def __init__(self, temperature: float | None = None, task: str = "multiclass") -> None:
+        super().__init__(temperature=temperature, task=task)
 
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
-        """Compute -max_softmax_probability for each sample.
+        """Compute task-aware softmax-based confidence score.
+
+        For multiclass: -max softmax probability.
+        For binary single-logit: -sigmoid(|logit|).
+        For binary two-logit: -max softmax probability.
+        For multilabel: -min(max(p, 1-p)), where p = sigmoid(logit).
 
         Returns
         -------
@@ -425,9 +434,24 @@ class SoftmaxScore(LogitScore):
             1-D tensor of shape (M,) with scores (lower == more confident).
         """
         T = 1.0 if self.temperature is None else float(self.temperature)
-        probs = F.softmax(query_logits / T, dim=1)
-        maxp = probs.amax(dim=1)
-        return -maxp
+        task = self.task
+        logits = query_logits
+        if task == "multiclass":
+            probs = F.softmax(logits / T, dim=1)
+            return -probs.amax(dim=1)
+        elif task == "binary":
+            if self._is_binary_single_logit(logits):
+                p = torch.sigmoid(logits.abs() / T)
+                return -p
+            else:
+                probs = F.softmax(logits / T, dim=1)
+                return -probs.amax(dim=1)
+        elif task == "multilabel":
+            p = torch.sigmoid(logits / T)
+            max_p = torch.maximum(p, 1 - p)
+            return -max_p.min(dim=1).values
+        else:
+            raise ValueError(f"Unknown task: {task}")
 
 
 class EnergyScore(LogitScore):
@@ -473,22 +497,31 @@ class EnergyScore(LogitScore):
 
 
 class MarginScore(LogitScore):
-    """Top-two margin confidence score.
+    """Top-two margin confidence score (task-aware).
+
+    Supports multiclass, binary (single/two-logit), and multilabel tasks.
 
     Parameters
     ----------
     temperature : float | None
         Optional initial temperature. If None no temperature scaling is
         applied until :meth:`fit` calls :meth:`fit_temperature`.
+    task : {"multiclass", "binary", "multilabel"}, default "multiclass"
+        Task type which determines score computation.
     """
 
     ident: str = "margin"
 
-    def __init__(self, temperature: float | None = None) -> None:
-        super().__init__(temperature=temperature)
+    def __init__(self, temperature: float | None = None, task: str = "multiclass") -> None:
+        super().__init__(temperature=temperature, task=task)
 
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
-        """Compute negative top-two margin for each sample.
+        """Compute task-aware margin-based confidence score.
+
+        For multiclass: negative top-two margin.
+        For binary single-logit: negative absolute logit.
+        For binary two-logit: negative top-two margin.
+        For multilabel: negative min(|logit|).
 
         Returns
         -------
@@ -496,14 +529,25 @@ class MarginScore(LogitScore):
             1-D tensor of shape (M,) with scores (lower == more confident).
         """
         T = 1.0 if self.temperature is None else float(self.temperature)
-        scaled = query_logits / T
-        if scaled.size(1) < 2:
-            raise ValueError(
-                "MarginScore requires at least two classes in logits (C>=2)."
-            )
-        top2 = scaled.topk(k=2, dim=1).values
-        margin = top2[:, 0] - top2[:, 1]
-        return -margin
+        task = self.task
+        logits = query_logits
+        scaled = logits / T
+        if task == "multiclass":
+            top2 = scaled.topk(k=2, dim=1).values
+            margin = top2[:, 0] - top2[:, 1]
+            return -margin
+        elif task == "binary":
+            if self._is_binary_single_logit(logits):
+                return -logits.abs()
+            else:
+                top2 = scaled.topk(k=2, dim=1).values
+                margin = top2[:, 0] - top2[:, 1]
+                return -margin
+        elif task == "multilabel":
+            per_label_margin = logits.abs()
+            return -per_label_margin.min(dim=1).values
+        else:
+            raise ValueError(f"Unknown task: {task}")
 
 
 class EntropyScore(LogitScore):
