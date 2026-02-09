@@ -53,10 +53,20 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
         super().__init__()
         import copy as _copy
 
-        # Three independent metric instances (full, selection, rejection)
-        self._full: Metric | MetricCollection = _copy.deepcopy(base)
-        self._selected: Metric | MetricCollection = _copy.deepcopy(base)
-        self._rejected: Metric | MetricCollection = _copy.deepcopy(base)
+        # Deep-copy the base metric/collection for independent state
+        full = _copy.deepcopy(base)
+        selected = _copy.deepcopy(base)
+        rejected = _copy.deepcopy(base)
+
+        # Register as submodules so torch/Lightning see and manage them
+        self._full = full
+        self.add_module("_full", self._full)
+
+        self._selected = selected
+        self.add_module("_selected", self._selected)
+
+        self._rejected = rejected
+        self.add_module("_rejected", self._rejected)
 
         self.prediction_key = prediction_key
         self.selection_key = selection_key
@@ -85,19 +95,21 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
             mask.
         """
         predictions = outputs[self.prediction_key]
-        selected = outputs[self.selection_key]
+        selected = outputs[self.selection_key].bool()
+        rejected = ~selected
 
         device = predictions.device
-        self._full = self._full.to(device)
-        self._selected = self._selected.to(device)
-        self._rejected = self._rejected.to(device)
+        self._full.to(device)
+        self._selected.to(device)
+        self._rejected.to(device)
 
+        # Update full with all samples
         self._full.update(predictions, target)
 
+        # Conditionally update selected/rejected submetrics
         if selected.any():
             self._selected.update(predictions[selected], target[selected])
 
-        rejected = ~selected
         if rejected.any():
             self._rejected.update(predictions[rejected], target[rejected])
 
