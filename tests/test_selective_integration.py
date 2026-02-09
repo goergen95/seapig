@@ -4,6 +4,7 @@ from lightning import LightningDataModule, LightningModule, Trainer
 from torch.utils.data import DataLoader, Dataset
 from torchmetrics import Accuracy
 
+from seapig import RiskCoverageMetric
 from seapig.model import SelectiveInferenceTask
 from seapig.scores.base import ConfidenceScore
 
@@ -47,7 +48,11 @@ class FlagScore(ConfidenceScore):
         return torch.zeros(embeddings.shape[0], dtype=torch.float32)
 
     def select(self, embeddings: torch.Tensor) -> dict[str, torch.Tensor]:
-        return {"selected": embeddings[:, 0].to(torch.bool)}
+        # boolean selection
+        selected = embeddings[:, 0].to(torch.bool)
+        # numeric score (lower is better) — include in outputs for RiskCoverageMetric
+        score = (1.0 - embeddings[:, 0].to(torch.float32)).reshape(-1)
+        return {"selected": selected, "score": score}
 
 
 class SmallDataset(Dataset):
@@ -156,3 +161,49 @@ def test_selective_inference_trainer_integration(tmp_path):
         != metric_floats["full/BinaryAccuracy"]
     )
     assert metric_floats["rejected/BinaryAccuracy"] > 0.0
+
+
+def test_risk_coverage_integration_via_trainer(tmp_path):
+    task = DummyTask()
+    score = FlagScore()
+    sel_model = SelectiveInferenceTask(
+        task, score, rc_metric=RiskCoverageMetric(risk="selective") ,input_key="image", target_key="label"
+    )
+
+    trainer = Trainer(
+        logger=False, enable_checkpointing=False, accelerator="cpu", devices=1
+    )
+
+    results = trainer.test(sel_model, datamodule=DM())
+
+    # trainer.test returns a list (one entry per test dataloader)
+    assert isinstance(results, list) and len(results) == 1
+    res = results[0]
+
+    # find reported values (Lightning may prefix them, so search by suffix)
+    reported_emp = _find_metric(res, "rc/auc_empirical")
+    reported_ref = _find_metric(res, "rc/auc_reference")
+    reported_excess = _find_metric(res, "rc/auc_excess")
+
+    # final computed dict from the RiskCoverageMetric on the model
+    metric_dict = sel_model.rc_metric.compute()
+    metric_floats = _tensor_dict_to_floats(metric_dict)
+
+    # Ensure trainer-reported values match metric.compute() values
+    assert abs(reported_emp - metric_floats.get("rc/auc_empirical", reported_emp)) < 1e-6
+    assert abs(reported_ref - metric_floats.get("rc/auc_reference", reported_ref)) < 1e-6
+    assert abs(reported_excess - metric_floats.get("rc/auc_excess", reported_excess)) < 1e-6
+
+    # Basic sanity checks on numeric ranges and presence
+    assert "rc/auc_empirical" in metric_floats
+    assert "rc/auc_reference" in metric_floats
+    assert "rc/auc_excess" in metric_floats
+
+    emp = metric_floats["rc/auc_empirical"]
+    ref = metric_floats["rc/auc_reference"]
+    excess = metric_floats["rc/auc_excess"]
+
+    assert 0.0 <= emp <= 1.0
+    assert 0.0 <= ref <= 1.0
+    # auc_excess can be slightly negative due to numeric differences; allow tiny tolerance
+    assert excess >= -1e-6

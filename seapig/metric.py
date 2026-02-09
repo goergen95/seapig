@@ -261,26 +261,26 @@ class RiskCoverageMetric(Metric):  # type: ignore[misc]
         err_fn = self._error_fn or self._default_error_fn
         residuals = err_fn(preds, target).to(device)
 
-        # Concatenate into states
+        # Concatenate into states (keep dtype/device consistent)
         if self.scores.numel() == 0:
-            self.scores: torch.Tensor = scores
+            self.scores = scores
         else:
             self.scores = torch.cat([self.scores, scores], dim=0)
 
         if self.residuals.numel() == 0:
-            self.residuals: torch.Tensor = residuals
+            self.residuals = residuals
         else:
             self.residuals = torch.cat([self.residuals, residuals], dim=0)
 
     def compute(self) -> dict[str, torch.Tensor]:
         """Compute risk-coverage curve metrics."""
         if self.scores.numel() == 0:
-            # No data yet; return zeros
+            # No data yet; return zeros on the registered device
             zero = torch.tensor(0.0, device=self.scores.device)
             return {
                 "rc/auc_empirical": zero,
                 "rc/auc_reference": zero,
-                "rc/e_aurc": zero,
+                "rc/auc_excess": zero,
             }
 
         rc = risk_coverage(
@@ -290,10 +290,11 @@ class RiskCoverageMetric(Metric):  # type: ignore[misc]
             n_bins=self.n_bins,
         )
         self._last_curve = rc
+        device = self.scores.device
         return {
-            "rc/auc_empirical": rc.auc_empirical,
-            "rc/auc_reference": rc.auc_reference,
-            "rc/auc_excess": rc.auc_excess,
+            "rc/auc_empirical": torch.tensor(rc.auc_empirical, device=device),
+            "rc/auc_reference": torch.tensor(rc.auc_reference, device=device),
+            "rc/auc_excess": torch.tensor(rc.auc_excess, device=device),
         }
 
     def get_curve(self) -> RiskCoverage | None:
