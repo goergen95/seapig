@@ -10,9 +10,7 @@ from __future__ import annotations
 
 import abc
 import inspect
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 import torch
 import torch.nn.functional as F
@@ -20,25 +18,6 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from seapig.scores.base import ConfidenceScore
-
-
-@dataclass
-class TaskConfig:
-    """Configuration for task-specific score computation.
-
-    Parameters
-    ----------
-    task : {"binary", "multiclass", "multilabel"}
-        Type of classification task.
-    multilabel_agg : {"mean", "min", "max", "sum"}
-        Aggregation strategy for multilabel scores (default: "min").
-    binary_format : {"auto", "single", "two"}
-        How to interpret binary logits when ambiguous (default: "auto").
-    """
-
-    task: Literal["binary", "multiclass", "multilabel"]
-    multilabel_agg: Literal["mean", "min", "max", "sum"] = "min"
-    binary_format: Literal["auto", "single", "two"] = "auto"
 
 
 class LogitScore(ConfidenceScore, abc.ABC):
@@ -56,8 +35,6 @@ class LogitScore(ConfidenceScore, abc.ABC):
     task : {"multiclass", "binary", "multilabel"}, default="multiclass"
         Type of classification task. Determines score computation and
         temperature fitting loss. Default is multiclass for backwards compatibility.
-    task_config : TaskConfig or None
-        Optional configuration for multilabel aggregation and binary format.
 
     Notes
     -----
@@ -83,27 +60,19 @@ class LogitScore(ConfidenceScore, abc.ABC):
     labels: torch.Tensor | None
     temperature: float | None
     task: str
-    task_config: TaskConfig | None
 
     def __init__(
         self,
         temperature: float | None = None,
         task: str = "multiclass",
-        task_config: TaskConfig | None = None,
     ) -> None:
         super().__init__()
         self.register_buffer("logits", None)
         self.register_buffer("labels", None)
         self.temperature: float | None = (
             None if temperature is None else float(temperature)
-        )
-        # task and optional configuration
-        if task_config is not None:
-            self.task_config = task_config
-            self.task = task_config.task
-        else:
-            self.task_config = None
-            self.task = task
+        )    
+        self.task = task
 
     @staticmethod
     def _check_model(model: torch.nn.Module) -> None:
@@ -116,7 +85,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
             Model to check. Must have a callable `.logits(x)` method.
         """
         assert isinstance(model, torch.nn.Module)
-        if not callable(model.logits):
+        if not hasattr(model, "logits") or not callable(model.logits):
             raise Exception("model is required to have a `.logits()` method.")
         sig = inspect.signature(obj=model.logits)
         if "x" not in sig.parameters.keys():
@@ -203,11 +172,11 @@ class LogitScore(ConfidenceScore, abc.ABC):
             # clone logits to ensure we don't use inference-mode tensors
             scaled = logits.clone() / T
             loss = self._temperature_loss(scaled, labels)
-            loss.backward()  # type: ignore [no-untyped-call]
+            loss.backward()
             return loss
 
         try:
-            optimizer.step(closure)  # type: ignore [no-untyped-call]
+            optimizer.step(closure)
         except Exception:
             # fallback to Adam on a fresh leaf Parameter if LBFGS fails
             log_t = torch.nn.Parameter(
@@ -219,7 +188,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
                 T = log_t.exp().clamp(min=1e-3, max=1e3)
                 scaled = logits.clone() / T
                 loss = self._temperature_loss(scaled, labels)
-                loss.backward()  # type: ignore [no-untyped-call]
+                loss.backward()
                 opt.step()
 
         T_final = log_t.exp().clamp(min=1e-3, max=1e3).detach()
@@ -241,7 +210,10 @@ class LogitScore(ConfidenceScore, abc.ABC):
         """
         if self.task != "binary":
             return False
-        return logits.ndim == 1 or (logits.ndim == 2 and logits.shape[1] == 1)
+        is_single_logit: bool = logits.ndim == 1 or (
+            logits.ndim == 2 and logits.shape[1] == 1
+        )
+        return is_single_logit
 
     def _normalize_logits_and_labels(
         self, logits: torch.Tensor, labels: torch.Tensor | None

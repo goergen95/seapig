@@ -7,7 +7,13 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
-from seapig.scores import EnergyScore, EntropyScore, MarginScore, SoftmaxScore
+from seapig.scores import (
+    EnergyScore,
+    EntropyScore,
+    LogitScore,
+    MarginScore,
+    SoftmaxScore,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -515,3 +521,55 @@ def test_fit_temperature_nan_labels():
         score.fit(logits, labels)
     except Exception as e:
         assert isinstance(e, Exception)
+
+def test_check_model_requires_logits_method():
+    class NoLogits(torch.nn.Module):
+        pass
+    model = NoLogits()
+    with pytest.raises(Exception, match="required to have a `.logits\(\)` method\."):
+        LogitScore._check_model(model)
+
+def test_check_model_logits_signature():
+    class BadLogits(torch.nn.Module):
+        def logits(self):  # missing x argument
+            pass
+    model = BadLogits()
+    with pytest.raises(Exception, match="except `x` as argument"):
+        LogitScore._check_model(model)
+
+def test_fit_temperature_lbfgs_fallback(monkeypatch):
+    # Force LBFGS to fail, triggering Adam fallback
+    logits = torch.randn(5, 2)
+    labels = torch.randint(0, 2, (5,))
+    score = SoftmaxScore()
+
+    class DummyLBFGS:
+        def __init__(self, *a, **k): pass
+        def step(self, closure): raise RuntimeError("fail")
+
+    monkeypatch.setattr(torch.optim, "LBFGS", DummyLBFGS)
+    score._fit_temperature(logits, labels)
+    assert isinstance(score.temperature, float)
+
+def test_loadorpredict_loads_from_disk(tmp_path):
+    logits = torch.randn(3, 2)
+    labels = torch.tensor([0, 1, 0])
+    path = tmp_path / "logits.pt"
+    torch.save({"logits": logits, "labels": labels}, path)
+    class DummyModel(torch.nn.Module):
+        def logits(self, x): return x
+    loader = []
+    score = SoftmaxScore()
+    loaded_logits, loaded_labels = score._loadorpredict(path, DummyModel(), loader)
+    assert torch.allclose(loaded_logits, logits)
+    assert torch.allclose(loaded_labels, labels)
+
+def test_loadorpredict_missing_logits(tmp_path):
+    path = tmp_path / "bad.pt"
+    torch.save({"labels": torch.tensor([1, 2])}, path)
+    class DummyModel(torch.nn.Module):
+        def logits(self, x): return x
+    loader = []
+    score = SoftmaxScore()
+    with pytest.raises(ValueError, match="does not contain 'logits'"):
+        score._loadorpredict(path, DummyModel(), loader)
