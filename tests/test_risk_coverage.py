@@ -205,9 +205,7 @@ class TestRiskCoverage:
         # When score equals residuals, empirical should equal reference
         # (they both use the same ordering)
         assert torch.allclose(rc.risk, rc.reference, rtol=1e-5)
-        assert torch.isclose(
-            torch.tensor(rc.auc_excess), torch.tensor(0.0), atol=1e-5
-        )
+        assert torch.isclose(rc.auc_excess, torch.tensor(0.0), atol=1e-5)
 
     def test_binning_maintains_max(self, simple_data):
         """Test that binning takes max values in each bin."""
