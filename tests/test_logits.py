@@ -526,7 +526,7 @@ def test_check_model_requires_logits_method():
 
     model = NoLogits()
     with pytest.raises(
-        Exception, match="required to have a `\.logits\(\)` method\."
+        Exception, match="required to have a `\\.logits\\(\\)` method\\..*"
     ):
         LogitScore._check_model(model)
 
