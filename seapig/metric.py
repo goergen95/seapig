@@ -292,9 +292,9 @@ class RiskCoverageMetric(Metric):  # type: ignore[misc]
         self._last_curve = rc
         device = self.scores.device
         return {
-            "rc/auc_empirical": torch.tensor(rc.auc_empirical, device=device),
-            "rc/auc_reference": torch.tensor(rc.auc_reference, device=device),
-            "rc/auc_excess": torch.tensor(rc.auc_excess, device=device),
+            "rc/auc_empirical": torch.as_tensor(rc.auc_empirical, device=device),
+            "rc/auc_reference": torch.as_tensor(rc.auc_reference, device=device),
+            "rc/auc_excess": torch.as_tensor(rc.auc_excess, device=device),
         }
 
     def get_curve(self) -> RiskCoverage | None:

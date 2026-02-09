@@ -1,4 +1,4 @@
-# python
+import pytest
 import torch
 from lightning import LightningDataModule, LightningModule, Trainer
 from torch.utils.data import DataLoader, Dataset
@@ -99,7 +99,9 @@ def _tensor_dict_to_floats(d: dict) -> dict:
             out[k] = v
     return out
 
-
+@pytest.mark.filterwarnings(
+    r"ignore:`isinstance\(treespec, LeafSpec\)` is deprecated.*"
+)
 def test_selective_inference_trainer_integration(tmp_path):
     task = DummyTask()
     score = FlagScore()
@@ -162,7 +164,9 @@ def test_selective_inference_trainer_integration(tmp_path):
     )
     assert metric_floats["rejected/BinaryAccuracy"] > 0.0
 
-
+@pytest.mark.filterwarnings(
+    r"ignore:`isinstance\(treespec, LeafSpec\)` is deprecated.*"
+)
 def test_risk_coverage_integration_via_trainer(tmp_path):
     task = DummyTask()
     score = FlagScore()
