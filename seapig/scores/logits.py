@@ -42,20 +42,41 @@ class TaskConfig:
 
 
 class LogitScore(ConfidenceScore, abc.ABC):
-    """Abstract base for logit-derived confidence scores.
+    """
+    Base class for logit-based confidence scores.
+
+    Supports multiclass, binary (single/two-logit), and multilabel tasks.
+    Handles temperature fitting and input normalization for all cases.
 
     Parameters
     ----------
-    temperature : float | None
-        Optional temperature to apply to logits. If None no temperature
-        scaling is applied until :meth:`fit_temperature` is called.
-    task : {"multiclass", "binary", "multilabel"}, default "multiclass"
-        Task type which determines loss and input shapes used for
-        temperature fitting.
-    task_config : TaskConfig | None
-        Optional TaskConfig to further control multilabel aggregation and
-        binary format handling. If provided its `task` field overrides
-        the `task` argument.
+    temperature : float or None
+        Optional temperature to apply to logits. If None, no temperature
+        scaling is applied until :meth:`fit` or :meth:`fit_temperature` is called.
+    task : {"multiclass", "binary", "multilabel"}, default="multiclass"
+        Type of classification task. Determines score computation and
+        temperature fitting loss. Default is multiclass for backwards compatibility.
+    task_config : TaskConfig or None
+        Optional configuration for multilabel aggregation and binary format.
+
+    Notes
+    -----
+    Input shapes and label formats by task:
+
+    - multiclass: logits (N, C), labels (N,) long
+    - binary single-logit: logits (N,) or (N, 1), labels (N,) float/long
+    - binary two-logit: logits (N, 2), labels (N,) long
+    - multilabel: logits (N, C), labels (N, C) float
+
+    Examples
+    --------
+    ```python
+    import torch
+    from seapig.scores.logits import SoftmaxScore
+    logits = torch.randn(4, 3)
+    score = SoftmaxScore()
+    score.score(logits)
+    ```
     """
 
     logits: torch.Tensor | None
@@ -86,7 +107,14 @@ class LogitScore(ConfidenceScore, abc.ABC):
 
     @staticmethod
     def _check_model(model: torch.nn.Module) -> None:
-        """Check a model for compatibility with logits-based confidence scores."""
+        """
+        Check if the model is compatible with logits-based confidence scores.
+
+        Parameters
+        ----------
+        model : torch.nn.Module
+            Model to check. Must have a callable `.logits(x)` method.
+        """
         assert isinstance(model, torch.nn.Module)
         if not callable(model.logits):
             raise Exception("model is required to have a `.logits()` method.")
@@ -99,14 +127,19 @@ class LogitScore(ConfidenceScore, abc.ABC):
     def fit(
         self, logits: torch.Tensor, labels: torch.Tensor | None = None
     ) -> None:
-        """Fit the score on reference logits.
+        """
+        Fit the score on reference logits.
 
         Parameters
         ----------
         logits : torch.Tensor
-            Reference logits of shape (N, C).
-        labels : torch.Tensor | None
-            Optional integer labels (N,) for temperature scaling.
+            Reference logits. Shape depends on task (see class docstring).
+        labels : torch.Tensor or None
+            Optional labels for temperature fitting. Shape/type depends on task.
+
+        Notes
+        -----
+        If labels are provided, temperature is fitted to minimize NLL for the task.
         """
         self.logits = logits
         self.labels = labels
@@ -116,28 +149,33 @@ class LogitScore(ConfidenceScore, abc.ABC):
 
     @abc.abstractmethod
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
-        """Compute scores for query logits.
+        """
+        Compute confidence scores for query logits.
 
         Parameters
         ----------
         query_logits : torch.Tensor
-            Logits of shape (M, C).
+            Logits for samples to score. Shape depends on task.
 
         Returns
         -------
         torch.Tensor
-            1-D tensor of shape (M,) with scores (lower == more confident).
+            1-D tensor of shape (M,). Lower is more confident.
         """
         pass
 
     def _fit_temperature(
         self, logits: torch.Tensor, labels: torch.Tensor
     ) -> None:
-        """Fit a scalar temperature T by minimizing validation NLL.
+        """
+        Fit scalar temperature by minimizing validation NLL.
 
-        Optimization is performed on log(T) for stability. Result stored
-        in self.temperature.
-        Bounds: T in [1e-3, 1e3].
+        Parameters
+        ----------
+        logits : torch.Tensor
+            Logits for temperature fitting.
+        labels : torch.Tensor
+            Corresponding labels.
         """
         if logits.shape[0] == 0:
             raise ValueError("logits must contain at least one sample")
@@ -187,11 +225,19 @@ class LogitScore(ConfidenceScore, abc.ABC):
         T_final = log_t.exp().clamp(min=1e-3, max=1e3).detach()
         self.temperature = T_final.item()
 
-
     def _is_binary_single_logit(self, logits: torch.Tensor) -> bool:
-        """Return True when task=="binary" and logits are single-logit.
+        """
+        Determine if logits are single-logit binary format.
 
-        Single-logit binary formats are (N,) or (N,1).
+        Parameters
+        ----------
+        logits : torch.Tensor
+            Input logits.
+
+        Returns
+        -------
+        bool
+            True if single-logit binary, else False.
         """
         if self.task != "binary":
             return False
@@ -200,9 +246,20 @@ class LogitScore(ConfidenceScore, abc.ABC):
     def _normalize_logits_and_labels(
         self, logits: torch.Tensor, labels: torch.Tensor | None
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Normalize shapes for temperature fitting and validate inputs.
+        """
+        Normalize logits and labels for temperature fitting.
 
-        Returns normalized (logits, labels) suitable for loss computation.
+        Parameters
+        ----------
+        logits : torch.Tensor
+            Input logits.
+        labels : torch.Tensor or None
+            Input labels.
+
+        Returns
+        -------
+        tuple of torch.Tensor
+            Normalized logits and labels.
         """
         if labels is None:
             raise ValueError("labels must be provided to fit temperature")
@@ -251,10 +308,23 @@ class LogitScore(ConfidenceScore, abc.ABC):
 
         raise ValueError(f"Unknown task: {self.task}")
 
-    def _temperature_loss(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-        """Compute task-appropriate loss on temperature-scaled logits.
+    def _temperature_loss(
+        self, logits: torch.Tensor, labels: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Compute loss for temperature scaling based on task.
 
-        Assumes `logits` are already scaled by 1/T (i.e. logits / T).
+        Parameters
+        ----------
+        logits : torch.Tensor
+            Temperature-scaled logits.
+        labels : torch.Tensor
+            Corresponding labels.
+
+        Returns
+        -------
+        torch.Tensor
+            Loss value.
         """
         if self.task == "multiclass":
             return F.cross_entropy(logits, labels.long())
@@ -272,14 +342,30 @@ class LogitScore(ConfidenceScore, abc.ABC):
             return F.binary_cross_entropy_with_logits(logits, labels.float())
 
         raise ValueError(f"Unknown task: {self.task}")
-    
+
     def _loadorpredict(
         self,
         path: Path | None,
         model: torch.nn.Module,
         loader: DataLoader[object],
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
-        """Load logits and labels from disk or predict from model and loader."""
+        """
+        Load logits and labels from disk or compute from model.
+
+        Parameters
+        ----------
+        path : Path or None
+            Path to saved logits file.
+        model : torch.nn.Module
+            Model for prediction.
+        loader : DataLoader
+            DataLoader for inference.
+
+        Returns
+        -------
+        tuple of torch.Tensor, torch.Tensor or None
+            Logits and labels.
+        """
         self._check_model(model=model)
         if path is not None and path.exists():
             data = torch.load(path, map_location="cpu")
@@ -307,10 +393,20 @@ class LogitScore(ConfidenceScore, abc.ABC):
     def _logits_from_loader(
         self, model: torch.nn.Module, loader: DataLoader[object]
     ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
-        """Iterate over a DataLoader and collect logits and optional labels.
+        """
+        Extract logits and labels from a DataLoader.
 
-        Returns (logits, labels) where labels may be None if the loader does not
-        provide them.
+        Parameters
+        ----------
+        model : torch.nn.Module
+            Model for inference.
+        loader : DataLoader
+            DataLoader yielding batches.
+
+        Returns
+        -------
+        tuple of torch.Tensor or None, torch.Tensor or None
+            Logits and labels.
         """
         self._check_model(model=model)
         pbar = tqdm(
@@ -363,25 +459,29 @@ class LogitScore(ConfidenceScore, abc.ABC):
         *args: object,
         **kwargs: object,
     ) -> None:
-        """Fit the score by extracting logits from a single DataLoader.
+        """
+        Fit the score by extracting logits from a DataLoader.
 
-        If outdir is provided, this method will first construct the output
-        path and attempt to load pre-extracted logits from
-        {outdir}/{prefix or 'score'}_train.pt. If that file does not exist the
-        logits and labels are extracted from the provided DataLoader and the
-        results are optionally saved to disk under the same path.
+        Loads logits/labels from disk if available, else computes from model.
 
         Parameters
         ----------
         model : torch.nn.Module
-            Model to extract logits from.
+            Model with a `.logits(x)` method.
         loader : DataLoader
-            Single DataLoader to extract logits/labels from.
-        outdir : Path | str | None
-            Optional directory to save/load extracted logits and labels.
-        prefix : str | None
-            Optional prefix for saved files. If None or empty, "logits" is
-            used as prefix.
+            DataLoader yielding batches for inference.
+        outdir : Path or str or None
+            Optional directory to save/load logits.
+        prefix : str or None
+            Optional prefix for saved files.
+
+        Examples
+        --------
+        ```python
+        # Minimal example (pseudo-code)
+        score = SoftmaxScore()
+        score.fit_dl(model, loader)
+        ```
         """
         assert isinstance(loader, DataLoader)
         assert isinstance(model, torch.nn.Module)
@@ -402,22 +502,33 @@ class LogitScore(ConfidenceScore, abc.ABC):
 
 
 class SoftmaxScore(LogitScore):
-    """Maximum softmax probability confidence score (task-aware).
+    """
+    Maximum softmax probability confidence score.
 
     Supports multiclass, binary (single/two-logit), and multilabel tasks.
 
     Parameters
     ----------
-    temperature : float | None
-        Optional initial temperature. If None no temperature scaling is
-        applied until :meth:`fit` calls :meth:`fit_temperature`.
-    task : {"multiclass", "binary", "multilabel"}, default "multiclass"
-        Task type which determines score computation.
+    temperature : float or None
+        Optional initial temperature. If None, temperature is fitted if labels are provided.
+    task : {"multiclass", "binary", "multilabel"}, default="multiclass"
+        Task type for score computation.
+
+    Examples
+    --------
+    ```python
+    import torch
+    from seapig.scores.logits import SoftmaxScore
+    logits = torch.randn(2, 4)
+    SoftmaxScore().score(logits)
+    ```
     """
 
     ident: str = "softmax"
 
-    def __init__(self, temperature: float | None = None, task: str = "multiclass") -> None:
+    def __init__(
+        self, temperature: float | None = None, task: str = "multiclass"
+    ) -> None:
         super().__init__(temperature=temperature, task=task)
 
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
@@ -455,18 +566,31 @@ class SoftmaxScore(LogitScore):
 
 
 class EnergyScore(LogitScore):
-    """Energy-based confidence score.
+    """
+    Energy-based confidence score.
+
+    Supports multiclass, binary, and multilabel tasks.
 
     Parameters
     ----------
-    temperature : float | None
-        Optional initial temperature. If None no temperature scaling is
-        applied until :meth:`fit` calls :meth:`fit_temperature`.
+    temperature : float or None
+        Optional initial temperature. If None, temperature is fitted if labels are provided.
+
+    Examples
+    --------
+    ```python
+    import torch
+    from seapig.scores.logits import EnergyScore
+    logits = torch.randn(2, 3)
+    EnergyScore().score(logits)
+    ```
     """
 
     ident: str = "energy"
 
-    def __init__(self, temperature: float | None = None, task: str = "multiclass") -> None:
+    def __init__(
+        self, temperature: float | None = None, task: str = "multiclass"
+    ) -> None:
         super().__init__(temperature=temperature, task=task)
 
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
@@ -483,7 +607,7 @@ class EnergyScore(LogitScore):
             return -(logits / T).logsumexp(dim=1) * T
         elif task == "binary":
             if self._is_binary_single_logit(logits):
-                # we take abs(logits) to ensure energy is low for confident 
+                # we take abs(logits) to ensure energy is low for confident
                 # predictions in  either direction
                 return -T * F.softplus(torch.abs(logits) / T)
             else:
@@ -497,22 +621,33 @@ class EnergyScore(LogitScore):
 
 
 class MarginScore(LogitScore):
-    """Top-two margin confidence score (task-aware).
+    """
+    Top-two margin confidence score.
 
     Supports multiclass, binary (single/two-logit), and multilabel tasks.
 
     Parameters
     ----------
-    temperature : float | None
-        Optional initial temperature. If None no temperature scaling is
-        applied until :meth:`fit` calls :meth:`fit_temperature`.
-    task : {"multiclass", "binary", "multilabel"}, default "multiclass"
-        Task type which determines score computation.
+    temperature : float or None
+        Optional initial temperature. If None, temperature is fitted if labels are provided.
+    task : {"multiclass", "binary", "multilabel"}, default="multiclass"
+        Task type for score computation.
+
+    Examples
+    --------
+    ```python
+    import torch
+    from seapig.scores.logits import MarginScore
+    logits = torch.randn(2, 3)
+    MarginScore().score(logits)
+    ```
     """
 
     ident: str = "margin"
 
-    def __init__(self, temperature: float | None = None, task: str = "multiclass") -> None:
+    def __init__(
+        self, temperature: float | None = None, task: str = "multiclass"
+    ) -> None:
         super().__init__(temperature=temperature, task=task)
 
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
@@ -551,18 +686,31 @@ class MarginScore(LogitScore):
 
 
 class EntropyScore(LogitScore):
-    """Entropy-based confidence score.
+    """
+    Entropy-based confidence score.
+
+    Supports multiclass, binary, and multilabel tasks.
 
     Parameters
     ----------
-    temperature : float | None
-        Optional initial temperature. If None no temperature scaling is
-        applied until :meth:`fit` calls :meth:`fit_temperature`.
+    temperature : float or None
+        Optional initial temperature. If None, temperature is fitted if labels are provided.
+
+    Examples
+    --------
+    ```python
+    import torch
+    from seapig.scores.logits import EntropyScore
+    logits = torch.randn(2, 3)
+    EntropyScore().score(logits)
+    ```
     """
 
     ident: str = "entropy"
 
-    def __init__(self, temperature: float | None = None, task: str = "multiclass") -> None:
+    def __init__(
+        self, temperature: float | None = None, task: str = "multiclass"
+    ) -> None:
         super().__init__(temperature=temperature, task=task)
 
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
@@ -585,23 +733,21 @@ class EntropyScore(LogitScore):
         elif task == "binary":
             if self._is_binary_single_logit(logits):
                 p = torch.sigmoid(logits / T)
-                p = p.clamp(min=EPS, max=1-EPS)
+                p = p.clamp(min=EPS, max=1 - EPS)
                 entropy = -(p * torch.log(p) + (1 - p) * torch.log(1 - p))
                 return entropy
             else:
                 # two-logit: use softmax, then Bernoulli entropy on class 1 prob
                 probs = F.softmax(logits / T, dim=1)
-                p = probs[:, 1].clamp(min=EPS, max=1-EPS)
+                p = probs[:, 1].clamp(min=EPS, max=1 - EPS)
                 entropy = -(p * torch.log(p) + (1 - p) * torch.log(1 - p))
                 return entropy
         elif task == "multilabel":
             p = torch.sigmoid(logits / T)
-            p = p.clamp(min=EPS, max=1-EPS)
+            p = p.clamp(min=EPS, max=1 - EPS)
             per_label_entropy = -(p * torch.log(p) + (1 - p) * torch.log(1 - p))
             # MAX aggregation: highest uncertainty across labels
             entropy = per_label_entropy.max(dim=1).values
             return entropy
         else:
             raise ValueError(f"Unknown task: {task}")
-
-
