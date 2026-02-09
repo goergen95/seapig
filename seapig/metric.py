@@ -121,7 +121,9 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
                 # Generate outputs for all metrics in the collection
                 out = {}
                 for name, metric in m.items():
-                    if metric._update_called:  # Check if the metric was updated
+                    if getattr(
+                        metric, "update_called", False
+                    ):  # Check if the metric was updated
                         out[f"{prefix}/{name}"] = metric.compute()
                     else:
                         out[f"{prefix}/{name}"] = torch.tensor(0.0)
@@ -129,7 +131,9 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
             else:
                 # Generate output for a single metric
                 metric_name = type(m).__name__
-                if m._update_called:  # Check if the metric was updated
+                if getattr(
+                    m, "update_called", False
+                ):  # Check if the metric was updated
                     return {f"{prefix}/{metric_name}": m.compute()}
                 else:
                     return {f"{prefix}/{metric_name}": torch.tensor(0.0)}
