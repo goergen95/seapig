@@ -163,7 +163,7 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         """Log final computed test metrics once (avoid per-batch aggregation)."""
         if hasattr(self, "test_metrics"):
             self.log_dict(self.test_metrics.compute(), sync_dist=True)
-        if getattr(self, "rc_metric", None) is not None:
+        if self.rc_metric is not None:
             self.log_dict(self.rc_metric.compute(), sync_dist=True)
 
     @torch.inference_mode()  # type: ignore[untyped-decorator]
