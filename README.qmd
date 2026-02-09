@@ -63,9 +63,19 @@ class TinyTask(LightningModule):
             {"accuracy": Accuracy(task="binary")}
         )
 
-    def predict(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Return logits."""
         logits = self.backbone(x)
         return torch.argmax(logits, dim=1)
+        
+    def predict(self, x: torch.Tensor) -> torch.Tensor:
+        """Return class predictions."""
+        self.forward(x)
+    
+    def embed(self, x: torch.Tensor) -> torch.Tensor:
+        """Return intermediate embeddings (for confidence scoring)."""
+        with torch.no_grad():
+            return self.backbone[0](x) 
 
 
 # Toy "embedding" datasets (N x 2 features) with labels

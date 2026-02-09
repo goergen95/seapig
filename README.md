@@ -62,9 +62,19 @@ class TinyTask(LightningModule):
             {"accuracy": Accuracy(task="binary")}
         )
 
-    def predict(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Return logits."""
         logits = self.backbone(x)
         return torch.argmax(logits, dim=1)
+        
+    def predict(self, x: torch.Tensor) -> torch.Tensor:
+        """Return class predictions."""
+        self.forward(x)
+    
+    def embed(self, x: torch.Tensor) -> torch.Tensor:
+        """Return intermediate embeddings (for confidence scoring)."""
+        with torch.no_grad():
+            return self.backbone[0](x) 
 
 
 # Toy "embedding" datasets (N x 2 features) with labels
@@ -101,7 +111,11 @@ results = selective_metric.compute()
 print("Selective evaluation results:", results)
 ```
 
-    Selective evaluation results: {'full/accuracy': tensor(0.5000), 'selected/accuracy': tensor(1.)}
+    Selective evaluation results: {'full/accuracy': tensor(0.5000), 'selected/accuracy': tensor(0.), 'rejected/accuracy': tensor(0.5000)}
+
+    Your CPU supports instructions that this binary was not compiled to use: SSE3 SSE4.1 SSE4.2 AVX AVX2
+    For maximum performance, you can install NMSLIB from sources 
+    pip install --no-binary :all: nmslib
 
 Available scores
 
@@ -121,9 +135,9 @@ training distribution). Each method induces a selection function
 ## Risk-Coverage Analysis
 
 The library provides tools for evaluating selective prediction systems
-using risk-coverage curves. This analysis describes the trade-off between
-coverage (fraction of samples accepted) and risk (error rate) across
-different confidence thresholds.
+using risk-coverage curves. This analysis describes the trade-off
+between coverage (fraction of samples accepted) and risk (error rate)
+across different confidence thresholds.
 
 ``` python
 import torch

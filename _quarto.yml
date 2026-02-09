@@ -62,7 +62,7 @@ quartodoc:
             - update
             - compute
             - reset
-    - title: Confidence Scores
+    - title: Random Confidence Score
       desc: ""
       contents:
         - name: RandomScore
@@ -70,6 +70,9 @@ quartodoc:
             - score
             - select
             - set_threshold
+    - title: Embedding-based Scores
+      desc: ""
+      contents:
         - name: EuclideanScore
           members:
             - score
@@ -105,6 +108,29 @@ quartodoc:
             - fit
             - fit_dl
             - set_threshold
+    - title: Logit-based Scores
+      desc: ""
+      contents:
+        - name: SoftmaxScore
+          members:
+            - score
+            - select
+            - set_threshold
+        - name: MarginScore
+          members:
+            - score
+            - select
+            - set_threshold
+        - name: EntropyScore
+          members:
+              - score
+              - select
+              - set_threshold
+        - name: EnergyScore
+          members:
+              - score
+              - select
+              - set_threshold
     - title: Abstract Base Classes
       desc: ""
       contents:
@@ -114,6 +140,8 @@ quartodoc:
         - name: scores.KNNScore
           include_inherited: true
         - name: scores.PyODScore
+          include_inherited: true
+        - name: scores.logits.LogitScore
           include_inherited: true
 
 filters:
