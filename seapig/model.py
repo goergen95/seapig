@@ -147,14 +147,17 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         """
         x = batch[self.input_key]
         y = batch[self.target_key]
+        batch_size = x.shape[0]
 
         outputs = self.forward(x)
 
         self.test_metrics.update(outputs, y)
+        self.log_dict(self.test_metrics, batch_size=batch_size)
 
         # Update risk‑coverage metric; final values are logged in on_test_epoch_end
         if self.rc_metric is not None:
             self.rc_metric.update(outputs, y)
+            self.log_dict(self.rc_metric, batch_size=batch_size)
 
     def on_test_epoch_end(self) -> None:
         """Log final computed test metrics once (avoid per-batch aggregation)."""
