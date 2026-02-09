@@ -227,9 +227,7 @@ def test_get_risk_coverage_curve_none_before_compute() -> None:
     assert w.get_risk_coverage_curve() is None
 
 
-@pytest.mark.filterwarnings(
-    "ignore:You are trying to `self\.log\(\)` but the `self\.trainer` reference is not registered.*"
-)
+@pytest.mark.filterwarnings("ignore:reference is not registered.*")
 def test_get_risk_coverage_curve() -> None:
     task = DummyTaskTensor()
     score = DummyScore()
