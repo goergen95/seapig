@@ -442,19 +442,34 @@ class EnergyScore(LogitScore):
 
     ident: str = "energy"
 
-    def __init__(self, temperature: float | None = None) -> None:
-        super().__init__(temperature=temperature)
+    def __init__(self, temperature: float | None = None, task: str = "multiclass") -> None:
+        super().__init__(temperature=temperature, task=task)
 
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
-        """Compute energy for query logits.
+        """Compute energy for query logits (task-aware).
 
         Returns a 1-D tensor of shape (M,) where lower values are more
         confident.
         """
         T = 1.0 if self.temperature is None else float(self.temperature)
-        # energy = -T * logsumexp(logits / T)
-        energy = -(query_logits / T).logsumexp(dim=1) * T
-        return energy
+        task = self.task
+        logits = query_logits
+        if task == "multiclass":
+            # -T * logsumexp(logits / T)
+            return -(logits / T).logsumexp(dim=1) * T
+        elif task == "binary":
+            if self._is_binary_single_logit(logits):
+                # we take abs(logits) to ensure energy is low for confident 
+                # predictions in  either direction
+                return -T * F.softplus(torch.abs(logits) / T)
+            else:
+                # two-logit: same as multiclass
+                return -(logits / T).logsumexp(dim=1) * T
+        elif task == "multilabel":
+            # Sum of per-label free energies: -T * sum(softplus(logit/T))
+            return -T * F.softplus(logits / T).sum(dim=1)
+        else:
+            raise ValueError(f"Unknown task: {task}")
 
 
 class MarginScore(LogitScore):
@@ -503,11 +518,11 @@ class EntropyScore(LogitScore):
 
     ident: str = "entropy"
 
-    def __init__(self, temperature: float | None = None) -> None:
-        super().__init__(temperature=temperature)
+    def __init__(self, temperature: float | None = None, task: str = "multiclass") -> None:
+        super().__init__(temperature=temperature, task=task)
 
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
-        """Compute predictive entropy for each sample.
+        """Compute predictive entropy for each sample (task-aware).
 
         Returns
         -------
@@ -515,9 +530,34 @@ class EntropyScore(LogitScore):
             1-D tensor of shape (M,) with entropy scores (lower == more confident).
         """
         T = 1.0 if self.temperature is None else float(self.temperature)
-        probs = F.softmax(query_logits / T, dim=1)
-        # numerical stability: avoid log(0)
-        eps = 1e-12
-        p = probs.clamp(min=eps)
-        entropy = -(p * p.log()).sum(dim=1)
-        return entropy
+        task = self.task
+        logits = query_logits
+        EPS = 1e-12
+        if task == "multiclass":
+            probs = F.softmax(logits / T, dim=1)
+            p = probs.clamp(min=EPS)
+            entropy = -(p * p.log()).sum(dim=1)
+            return entropy
+        elif task == "binary":
+            if self._is_binary_single_logit(logits):
+                p = torch.sigmoid(logits / T)
+                p = p.clamp(min=EPS, max=1-EPS)
+                entropy = -(p * torch.log(p) + (1 - p) * torch.log(1 - p))
+                return entropy
+            else:
+                # two-logit: use softmax, then Bernoulli entropy on class 1 prob
+                probs = F.softmax(logits / T, dim=1)
+                p = probs[:, 1].clamp(min=EPS, max=1-EPS)
+                entropy = -(p * torch.log(p) + (1 - p) * torch.log(1 - p))
+                return entropy
+        elif task == "multilabel":
+            p = torch.sigmoid(logits / T)
+            p = p.clamp(min=EPS, max=1-EPS)
+            per_label_entropy = -(p * torch.log(p) + (1 - p) * torch.log(1 - p))
+            # MAX aggregation: highest uncertainty across labels
+            entropy = per_label_entropy.max(dim=1).values
+            return entropy
+        else:
+            raise ValueError(f"Unknown task: {task}")
+
+
