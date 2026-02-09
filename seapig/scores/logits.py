@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import abc
 import inspect
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import torch
 import torch.nn.functional as F
@@ -18,6 +20,25 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from seapig.scores.base import ConfidenceScore
+
+
+@dataclass
+class TaskConfig:
+    """Configuration for task-specific score computation.
+
+    Parameters
+    ----------
+    task : {"binary", "multiclass", "multilabel"}
+        Type of classification task.
+    multilabel_agg : {"mean", "min", "max", "sum"}
+        Aggregation strategy for multilabel scores (default: "min").
+    binary_format : {"auto", "single", "two"}
+        How to interpret binary logits when ambiguous (default: "auto").
+    """
+
+    task: Literal["binary", "multiclass", "multilabel"]
+    multilabel_agg: Literal["mean", "min", "max", "sum"] = "min"
+    binary_format: Literal["auto", "single", "two"] = "auto"
 
 
 class LogitScore(ConfidenceScore, abc.ABC):
@@ -28,19 +49,40 @@ class LogitScore(ConfidenceScore, abc.ABC):
     temperature : float | None
         Optional temperature to apply to logits. If None no temperature
         scaling is applied until :meth:`fit_temperature` is called.
+    task : {"multiclass", "binary", "multilabel"}, default "multiclass"
+        Task type which determines loss and input shapes used for
+        temperature fitting.
+    task_config : TaskConfig | None
+        Optional TaskConfig to further control multilabel aggregation and
+        binary format handling. If provided its `task` field overrides
+        the `task` argument.
     """
 
     logits: torch.Tensor | None
     labels: torch.Tensor | None
     temperature: float | None
+    task: str
+    task_config: TaskConfig | None
 
-    def __init__(self, temperature: float | None = None) -> None:
+    def __init__(
+        self,
+        temperature: float | None = None,
+        task: str = "multiclass",
+        task_config: TaskConfig | None = None,
+    ) -> None:
         super().__init__()
         self.register_buffer("logits", None)
         self.register_buffer("labels", None)
         self.temperature: float | None = (
             None if temperature is None else float(temperature)
         )
+        # task and optional configuration
+        if task_config is not None:
+            self.task_config = task_config
+            self.task = task_config.task
+        else:
+            self.task_config = None
+            self.task = task
 
     @staticmethod
     def _check_model(model: torch.nn.Module) -> None:
@@ -104,13 +146,11 @@ class LogitScore(ConfidenceScore, abc.ABC):
                 "logits and labels must have same number of samples"
             )
 
+        # Normalize inputs according to the declared task
+        logits, labels = self._normalize_logits_and_labels(logits, labels)
+
         device = logits.device
         labels = labels.to(device=device)
-        if labels.dim() == 2 and labels.size(1) == 1:
-            labels = labels.squeeze(1)
-        if labels.dim() == 1:
-            if labels.dtype != torch.long:
-                labels = labels.to(dtype=torch.long)
 
         init_t = 1.0 if self.temperature is None else float(self.temperature)
         log_t = torch.nn.Parameter(torch.tensor([init_t], device=device).log())
@@ -124,7 +164,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
             T = log_t.exp().clamp(min=1e-3, max=1e3)
             # clone logits to ensure we don't use inference-mode tensors
             scaled = logits.clone() / T
-            loss = F.cross_entropy(scaled, labels)
+            loss = self._temperature_loss(scaled, labels)
             loss.backward()  # type: ignore [no-untyped-call]
             return loss
 
@@ -140,13 +180,99 @@ class LogitScore(ConfidenceScore, abc.ABC):
                 opt.zero_grad()
                 T = log_t.exp().clamp(min=1e-3, max=1e3)
                 scaled = logits.clone() / T
-                loss = F.cross_entropy(scaled, labels)
+                loss = self._temperature_loss(scaled, labels)
                 loss.backward()  # type: ignore [no-untyped-call]
                 opt.step()
 
         T_final = log_t.exp().clamp(min=1e-3, max=1e3).detach()
         self.temperature = T_final.item()
 
+
+    def _is_binary_single_logit(self, logits: torch.Tensor) -> bool:
+        """Return True when task=="binary" and logits are single-logit.
+
+        Single-logit binary formats are (N,) or (N,1).
+        """
+        if self.task != "binary":
+            return False
+        return logits.ndim == 1 or (logits.ndim == 2 and logits.shape[1] == 1)
+
+    def _normalize_logits_and_labels(
+        self, logits: torch.Tensor, labels: torch.Tensor | None
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Normalize shapes for temperature fitting and validate inputs.
+
+        Returns normalized (logits, labels) suitable for loss computation.
+        """
+        if labels is None:
+            raise ValueError("labels must be provided to fit temperature")
+
+        # Multiclass: logits (N,C), labels (N,)
+        if self.task == "multiclass":
+            if logits.ndim != 2:
+                raise ValueError("multiclass logits must have shape (N, C)")
+            if labels.dim() == 2 and labels.size(1) == 1:
+                labels = labels.squeeze(1)
+            if labels.dim() != 1:
+                raise ValueError("multiclass labels must be 1-D class indices")
+            if labels.dtype != torch.long:
+                labels = labels.to(dtype=torch.long)
+            return logits, labels
+
+        # binary task: single-logit (N,) or two-logit (N,2)
+        if self.task == "binary":
+            if self._is_binary_single_logit(logits):
+                # squeeze to (N,)
+                logits_n = logits.squeeze()
+                lab = labels.squeeze()
+                lab = lab.to(dtype=torch.float)
+                return logits_n, lab
+            else:
+                # expect (N,2) logits and integer labels
+                if logits.ndim != 2 or logits.size(1) != 2:
+                    raise ValueError(
+                        "binary two-logit logits must have shape (N, 2)"
+                    )
+                if labels.dim() == 2 and labels.size(1) == 1:
+                    labels = labels.squeeze(1)
+                if labels.dtype != torch.long:
+                    labels = labels.to(dtype=torch.long)
+                return logits, labels
+
+        # multilabel: logits (N,C), labels (N,C) floats
+        if self.task == "multilabel":
+            if logits.ndim != 2:
+                raise ValueError("multilabel logits must have shape (N, C)")
+            if labels.ndim != 2 or labels.shape != logits.shape:
+                raise ValueError(
+                    "multilabel labels must have same shape as logits (N, C)"
+                )
+            return logits, labels.to(dtype=torch.float)
+
+        raise ValueError(f"Unknown task: {self.task}")
+
+    def _temperature_loss(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        """Compute task-appropriate loss on temperature-scaled logits.
+
+        Assumes `logits` are already scaled by 1/T (i.e. logits / T).
+        """
+        if self.task == "multiclass":
+            return F.cross_entropy(logits, labels.long())
+
+        if self.task == "binary":
+            if self._is_binary_single_logit(logits):
+                # logits and labels should be 1-D here
+                logits_1d = logits.squeeze()
+                labels_1d = labels.squeeze().float()
+                return F.binary_cross_entropy_with_logits(logits_1d, labels_1d)
+            else:
+                return F.cross_entropy(logits, labels.long())
+
+        if self.task == "multilabel":
+            return F.binary_cross_entropy_with_logits(logits, labels.float())
+
+        raise ValueError(f"Unknown task: {self.task}")
+    
     def _loadorpredict(
         self,
         path: Path | None,
