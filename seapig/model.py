@@ -147,18 +147,21 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         """
         x = batch[self.input_key]
         y = batch[self.target_key]
-        batch_size = x.shape[0]
 
         outputs = self.forward(x)
 
-        # Update metrics:
-        self.test_metrics(outputs, y)
-        self.log_dict(self.test_metrics, batch_size=batch_size)
+        self.test_metrics.update(outputs, y)
 
-        # Update risk‑coverage metric and log AUCs
+        # Update risk‑coverage metric; final values are logged in on_test_epoch_end
         if self.rc_metric is not None:
-            self.rc_metric(outputs, y)
-            self.log_dict(self.rc_metric, batch_size=batch_size)
+            self.rc_metric.update(outputs, y)
+
+    def on_test_epoch_end(self) -> None:
+        """Log final computed test metrics once (avoid per-batch aggregation)."""
+        if hasattr(self, "test_metrics"):
+            self.log_dict(self.test_metrics.compute(), sync_dist=True)
+        if getattr(self, "rc_metric", None) is not None:
+            self.log_dict(self.rc_metric.compute(), sync_dist=True)
 
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def predict_step(
