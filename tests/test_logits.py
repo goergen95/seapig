@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
 from seapig.scores import EnergyScore, EntropyScore, MarginScore, SoftmaxScore
@@ -183,10 +184,6 @@ def test_predict_proba_uses_instance_temperature():
 
 def test_logit_helpers_consistency_across_subclasses():
     logits = torch.tensor([[3.0, 1.0, 0.0], [0.0, 0.0, 0.0]])
-    # use SoftmaxScore to access base helpers via inheritance
-    # compute equivalent helper quantities directly (interface no longer
-    # exposes the old protected helper methods)
-    # max-logit (negative of the max logit)
     max_score = -logits.amax(dim=1)
     assert max_score.shape == (2,)
     assert torch.allclose(max_score, -torch.tensor([3.0, 0.0]), atol=1e-6)
@@ -276,9 +273,6 @@ def test_fit_temperature_reduces_validation_nll():
     s = SoftmaxScore()
     # compute NLL before calibration (temperature = 1)
     nll_before = torch.nn.functional.cross_entropy(val_logits, labels).item()
-    # new interface: fit only accepts reference logits and labels; tune
-    # temperature on the validation logits directly using the internal
-    # optimizer helper
     s._fit_temperature(logits=val_logits, labels=labels)
     assert s.temperature is not None
     # temperature should be a float and < 1 (to amplify logits)
@@ -302,9 +296,121 @@ def test_fit_temperature_handles_small_validation_set():
     assert math.isfinite(float(s.temperature))
 
 
-# Ensure top-level imports are available
+def make_score_with_task(task: str) -> SoftmaxScore:
+    """Helper: create a SoftmaxScore and set its task for testing.
+
+    SoftmaxScore doesn't accept a `task` parameter in the public
+    constructor, so tests set the attribute directly.
+    """
+    s = SoftmaxScore(temperature=None)
+    s.task = task
+    s.task_config = None
+    return s
+
+
+def test_is_binary_single_logit_true_and_false() -> None:
+    s = make_score_with_task("binary")
+
+    a = torch.randn(5)  # (N,)  -> single-logit
+    assert s._is_binary_single_logit(a)
+
+    b = torch.randn(5, 1)  # (N,1) -> single-logit
+    assert s._is_binary_single_logit(b)
+
+    c = torch.randn(5, 2)  # (N,2) -> not single-logit
+    assert not s._is_binary_single_logit(c)
+
+
+def test_normalize_multiclass_shapes_and_types() -> None:
+    s = make_score_with_task("multiclass")
+
+    logits = torch.randn(7, 4)
+    labels = torch.tensor([0, 1, 2, 3, 0, 1, 2], dtype=torch.int64)
+
+    nl, lab = s._normalize_logits_and_labels(logits, labels)
+    assert nl.shape == (7, 4)
+    assert lab.shape == (7,)
+    assert lab.dtype == torch.long
+
+    # labels as (N,1) should be squeezed
+    labels2 = labels.unsqueeze(1)
+    nl2, lab2 = s._normalize_logits_and_labels(logits, labels2)
+    assert lab2.shape == (7,)
+
+
+def test_normalize_binary_single_logit() -> None:
+    s = make_score_with_task("binary")
+
+    logits = torch.randn(6)  # (N,)
+    labels = torch.tensor([0, 1, 0, 1, 1, 0], dtype=torch.int64)
+
+    nl, lab = s._normalize_logits_and_labels(logits, labels)
+    assert nl.shape == (6,)
+    # labels converted to float for single-logit binary
+    assert lab.dtype == torch.float32
+    assert lab.shape == (6,)
+
+
+def test_normalize_binary_two_logit() -> None:
+    s = make_score_with_task("binary")
+
+    logits = torch.randn(6, 2)
+    labels = torch.tensor([0, 1, 1, 0, 0, 1], dtype=torch.int64)
+
+    nl, lab = s._normalize_logits_and_labels(logits, labels)
+    assert nl.shape == (6, 2)
+    assert lab.shape == (6,)
+    assert lab.dtype == torch.long
+
+
+def test_normalize_multilabel() -> None:
+    s = make_score_with_task("multilabel")
+
+    logits = torch.randn(5, 3)
+    labels = torch.randint(0, 2, (5, 3)).float()
+
+    nl, lab = s._normalize_logits_and_labels(logits, labels)
+    assert nl.shape == (5, 3)
+    assert lab.shape == (5, 3)
+    assert lab.dtype == torch.float32
+
+
+@pytest.mark.parametrize("task", ["multiclass", "binary", "multilabel"])
+def test_temperature_loss_matches_torch_for_tasks(task: str) -> None:
+    s = make_score_with_task(task)
+
+    if task == "multiclass":
+        logits = torch.randn(8, 4)
+        labels = torch.randint(0, 4, (8,))
+        expected = F.cross_entropy(logits, labels.long())
+        got = s._temperature_loss(logits, labels)
+        approx_tensor(got, expected)
+
+    elif task == "binary":
+        # single-logit case
+        logits = torch.randn(10)
+        labels = torch.randint(0, 2, (10,)).float()
+        # BCE with logits
+        expected = F.binary_cross_entropy_with_logits(logits, labels)
+        got = s._temperature_loss(logits, labels)
+        approx_tensor(got, expected)
+
+        # two-logit case should behave like cross_entropy
+        logits2 = torch.randn(10, 2)
+        labels2 = torch.randint(0, 2, (10,))
+        expected2 = F.cross_entropy(logits2, labels2.long())
+        got2 = s._temperature_loss(logits2, labels2)
+        approx_tensor(got2, expected2)
+
+    elif task == "multilabel":
+        logits = torch.randn(7, 3)
+        labels = torch.randint(0, 2, (7, 3)).float()
+        expected = F.binary_cross_entropy_with_logits(logits, labels)
+        got = s._temperature_loss(logits, labels)
+        approx_tensor(got, expected)
+
+
 def test_top_level_score_imports():
     mod = importlib.import_module("seapig")
-    # These names should be importable from top-level package
     for name in ("SoftmaxScore", "MarginScore", "EntropyScore", "EnergyScore"):
         assert hasattr(mod, name), f"{name} not exported from seapig package"
