@@ -2,11 +2,11 @@
 
 import json
 import math
-import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, override
+from warnings import warn
 
 import nmslib
 import torch
@@ -135,12 +135,6 @@ class KNNScore(EmbeddingScore, ABC):
         be used to perform dimensionality reduction on embeddings prior to
         scoring (for example, to retain a specified explained variance).
         Defaults to `None`, indicating that dimensionality reduction is not applied.
-    save_index:
-        A `bool` or `Path` indicating whether to save the fitted index to disk.
-        If `True`, the index will be saved to a default location. If a `Path` is
-        provided, the index will be saved to that location. Defaults to `False`,
-        indicating that the index will not be saved to disk.
-        **Deprecated**: Use `index_config` parameter instead.
     index_config:
         An `IndexConfig` instance specifying index configuration including method,
         build/query parameters, and save path. Defaults to `None`, which uses
@@ -193,7 +187,6 @@ class KNNScore(EmbeddingScore, ABC):
         k: int = 1,
         stat: str = "max",
         pca: TensorPCA | None = None,
-        save_index: bool | Path = False,
         index_config: IndexConfig | None = None,
         nms_index: Any | None = None,
     ) -> None:
@@ -205,20 +198,6 @@ class KNNScore(EmbeddingScore, ABC):
             f"{self.ident}-k{self.k}-{'full' if pca is not None else 'pca'}"
         )
 
-        # Handle backward compatibility: convert save_index to index_config
-        if save_index and index_config is None:
-            if isinstance(save_index, bool):
-                index_path = Path(f"{self.ident}_index.bin")
-            else:
-                assert isinstance(save_index, Path)
-                assert save_index.suffix == ".bin", (
-                    "Index file must have a .bin extension"
-                )
-                save_index.parent.mkdir(parents=True, exist_ok=True)
-                index_path = save_index
-            index_config = IndexConfig(index_path=index_path)
-
-        # Validate and store index_config
         if index_config is not None:
             _validate_index_config(index_config)
             self.index_config = index_config
@@ -229,9 +208,7 @@ class KNNScore(EmbeddingScore, ABC):
             if not hasattr(nms_index, "knnQueryBatch"):
                 raise ValueError("nms_index must have a knnQueryBatch method")
             self.index = nms_index
-            # Set default index_params if not provided via config
             if self.index_config is None:
-                # Use default params structure
                 self.index_params = {"build_defaults": {}, "query_defaults": {}}
             else:
                 self.index_params = {
@@ -395,11 +372,9 @@ class KNNScore(EmbeddingScore, ABC):
         """
         assert isinstance(embs, torch.Tensor)
 
-        # If a pre-built index was provided, don't rebuild
         if self.index is not None:
             return
 
-        # Determine configuration
         if self.index_config is not None:
             method = self.index_config.method
             config_space = self.index_config.space
@@ -414,14 +389,12 @@ class KNNScore(EmbeddingScore, ABC):
             query_params = None
             index_path = self.index_path
 
-        # Check if we should load from disk
         metadata_path: Path | None = None
         if index_path is not None:
             metadata_path = index_path.with_suffix(".json")
 
         if index_path is not None and index_path.exists():
-            # Load and validate metadata
-            assert metadata_path is not None  # Type narrowing
+            assert metadata_path is not None
             if not metadata_path.exists():
                 raise ValueError(
                     f"Index file '{index_path}' exists but metadata file "
@@ -429,35 +402,26 @@ class KNNScore(EmbeddingScore, ABC):
                     f"file or provide the metadata file."
                 )
 
-            # Load metadata
             with open(metadata_path) as f:
                 metadata = json.load(f)
 
-            # If explicit config was provided, validate it matches
-            if self.index_config is not None and (
-                self.index_config.build_params is not None
-                or self.index_config.query_params is not None
+            # If explicit config was provided, validate it build_params
+            if (
+                self.index_config is not None
+                and self.index_config.build_params is not None
             ):
-                # Only validate if user explicitly provided build/query params
+                # Only validate if user explicitly provided build params
                 suggested = self._suggest_index_params(embs=embs, k=self.k)
                 expected_build = (
                     build_params
                     if build_params is not None
                     else suggested["build_defaults"]
                 )
-                expected_query = (
-                    query_params
-                    if query_params is not None
-                    else suggested["query_defaults"]
-                )
 
                 expected_metadata = {
                     "method": method,
-                    "space": metadata[
-                        "space"
-                    ],  # Use space from metadata for comparison
+                    "space": metadata["space"],
                     "build_params": expected_build,
-                    "query_params": expected_query,
                 }
 
                 # Deep comparison
@@ -470,13 +434,14 @@ class KNNScore(EmbeddingScore, ABC):
                         f"configuration."
                     )
 
-            # Use metadata params when loading
             method = metadata["method"]
             space = metadata["space"]
             build_params = metadata["build_params"]
-            query_params = metadata["query_params"]
+            if query_params is None:
+                query_params = self._suggest_index_params(embs=embs, k=self.k)[
+                    "query_defaults"
+                ]
 
-            # Load the index
             index = nmslib.init(method=method, space=space)
             index.loadIndex(index_path.as_posix(), load_data=True)
         else:
@@ -503,7 +468,6 @@ class KNNScore(EmbeddingScore, ABC):
                     "method": method,
                     "space": space,
                     "build_params": build_params,
-                    "query_params": query_params,
                 }
                 with open(metadata_path, "w") as f:
                     json.dump(metadata, f, sort_keys=True, indent=2)
@@ -567,32 +531,41 @@ class KNNScore(EmbeddingScore, ABC):
             self.index, self.index_params["query_defaults"]
         )
         results = self.index.knnQueryBatch(query.cpu(), k=self.k + kpn)
-        distances = self._zeropad(results, kpn=kpn)
+        distances = self._unpack(results, kpn=kpn)
         distances = self._stat(distances[:, kpn:])
         return distances
 
-    def _zeropad(
+    def _unpack(
         self, query_results: list[tuple[torch.Tensor, torch.Tensor]], kpn: int
     ) -> torch.Tensor:
-        """Zero pad the distance tensors if fewer than `k + kpn` neighbors are returned.
+        """Unpack nmslib query results into a rectangular tensor.
 
-        This is required because approximate nearest neighbour searches may
-        not always return exactly `k` neighbors.
+        Converts each distance array returned by nmslib into a torch tensor and
+        assembles them into a 2D tensor of shape (n_queries, self.k + kpn).
+        If a query returned fewer than the expected number of neighbors the row
+        is padded with zeros; if more neighbors are returned the distances are
+        truncated to the expected length.
         """
-        distances = []
+        expected = self.k + kpn
+        rows: list[torch.Tensor] = []
 
-        for i, res in enumerate(query_results):
-            dist_tensor = torch.tensor(res[1])
-            if len(dist_tensor) < self.k + kpn:
-                warnings.warn(
-                    f"Query {i} returned fewer than {self.k + kpn} neighbors. "
-                    f"Applying zero padding to the distance tensor.",
-                    UserWarning,
+        for res in query_results:
+            dist = torch.as_tensor(res[1], dtype=torch.float32)
+            if dist.numel() < expected:
+                warn(
+                    f"Query returned {dist.numel()} neighbors, expected {expected}. "
+                    f"Padding with zeros."
                 )
-                padding = torch.zeros(self.k + kpn - len(dist_tensor))
-                dist_tensor = torch.cat([dist_tensor, padding])
-            distances.append(dist_tensor.unsqueeze(0))
-        return torch.cat(distances)
+                pad = torch.zeros(expected - dist.numel(), dtype=dist.dtype)
+                dist = torch.cat([dist, pad])
+            elif dist.numel() > expected:
+                dist = dist[:expected]
+            rows.append(dist.unsqueeze(0))
+
+        if not rows:
+            return torch.empty((0, expected), dtype=torch.float32)
+
+        return torch.cat(rows, dim=0)
 
     def _stat(self, x: torch.Tensor) -> torch.Tensor:
         """Apply a statistic across the KNN distances."""
@@ -647,7 +620,6 @@ class EuclideanScore(KNNScore):
         k: int = 1,
         stat: str = "max",
         pca: TensorPCA | None = None,
-        save_index: bool | Path = False,
         index_config: IndexConfig | None = None,
         nms_index: Any | None = None,
     ) -> None:
@@ -655,7 +627,6 @@ class EuclideanScore(KNNScore):
             k=k,
             stat=stat,
             pca=pca,
-            save_index=save_index,
             index_config=index_config,
             nms_index=nms_index,
         )
@@ -667,7 +638,7 @@ class EuclideanScore(KNNScore):
         self._build_index(self.ref_embeddings, space="l2")
 
     @override
-    @torch.inference_mode()
+    @torch.inference_mode() # type: ignore [untyped-decorator]
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         """Calculate the KNN distance of a query against a populated index."""
         return torch.sqrt(self._query_index(query, kpn))
@@ -716,7 +687,6 @@ class CosineScore(KNNScore):
         k: int = 1,
         stat: str = "max",
         pca: TensorPCA | None = None,
-        save_index: bool | Path = False,
         index_config: IndexConfig | None = None,
         nms_index: Any | None = None,
     ) -> None:
@@ -724,7 +694,6 @@ class CosineScore(KNNScore):
             k=k,
             stat=stat,
             pca=pca,
-            save_index=save_index,
             index_config=index_config,
             nms_index=nms_index,
         )
@@ -737,7 +706,7 @@ class CosineScore(KNNScore):
         self._build_index(normalized, space="cosinesimil")
 
     @override
-    @torch.inference_mode()
+    @torch.inference_mode() # type: ignore [untyped-decorator]
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
         normalized = torch.nn.functional.normalize(query)
@@ -787,7 +756,6 @@ class MahalanobisScore(KNNScore):
         k: int = 1,
         stat: str = "max",
         pca: TensorPCA | None = None,
-        save_index: bool | Path = False,
         index_config: IndexConfig | None = None,
         nms_index: Any | None = None,
     ) -> None:
@@ -795,7 +763,6 @@ class MahalanobisScore(KNNScore):
             k=k,
             stat=stat,
             pca=pca,
-            save_index=save_index,
             index_config=index_config,
             nms_index=nms_index,
         )
@@ -811,7 +778,7 @@ class MahalanobisScore(KNNScore):
         self._build_index(transformed, space="l2")
 
     @override
-    @torch.inference_mode()
+    @torch.inference_mode() # type: ignore [untyped-decorator]
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
         transformed = query.float() @ self.vi_zero.T

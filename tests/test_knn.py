@@ -13,7 +13,12 @@ import warnings
 import pytest
 import torch
 
-from seapig.scores.knn import CosineScore, EuclideanScore, MahalanobisScore
+from seapig.scores.knn import (
+    CosineScore,
+    EuclideanScore,
+    IndexConfig,
+    MahalanobisScore,
+)
 from seapig.scores.utils import TensorPCA
 
 
@@ -229,6 +234,7 @@ def test_pca_preserves_cosine_similarity() -> None:
     out_manual = s_proj._distance(q_proj, kpn=0)
     approx(out_with_pca, out_manual)
 
+
 def test_suggest_index_params_small_n() -> None:
     """_suggest_index_params returns conservative defaults for very small N."""
     refs = torch.randn(5, 3)
@@ -241,13 +247,14 @@ def test_suggest_index_params_small_n() -> None:
 def test_build_index_saves_and_loads(tmp_path) -> None:
     """_build_index saves index to disk and a second instance loads it."""
     path = tmp_path / "test_index.bin"
-    s1 = EuclideanScore(k=1, save_index=path)
+    config = IndexConfig(index_path=path)
+    s1 = EuclideanScore(k=1, index_config=config)
     s1.ref_embeddings = torch.randn(10, 3)
     s1._setup_index()
     assert path.exists()
 
     # second score should load the existing index file
-    s2 = EuclideanScore(k=1, save_index=path)
+    s2 = EuclideanScore(k=1, index_config=config)
     s2.ref_embeddings = torch.randn(5, 3)
     s2._setup_index()
     assert s2.index is not None
@@ -264,7 +271,7 @@ def test_zeropad_warning_and_padding() -> None:
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         out = s._distance(q, kpn=0)
-        assert any("zero padding" in str(x.message) for x in w)
+        assert any("Padding with zeros" in str(x.message) for x in w)
 
     assert out.shape == (1,)
     expected = torch.tensor([math.sqrt(2.0)])

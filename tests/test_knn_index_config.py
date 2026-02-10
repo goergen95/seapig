@@ -93,22 +93,6 @@ def test_constructor_with_index_config() -> None:
     assert score.index_path == Path("test.bin")
 
 
-def test_constructor_backward_compat_save_index_bool() -> None:
-    """Test backward compatibility with save_index=True."""
-    score = EuclideanScore(k=1, save_index=True)
-    assert score.index_config is not None
-    assert score.index_path is not None
-    assert score.index_path.suffix == ".bin"
-
-
-def test_constructor_backward_compat_save_index_path() -> None:
-    """Test backward compatibility with save_index=Path."""
-    path = Path("my_index.bin")
-    score = EuclideanScore(k=1, save_index=path)
-    assert score.index_config is not None
-    assert score.index_path == path
-
-
 def test_constructor_with_nms_index() -> None:
     """Test constructor accepts pre-built nmslib index."""
     mock_index = MagicMock()
@@ -245,7 +229,6 @@ def test_save_and_load_with_metadata(tmp_path: Path) -> None:
         "efConstruction": 200,
         "post": 0,
     }
-    assert metadata["query_params"] == {"efSearch": 50}
 
     # Load with same config - should succeed
     score2 = EuclideanScore(k=1, index_config=config)
