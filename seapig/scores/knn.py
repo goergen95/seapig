@@ -1,8 +1,10 @@
 """KNN-based confidence scores."""
 
+import json
 import math
 import warnings
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, override
 
@@ -16,6 +18,104 @@ from seapig.scores.utils import TensorPCA
 
 def _clamp(value: int, lo: int, hi: int) -> int:
     return max(lo, min(hi, value))
+
+
+@dataclass
+class IndexConfig:
+    """Configuration for nmslib index construction and querying.
+
+    This dataclass encapsulates all parameters needed to configure an nmslib
+    index for approximate nearest neighbor search in KNN-based confidence
+    scoring.
+
+    Parameters
+    ----------
+    method : str
+        The index method to use. Currently only "hnsw" is supported.
+        Defaults to "hnsw".
+    space : str | None
+        The distance space for the index. If None, the space is determined
+        by the specific score class (e.g., "l2" for EuclideanScore,
+        "cosinesimil" for CosineScore). Defaults to None.
+    build_params : dict[str, Any] | None
+        Parameters passed to nmslib's createIndex() method. Valid keys for
+        HNSW include "M", "efConstruction", and "post". If None, parameters
+        are computed using _suggest_index_params(). Defaults to None.
+    query_params : dict[str, Any] | None
+        Parameters passed to nmslib's setQueryTimeParams() method. Valid keys
+        for HNSW include "efSearch". If None, parameters are computed using
+        _suggest_index_params(). Defaults to None.
+    index_path : Path | None
+        Path where the index should be saved/loaded (.bin extension required).
+        If None, the index is not persisted to disk. Defaults to None.
+
+    Examples
+    --------
+    >>> from pathlib import Path
+    >>> config = IndexConfig(
+    ...     method="hnsw",
+    ...     build_params={"M": 16, "efConstruction": 200, "post": 0},
+    ...     query_params={"efSearch": 50},
+    ...     index_path=Path("my_index.bin")
+    ... )
+    """
+
+    method: str = "hnsw"
+    space: str | None = None
+    build_params: dict[str, Any] | None = None
+    query_params: dict[str, Any] | None = None
+    index_path: Path | None = None
+
+
+def _validate_index_config(config: IndexConfig) -> None:
+    """Validate IndexConfig parameters.
+
+    Parameters
+    ----------
+    config : IndexConfig
+        The configuration to validate.
+
+    Raises
+    ------
+    ValueError
+        If the configuration contains invalid values.
+    """
+    # Only support hnsw for now
+    if config.method != "hnsw":
+        raise ValueError(
+            f"Only method='hnsw' is currently supported, got '{config.method}'"
+        )
+
+    # Validate index_path suffix if provided
+    if config.index_path is not None:
+        if not isinstance(config.index_path, Path):
+            raise ValueError(
+                f"index_path must be a Path object, got {type(config.index_path)}"
+            )
+        if config.index_path.suffix != ".bin":
+            raise ValueError(
+                f"index_path must have .bin extension, got '{config.index_path.suffix}'"
+            )
+
+    # Validate build_params keys for HNSW
+    if config.build_params is not None:
+        allowed_build_keys = {"M", "efConstruction", "post"}
+        invalid_keys = set(config.build_params.keys()) - allowed_build_keys
+        if invalid_keys:
+            raise ValueError(
+                f"Invalid build_params keys: {invalid_keys}. "
+                f"Allowed keys for HNSW: {allowed_build_keys}"
+            )
+
+    # Validate query_params keys for HNSW
+    if config.query_params is not None:
+        allowed_query_keys = {"efSearch"}
+        invalid_keys = set(config.query_params.keys()) - allowed_query_keys
+        if invalid_keys:
+            raise ValueError(
+                f"Invalid query_params keys: {invalid_keys}. "
+                f"Allowed keys for HNSW: {allowed_query_keys}"
+            )
 
 
 class KNNScore(EmbeddingScore, ABC):
@@ -40,6 +140,14 @@ class KNNScore(EmbeddingScore, ABC):
         If `True`, the index will be saved to a default location. If a `Path` is
         provided, the index will be saved to that location. Defaults to `False`,
         indicating that the index will not be saved to disk.
+        **Deprecated**: Use `index_config` parameter instead.
+    index_config:
+        An `IndexConfig` instance specifying index configuration including method,
+        build/query parameters, and save path. Defaults to `None`, which uses
+        default HNSW configuration with auto-tuned parameters.
+    nms_index:
+        A pre-built nmslib index object. If provided, this index will be used
+        directly instead of building a new one. Defaults to `None`.
 
     Attributes
     ----------
@@ -52,12 +160,32 @@ class KNNScore(EmbeddingScore, ABC):
     threshold:
         A `float` indicating the rejection threshold. Samples with scores higher
         than this threshold are excluded from prediction. Defaults to `None`.
+
+    Examples
+    --------
+    Using IndexConfig to customize index parameters:
+
+    >>> from pathlib import Path
+    >>> config = IndexConfig(
+    ...     build_params={"M": 16, "efConstruction": 200, "post": 0},
+    ...     query_params={"efSearch": 50},
+    ...     index_path=Path("my_index.bin")
+    ... )
+    >>> score = EuclideanScore(k=1, index_config=config)
+
+    Passing a pre-built nmslib index:
+
+    >>> import nmslib
+    >>> index = nmslib.init(method="hnsw", space="l2")
+    >>> # ... configure and populate index ...
+    >>> score = EuclideanScore(k=1, nms_index=index)
     """
 
     k: int = 1
     cal_embeddings: torch.Tensor | None
     index: Any | None = None
     index_path: Path | None = None
+    index_config: IndexConfig | None = None
 
     def __init__(
         self,
@@ -65,6 +193,8 @@ class KNNScore(EmbeddingScore, ABC):
         stat: str = "max",
         pca: TensorPCA | None = None,
         save_index: bool | Path = False,
+        index_config: IndexConfig | None = None,
+        nms_index: Any | None = None,
     ) -> None:
         super().__init__(pca=pca)
         assert stat in ["max", "mean", "median", "min"]
@@ -73,16 +203,45 @@ class KNNScore(EmbeddingScore, ABC):
         self.ident: str = (
             f"{self.ident}-k{self.k}-{'full' if pca is not None else 'pca'}"
         )
-        if save_index:
+
+        # Handle backward compatibility: convert save_index to index_config
+        if save_index and index_config is None:
             if isinstance(save_index, bool):
-                self.index_path = Path(f"{self.ident}_index.bin")
+                index_path = Path(f"{self.ident}_index.bin")
             else:
                 assert isinstance(save_index, Path)
                 assert save_index.suffix == ".bin", (
                     "Index file must have a .bin extension"
                 )
                 save_index.parent.mkdir(parents=True, exist_ok=True)
-                self.index_path = save_index
+                index_path = save_index
+            index_config = IndexConfig(index_path=index_path)
+
+        # Validate and store index_config
+        if index_config is not None:
+            _validate_index_config(index_config)
+            self.index_config = index_config
+            self.index_path = index_config.index_path
+
+        # Handle pre-built index
+        if nms_index is not None:
+            if not hasattr(nms_index, "knnQueryBatch"):
+                raise ValueError(
+                    "nms_index must have a knnQueryBatch method"
+                )
+            self.index = nms_index
+            # Set default index_params if not provided via config
+            if self.index_config is None:
+                # Use default params structure
+                self.index_params = {
+                    "build_defaults": {},
+                    "query_defaults": {},
+                }
+            else:
+                self.index_params = {
+                    "build_defaults": self.index_config.build_params or {},
+                    "query_defaults": self.index_config.query_params or {},
+                }
 
     @override
     def fit(
@@ -239,19 +398,99 @@ class KNNScore(EmbeddingScore, ABC):
         within the `_setup_index()` method of child classes.
         """
         assert isinstance(embs, torch.Tensor)
-        index_path = self.index_path
-        params = self._suggest_index_params(embs=embs, k=self.k)
-        index = nmslib.init(method="hnsw", space=space)
 
-        if index_path is None or not index_path.exists():
-            index.addDataPointBatch(embs.cpu())
-            index.createIndex(index_params=params["build_defaults"])
-            if index_path:
-                index.saveIndex(index_path.as_posix(), save_data=True)
+        # If a pre-built index was provided, don't rebuild
+        if self.index is not None:
+            return
+
+        # Determine configuration
+        if self.index_config is not None:
+            method = self.index_config.method
+            config_space = self.index_config.space
+            if config_space is not None:
+                space = config_space
+            build_params = self.index_config.build_params
+            query_params = self.index_config.query_params
+            index_path = self.index_config.index_path
         else:
-            index.loadIndex(index_path.as_posix(), load_data=True)
+            method = "hnsw"
+            build_params = None
+            query_params = None
+            index_path = self.index_path
 
-        self.index_params = params
+        # Get suggested params if not provided
+        suggested = self._suggest_index_params(embs=embs, k=self.k)
+        if build_params is None:
+            build_params = suggested["build_defaults"]
+        if query_params is None:
+            query_params = suggested["query_defaults"]
+
+        # Store params for later use
+        self.index_params = {
+            "build_defaults": build_params,
+            "query_defaults": query_params,
+        }
+
+        # Check if we should load from disk
+        metadata_path = None
+        if index_path is not None:
+            metadata_path = index_path.with_suffix(".json")
+
+        if index_path is not None and index_path.exists():
+            # Load and validate metadata
+            if not metadata_path.exists():
+                raise ValueError(
+                    f"Index file '{index_path}' exists but metadata file "
+                    f"'{metadata_path}' is missing. Please remove the index "
+                    f"file or provide the metadata file."
+                )
+
+            # Load metadata
+            with open(metadata_path, "r") as f:
+                metadata = json.load(f)
+
+            # Validate metadata matches requested config
+            expected_metadata = {
+                "method": method,
+                "space": space,
+                "build_params": build_params,
+                "query_params": query_params,
+            }
+
+            # Deep comparison
+            if metadata != expected_metadata:
+                raise ValueError(
+                    f"Metadata mismatch for index '{index_path}'.\n"
+                    f"Expected: {json.dumps(expected_metadata, sort_keys=True)}\n"
+                    f"Found: {json.dumps(metadata, sort_keys=True)}\n"
+                    f"Please remove the index file or provide a matching "
+                    f"configuration."
+                )
+
+            # Load the index
+            index = nmslib.init(method=method, space=space)
+            index.loadIndex(index_path.as_posix(), load_data=True)
+        else:
+            # Build new index
+            index = nmslib.init(method=method, space=space)
+            index.addDataPointBatch(embs.cpu())
+            index.createIndex(index_params=build_params)
+
+            # Save to disk if path provided
+            if index_path is not None:
+                index_path.parent.mkdir(parents=True, exist_ok=True)
+                index.saveIndex(index_path.as_posix(), save_data=True)
+
+                # Save metadata
+                metadata = {
+                    "method": method,
+                    "space": space,
+                    "build_params": build_params,
+                    "query_params": query_params,
+                }
+                with open(metadata_path, "w") as f:
+                    json.dump(metadata, f, sort_keys=True, indent=2)
+
         self.index = index
 
     @staticmethod
@@ -387,8 +626,17 @@ class EuclideanScore(KNNScore):
         stat: str = "max",
         pca: TensorPCA | None = None,
         save_index: bool | Path = False,
+        index_config: IndexConfig | None = None,
+        nms_index: Any | None = None,
     ) -> None:
-        super().__init__(k=k, stat=stat, pca=pca, save_index=save_index)
+        super().__init__(
+            k=k,
+            stat=stat,
+            pca=pca,
+            save_index=save_index,
+            index_config=index_config,
+            nms_index=nms_index,
+        )
 
     @override
     def _setup_index(self) -> None:
@@ -447,8 +695,17 @@ class CosineScore(KNNScore):
         stat: str = "max",
         pca: TensorPCA | None = None,
         save_index: bool | Path = False,
+        index_config: IndexConfig | None = None,
+        nms_index: Any | None = None,
     ) -> None:
-        super().__init__(k=k, stat=stat, pca=pca, save_index=save_index)
+        super().__init__(
+            k=k,
+            stat=stat,
+            pca=pca,
+            save_index=save_index,
+            index_config=index_config,
+            nms_index=nms_index,
+        )
 
     @override
     def _setup_index(self) -> None:
@@ -509,8 +766,17 @@ class MahalanobisScore(KNNScore):
         stat: str = "max",
         pca: TensorPCA | None = None,
         save_index: bool | Path = False,
+        index_config: IndexConfig | None = None,
+        nms_index: Any | None = None,
     ) -> None:
-        super().__init__(k=k, stat=stat, pca=pca, save_index=save_index)
+        super().__init__(
+            k=k,
+            stat=stat,
+            pca=pca,
+            save_index=save_index,
+            index_config=index_config,
+            nms_index=nms_index,
+        )
         self.register_buffer("vi_zero", None)
 
     @override
