@@ -7,6 +7,9 @@ aggregation (min/max/mean/median), index creation, and behavior on singular
 covariance matrices.
 """
 
+import math
+import warnings
+
 import pytest
 import torch
 
@@ -225,3 +228,44 @@ def test_pca_preserves_cosine_similarity() -> None:
     out_with_pca = s_pca.score(q)
     out_manual = s_proj._distance(q_proj, kpn=0)
     approx(out_with_pca, out_manual)
+
+def test_suggest_index_params_small_n() -> None:
+    """_suggest_index_params returns conservative defaults for very small N."""
+    refs = torch.randn(5, 3)
+    s = EuclideanScore(k=3)
+    params = s._suggest_index_params(refs, k=3)
+    assert "build_defaults" in params and "query_defaults" in params
+    assert params["query_defaults"]["efSearch"] == 3
+
+
+def test_build_index_saves_and_loads(tmp_path) -> None:
+    """_build_index saves index to disk and a second instance loads it."""
+    path = tmp_path / "test_index.bin"
+    s1 = EuclideanScore(k=1, save_index=path)
+    s1.ref_embeddings = torch.randn(10, 3)
+    s1._setup_index()
+    assert path.exists()
+
+    # second score should load the existing index file
+    s2 = EuclideanScore(k=1, save_index=path)
+    s2.ref_embeddings = torch.randn(5, 3)
+    s2._setup_index()
+    assert s2.index is not None
+
+
+def test_zeropad_warning_and_padding() -> None:
+    """Ensure queries returning fewer neighbors are zero-padded and warn."""
+    refs = torch.tensor([[0.0, 0.0]])
+    q = torch.tensor([[1.0, 1.0]])
+    s = EuclideanScore(k=3)
+    s.ref_embeddings = refs
+    s._setup_index()
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        out = s._distance(q, kpn=0)
+        assert any("zero padding" in str(x.message) for x in w)
+
+    assert out.shape == (1,)
+    expected = torch.tensor([math.sqrt(2.0)])
+    approx(out, expected)

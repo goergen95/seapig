@@ -1,5 +1,6 @@
 """KNN-based confidence scores."""
 
+import math
 import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -11,6 +12,10 @@ from torch.utils.data import DataLoader
 
 from seapig.scores.embed import EmbeddingScore
 from seapig.scores.utils import TensorPCA
+
+
+def _clamp(value: int, lo: int, hi: int) -> int:
+    return max(lo, min(hi, value))
 
 
 class KNNScore(EmbeddingScore, ABC):
@@ -30,6 +35,11 @@ class KNNScore(EmbeddingScore, ABC):
         be used to perform dimensionality reduction on embeddings prior to
         scoring (for example, to retain a specified explained variance).
         Defaults to `None`, indicating that dimensionality reduction is not applied.
+    save_index:
+        A `bool` or `Path` indicating whether to save the fitted index to disk.
+        If `True`, the index will be saved to a default location. If a `Path` is
+        provided, the index will be saved to that location. Defaults to `False`,
+        indicating that the index will not be saved to disk.
 
     Attributes
     ----------
@@ -47,9 +57,14 @@ class KNNScore(EmbeddingScore, ABC):
     k: int = 1
     cal_embeddings: torch.Tensor | None
     index: Any | None = None
+    index_path: Path | None = None
 
     def __init__(
-        self, k: int = 1, stat: str = "max", pca: TensorPCA | None = None
+        self,
+        k: int = 1,
+        stat: str = "max",
+        pca: TensorPCA | None = None,
+        save_index: bool | Path = False,
     ) -> None:
         super().__init__(pca=pca)
         assert stat in ["max", "mean", "median", "min"]
@@ -58,6 +73,16 @@ class KNNScore(EmbeddingScore, ABC):
         self.ident: str = (
             f"{self.ident}-k{self.k}-{'full' if pca is not None else 'pca'}"
         )
+        if save_index:
+            if isinstance(save_index, bool):
+                self.index_path = Path(f"{self.ident}_index.bin")
+            else:
+                assert isinstance(save_index, Path)
+                assert save_index.suffix == ".bin", (
+                    "Index file must have a .bin extension"
+                )
+                save_index.parent.mkdir(parents=True, exist_ok=True)
+                self.index_path = save_index
 
     @override
     def fit(
@@ -166,34 +191,6 @@ class KNNScore(EmbeddingScore, ABC):
             self.scores = self._distance(self.cal_embeddings, kpn=0)
             self.set_calibrated()
 
-    @abstractmethod
-    def _setup_index(self) -> None:
-        """Prepare an index for KNN search."""
-        pass
-
-    @abstractmethod
-    def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
-        """Calculate the KNN distance of a query against a populated index."""
-        pass
-
-    def _zeropad(
-        self, query_results: list[tuple[torch.Tensor, torch.Tensor]], kpn: int
-    ) -> torch.Tensor:
-        distances = []
-
-        for i, res in enumerate(query_results):
-            dist_tensor = torch.tensor(res[1])
-            if len(dist_tensor) < self.k + kpn:
-                warnings.warn(
-                    f"Query {i} returned fewer than {self.k + kpn} neighbors. "
-                    f"Applying zero padding to the distance tensor.",
-                    UserWarning,
-                )
-                padding = torch.zeros(self.k + kpn - len(dist_tensor))
-                dist_tensor = torch.cat([dist_tensor, padding])
-            distances.append(dist_tensor.unsqueeze(0))
-        return torch.cat(distances)
-
     @override
     def score(self, X: torch.Tensor) -> torch.Tensor:
         """Compute a confidence score based on sample embeddings.
@@ -217,22 +214,135 @@ class KNNScore(EmbeddingScore, ABC):
             A `torch.tensor`or representing sample embeddings. Expected dimensions
             are (B,D).
         """
-        assert self.index is not None
+        assert self.index is not None, "Index must be built before scoring"
         if self.pca is not None:
             X = self.pca.predict(X)
         score = self._distance(query=X)
         return score.to(device=X.device)
 
-    @classmethod
-    def _stat(self, x: torch.Tensor, stat: str = "max") -> torch.Tensor:
-        assert stat in ["max", "mean", "median", "min"]
-        if stat == "max":
+    @abstractmethod
+    def _setup_index(self) -> None:
+        """Prepare an index for KNN search."""
+        pass
+
+    @abstractmethod
+    def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
+        """Calculate the KNN distance of a query against a populated index."""
+        pass
+
+    def _build_index(self, embs: torch.Tensor, space: str = "l2") -> None:
+        """Build an index based on reference embeddings.
+
+        The embeddings can be preprocessed (e.g. normalized or transformed) before
+        being passed to this method. The `space` parameter should be set accordingly
+        to match the type of distance being calculated. Typically called
+        within the `_setup_index()` method of child classes.
+        """
+        assert isinstance(embs, torch.Tensor)
+        index_path = self.index_path
+        params = self._suggest_index_params(embs=embs, k=self.k)
+        index = nmslib.init(method="hnsw", space=space)
+
+        if index_path is None or not index_path.exists():
+            index.addDataPointBatch(embs.cpu())
+            index.createIndex(index_params=params["build_defaults"])
+            if index_path:
+                index.saveIndex(index_path.as_posix(), save_data=True)
+        else:
+            index.loadIndex(index_path.as_posix(), load_data=True)
+
+        self.index_params = params
+        self.index = index
+
+    @staticmethod
+    def _suggest_index_params(
+        embs: torch.Tensor, k: int = 10
+    ) -> dict[str, Any]:
+        """Suggest conservative HNSW index and query-time parameters."""
+        if embs.dim() != 2:
+            raise ValueError("ref_embeddings must be 2D (N, D)")
+        N, D = map(int, embs.shape)
+
+        if N < 10:
+            return {
+                "build_defaults": {"post": 0},
+                "query_defaults": {"efSearch": k},
+            }
+
+        M = _clamp(int(round(2.0 * math.sqrt(D))), 8, 64)
+        base = 150 if N < 5_000 else 300 if N < 50_000 else 600
+        ef_construction = _clamp(
+            int(round(base * (1.0 + (D / 128.0) * 0.5))), 100, 2000
+        )
+
+        ef_search = max(
+            max(32, k * 8), min(max(128, ef_construction // 4), 512)
+        )
+
+        return {
+            "build_defaults": {
+                "M": M,
+                "efConstruction": ef_construction,
+                "post": 0,
+            },
+            "query_defaults": {"efSearch": ef_search},
+        }
+
+    def _query_index(self, query: torch.Tensor, kpn: int) -> torch.Tensor:
+        """Query the index for KNN distances.
+
+        The `kpn` parameter allows for retrieving additional neighbors beyond the
+        specified `k` to handle cases where a point is both in the reference
+        index and the query. For example, if `k=1` and `kpn=1`, the method will
+        retrieve the 2 nearest neighbors and then use the second nearest neighbor's
+        distance as the score, effectively ignoring the nearest neighbor which
+        may be the point itself. This is particularly useful when scoring calibration
+        samples that are part of the reference set, as it prevents zero distances
+        from skewing the scores. The `_query_index()` method is typically called
+        within the `_distance()` method of child classes.
+        """
+        assert self.index is not None, "Index must be built before querying"
+        nmslib.setQueryTimeParams(
+            self.index, self.index_params["query_defaults"]
+        )
+        results = self.index.knnQueryBatch(query.cpu(), k=self.k + kpn)
+        distances = self._zeropad(results, kpn=kpn)
+        distances = self._stat(distances[:, kpn:])
+        return distances
+
+    def _zeropad(
+        self, query_results: list[tuple[torch.Tensor, torch.Tensor]], kpn: int
+    ) -> torch.Tensor:
+        """Zero pad the distance tensors if fewer than `k + kpn` neighbors are returned.
+
+        This is required because approximate nearest neighbour searches may
+        not always return exactly `k` neighbors.
+        """
+        distances = []
+
+        for i, res in enumerate(query_results):
+            dist_tensor = torch.tensor(res[1])
+            if len(dist_tensor) < self.k + kpn:
+                warnings.warn(
+                    f"Query {i} returned fewer than {self.k + kpn} neighbors. "
+                    f"Applying zero padding to the distance tensor.",
+                    UserWarning,
+                )
+                padding = torch.zeros(self.k + kpn - len(dist_tensor))
+                dist_tensor = torch.cat([dist_tensor, padding])
+            distances.append(dist_tensor.unsqueeze(0))
+        return torch.cat(distances)
+
+    def _stat(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply a statistic across the KNN distances."""
+        assert self.stat in ["max", "mean", "median", "min"]
+        if self.stat == "max":
             x = x.amax(1)
-        if stat == "mean":
+        if self.stat == "mean":
             x = x.mean(1)
-        if stat == "median":
+        if self.stat == "median":
             x = x.median(1).values
-        if stat == "min":
+        if self.stat == "min":
             x = x.amin(1)
         return x
 
@@ -272,29 +382,25 @@ class EuclideanScore(KNNScore):
     ident: str = "euclidean"
 
     def __init__(
-        self, k: int = 1, stat: str = "max", pca: TensorPCA | None = None
+        self,
+        k: int = 1,
+        stat: str = "max",
+        pca: TensorPCA | None = None,
+        save_index: bool | Path = False,
     ) -> None:
-        super().__init__(k=k, stat=stat, pca=pca)
+        super().__init__(k=k, stat=stat, pca=pca, save_index=save_index)
 
     @override
     def _setup_index(self) -> None:
         """Initialize an index based on reference embeddings."""
         assert isinstance(self.ref_embeddings, torch.Tensor)
-        self.index = nmslib.init(method="hnsw", space="l2")
-        self.index.addDataPointBatch(self.ref_embeddings.cpu())
-        self.index.createIndex({"post": 2}, print_progress=False)
+        self._build_index(self.ref_embeddings, space="l2")
 
     @override
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
-        assert self.index is not None
-        nmslib.setQueryTimeParams(
-            self.index, {"efSearch": int(1.1 * self.k)}
-        )  # set efSearch to a value slightly higher than k
-        results = self.index.knnQueryBatch(query.cpu(), k=self.k + kpn)
-        distances = self._zeropad(results, kpn=kpn)
-        distances = self._stat(distances[:, kpn:], stat=self.stat)
-        return torch.sqrt(distances)
+        """Calculate the KNN distance of a query against a populated index."""
+        return torch.sqrt(self._query_index(query, kpn))
 
 
 class CosineScore(KNNScore):
@@ -336,33 +442,27 @@ class CosineScore(KNNScore):
     ident: str = "cosine"
 
     def __init__(
-        self, k: int = 1, stat: str = "max", pca: TensorPCA | None = None
+        self,
+        k: int = 1,
+        stat: str = "max",
+        pca: TensorPCA | None = None,
+        save_index: bool | Path = False,
     ) -> None:
-        super().__init__(k=k, stat=stat, pca=pca)
+        super().__init__(k=k, stat=stat, pca=pca, save_index=save_index)
 
     @override
     def _setup_index(self) -> None:
         """Initialize an index based on reference embeddings."""
         assert isinstance(self.ref_embeddings, torch.Tensor)
-        self.index = nmslib.init(method="hnsw", space="cosinesimil")
-        normalized_embeddings = torch.nn.functional.normalize(
-            self.ref_embeddings
-        )
-        self.index.addDataPointBatch(normalized_embeddings.cpu())
-        self.index.createIndex({"post": 2}, print_progress=False)
+        normalized = torch.nn.functional.normalize(self.ref_embeddings)
+        self._build_index(normalized, space="cosinesimil")
 
     @override
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
-        query = torch.nn.functional.normalize(query)
-        nmslib.setQueryTimeParams(
-            self.index, {"efSearch": int(1.1 * self.k)}
-        )  # set efSearch to a value slightly higher than k
-        results = self.index.knnQueryBatch(query.cpu(), k=self.k + kpn)
-        distances = self._zeropad(results, kpn=kpn)
-        distances = self._stat(distances[:, kpn:], stat=self.stat)
-        return distances
+        normalized = torch.nn.functional.normalize(query)
+        return self._query_index(normalized, kpn)
 
 
 class MahalanobisScore(KNNScore):
@@ -404,9 +504,13 @@ class MahalanobisScore(KNNScore):
     ident: str = "mahalanobis"
 
     def __init__(
-        self, k: int = 1, stat: str = "max", pca: TensorPCA | None = None
+        self,
+        k: int = 1,
+        stat: str = "max",
+        pca: TensorPCA | None = None,
+        save_index: bool | Path = False,
     ) -> None:
-        super().__init__(k=k, stat=stat, pca=pca)
+        super().__init__(k=k, stat=stat, pca=pca, save_index=save_index)
         self.register_buffer("vi_zero", None)
 
     @override
@@ -415,22 +519,12 @@ class MahalanobisScore(KNNScore):
         assert isinstance(self.ref_embeddings, torch.Tensor)
         cov_zero = self.ref_embeddings.T.cov()
         self.vi_zero = torch.linalg.inv(torch.linalg.cholesky(cov_zero))
-        transformed_embeddings = self.ref_embeddings @ self.vi_zero.T
-        self.index = nmslib.init(method="hnsw", space="l2")
-        self.index.addDataPointBatch(transformed_embeddings.cpu())
-        self.index.createIndex({"post": 2}, print_progress=False)
+        transformed = self.ref_embeddings @ self.vi_zero.T
+        self._build_index(transformed, space="l2")
 
     @override
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
-        transformed_query = query.float() @ self.vi_zero.T
-        nmslib.setQueryTimeParams(
-            self.index, {"efSearch": int(1.1 * self.k)}
-        )  # set efSearch to a value slightly higher than k
-        results = self.index.knnQueryBatch(
-            transformed_query.cpu(), k=self.k + kpn
-        )
-        distances = self._zeropad(results, kpn=kpn)
-        distances = self._stat(distances, stat=self.stat)
-        return distances
+        transformed = query.float() @ self.vi_zero.T
+        return self._query_index(transformed, kpn)
