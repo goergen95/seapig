@@ -418,19 +418,6 @@ class KNNScore(EmbeddingScore, ABC):
             query_params = None
             index_path = self.index_path
 
-        # Get suggested params if not provided
-        suggested = self._suggest_index_params(embs=embs, k=self.k)
-        if build_params is None:
-            build_params = suggested["build_defaults"]
-        if query_params is None:
-            query_params = suggested["query_defaults"]
-
-        # Store params for later use
-        self.index_params = {
-            "build_defaults": build_params,
-            "query_defaults": query_params,
-        }
-
         # Check if we should load from disk
         metadata_path = None
         if index_path is not None:
@@ -449,28 +436,58 @@ class KNNScore(EmbeddingScore, ABC):
             with open(metadata_path, "r") as f:
                 metadata = json.load(f)
 
-            # Validate metadata matches requested config
-            expected_metadata = {
-                "method": method,
-                "space": space,
-                "build_params": build_params,
-                "query_params": query_params,
-            }
-
-            # Deep comparison
-            if metadata != expected_metadata:
-                raise ValueError(
-                    f"Metadata mismatch for index '{index_path}'.\n"
-                    f"Expected: {json.dumps(expected_metadata, sort_keys=True)}\n"
-                    f"Found: {json.dumps(metadata, sort_keys=True)}\n"
-                    f"Please remove the index file or provide a matching "
-                    f"configuration."
+            # If explicit config was provided, validate it matches
+            if self.index_config is not None and (
+                self.index_config.build_params is not None
+                or self.index_config.query_params is not None
+            ):
+                # Only validate if user explicitly provided build/query params
+                suggested = self._suggest_index_params(embs=embs, k=self.k)
+                expected_build = (
+                    build_params
+                    if build_params is not None
+                    else suggested["build_defaults"]
                 )
+                expected_query = (
+                    query_params
+                    if query_params is not None
+                    else suggested["query_defaults"]
+                )
+
+                expected_metadata = {
+                    "method": method,
+                    "space": metadata["space"],  # Use space from metadata for comparison
+                    "build_params": expected_build,
+                    "query_params": expected_query,
+                }
+
+                # Deep comparison
+                if metadata != expected_metadata:
+                    raise ValueError(
+                        f"Metadata mismatch for index '{index_path}'.\n"
+                        f"Expected: {json.dumps(expected_metadata, sort_keys=True)}\n"
+                        f"Found: {json.dumps(metadata, sort_keys=True)}\n"
+                        f"Please remove the index file or provide a matching "
+                        f"configuration."
+                    )
+
+            # Use metadata params when loading
+            method = metadata["method"]
+            space = metadata["space"]
+            build_params = metadata["build_params"]
+            query_params = metadata["query_params"]
 
             # Load the index
             index = nmslib.init(method=method, space=space)
             index.loadIndex(index_path.as_posix(), load_data=True)
         else:
+            # Get suggested params if not provided
+            suggested = self._suggest_index_params(embs=embs, k=self.k)
+            if build_params is None:
+                build_params = suggested["build_defaults"]
+            if query_params is None:
+                query_params = suggested["query_defaults"]
+
             # Build new index
             index = nmslib.init(method=method, space=space)
             index.addDataPointBatch(embs.cpu())
@@ -491,6 +508,11 @@ class KNNScore(EmbeddingScore, ABC):
                 with open(metadata_path, "w") as f:
                     json.dump(metadata, f, sort_keys=True, indent=2)
 
+        # Store params for later use
+        self.index_params = {
+            "build_defaults": build_params,
+            "query_defaults": query_params,
+        }
         self.index = index
 
     @staticmethod
