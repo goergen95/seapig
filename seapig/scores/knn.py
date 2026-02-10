@@ -4,7 +4,7 @@ import json
 import math
 import warnings
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, override
 
@@ -186,6 +186,7 @@ class KNNScore(EmbeddingScore, ABC):
     index: Any | None = None
     index_path: Path | None = None
     index_config: IndexConfig | None = None
+    index_params: dict[str, Any]
 
     def __init__(
         self,
@@ -226,17 +227,12 @@ class KNNScore(EmbeddingScore, ABC):
         # Handle pre-built index
         if nms_index is not None:
             if not hasattr(nms_index, "knnQueryBatch"):
-                raise ValueError(
-                    "nms_index must have a knnQueryBatch method"
-                )
+                raise ValueError("nms_index must have a knnQueryBatch method")
             self.index = nms_index
             # Set default index_params if not provided via config
             if self.index_config is None:
                 # Use default params structure
-                self.index_params = {
-                    "build_defaults": {},
-                    "query_defaults": {},
-                }
+                self.index_params = {"build_defaults": {}, "query_defaults": {}}
             else:
                 self.index_params = {
                     "build_defaults": self.index_config.build_params or {},
@@ -419,12 +415,13 @@ class KNNScore(EmbeddingScore, ABC):
             index_path = self.index_path
 
         # Check if we should load from disk
-        metadata_path = None
+        metadata_path: Path | None = None
         if index_path is not None:
             metadata_path = index_path.with_suffix(".json")
 
         if index_path is not None and index_path.exists():
             # Load and validate metadata
+            assert metadata_path is not None  # Type narrowing
             if not metadata_path.exists():
                 raise ValueError(
                     f"Index file '{index_path}' exists but metadata file "
@@ -433,7 +430,7 @@ class KNNScore(EmbeddingScore, ABC):
                 )
 
             # Load metadata
-            with open(metadata_path, "r") as f:
+            with open(metadata_path) as f:
                 metadata = json.load(f)
 
             # If explicit config was provided, validate it matches
@@ -456,7 +453,9 @@ class KNNScore(EmbeddingScore, ABC):
 
                 expected_metadata = {
                     "method": method,
-                    "space": metadata["space"],  # Use space from metadata for comparison
+                    "space": metadata[
+                        "space"
+                    ],  # Use space from metadata for comparison
                     "build_params": expected_build,
                     "query_params": expected_query,
                 }
@@ -495,6 +494,7 @@ class KNNScore(EmbeddingScore, ABC):
 
             # Save to disk if path provided
             if index_path is not None:
+                assert metadata_path is not None  # Type narrowing
                 index_path.parent.mkdir(parents=True, exist_ok=True)
                 index.saveIndex(index_path.as_posix(), save_data=True)
 
@@ -667,7 +667,7 @@ class EuclideanScore(KNNScore):
         self._build_index(self.ref_embeddings, space="l2")
 
     @override
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
+    @torch.inference_mode()
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         """Calculate the KNN distance of a query against a populated index."""
         return torch.sqrt(self._query_index(query, kpn))
@@ -737,7 +737,7 @@ class CosineScore(KNNScore):
         self._build_index(normalized, space="cosinesimil")
 
     @override
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
+    @torch.inference_mode()
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
         normalized = torch.nn.functional.normalize(query)
@@ -811,7 +811,7 @@ class MahalanobisScore(KNNScore):
         self._build_index(transformed, space="l2")
 
     @override
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
+    @torch.inference_mode()
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
         transformed = query.float() @ self.vi_zero.T
