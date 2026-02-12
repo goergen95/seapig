@@ -9,18 +9,27 @@ repos:
         types_or: [python]
         verbose: true
         pass_filenames: false
+        stages: ["pre-push"]
       - id: ruff-check
         name: ruff-check
         entry: ruff check --force-exclude
         language: system
         types_or: [python]
+        stages: ["pre-commit"]
       - id: ruff-format
         name: ruff-format
         entry: ruff format --force-exclude
         language: system
         types_or: [python]
+        stages: ["pre-commit"]
       - id: pytest
         name: pytest
         entry: pytest --cov
         language: system
         pass_filenames: false
+        stages: ["pre-push"] 
+      - id: validate-commit-msg
+        name: validate-commit-msg
+        entry: .pre-commit/validate_commit_msg.py
+        language: system
+        stages: [commit-msg]
