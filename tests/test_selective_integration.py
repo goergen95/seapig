@@ -99,6 +99,7 @@ def _tensor_dict_to_floats(d: dict) -> dict:
             out[k] = v
     return out
 
+
 @pytest.mark.filterwarnings(
     r"ignore:`isinstance\(treespec, LeafSpec\)` is deprecated.*"
 )
@@ -164,6 +165,7 @@ def test_selective_inference_trainer_integration(tmp_path):
     )
     assert metric_floats["rejected/BinaryAccuracy"] > 0.0
 
+
 @pytest.mark.filterwarnings(
     r"ignore:`isinstance\(treespec, LeafSpec\)` is deprecated.*"
 )
@@ -171,7 +173,11 @@ def test_risk_coverage_integration_via_trainer(tmp_path):
     task = DummyTask()
     score = FlagScore()
     sel_model = SelectiveInferenceTask(
-        task, score, rc_metric=RiskCoverageMetric(risk="selective") ,input_key="image", target_key="label"
+        task,
+        score,
+        rc_metric=RiskCoverageMetric(risk="selective"),
+        input_key="image",
+        target_key="label",
     )
 
     trainer = Trainer(
@@ -194,9 +200,21 @@ def test_risk_coverage_integration_via_trainer(tmp_path):
     metric_floats = _tensor_dict_to_floats(metric_dict)
 
     # Ensure trainer-reported values match metric.compute() values
-    assert abs(reported_emp - metric_floats.get("rc/auc_empirical", reported_emp)) < 1e-6
-    assert abs(reported_ref - metric_floats.get("rc/auc_reference", reported_ref)) < 1e-6
-    assert abs(reported_excess - metric_floats.get("rc/auc_excess", reported_excess)) < 1e-6
+    assert (
+        abs(reported_emp - metric_floats.get("rc/auc_empirical", reported_emp))
+        < 1e-6
+    )
+    assert (
+        abs(reported_ref - metric_floats.get("rc/auc_reference", reported_ref))
+        < 1e-6
+    )
+    assert (
+        abs(
+            reported_excess
+            - metric_floats.get("rc/auc_excess", reported_excess)
+        )
+        < 1e-6
+    )
 
     # Basic sanity checks on numeric ranges and presence
     assert "rc/auc_empirical" in metric_floats

@@ -229,6 +229,7 @@ def test_pca_preserves_cosine_similarity() -> None:
     out_manual = s_proj._distance(q_proj, kpn=0)
     approx(out_with_pca, out_manual)
 
+
 def test_suggest_index_params_small_n() -> None:
     """_suggest_index_params returns conservative defaults for very small N."""
     refs = torch.randn(5, 3)

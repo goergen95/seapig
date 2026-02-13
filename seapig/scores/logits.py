@@ -62,16 +62,14 @@ class LogitScore(ConfidenceScore, abc.ABC):
     task: str
 
     def __init__(
-        self,
-        temperature: float | None = None,
-        task: str = "multiclass",
+        self, temperature: float | None = None, task: str = "multiclass"
     ) -> None:
         super().__init__()
         self.register_buffer("logits", None)
         self.register_buffer("labels", None)
         self.temperature: float | None = (
             None if temperature is None else float(temperature)
-        )    
+        )
         self.task = task
 
     @staticmethod
