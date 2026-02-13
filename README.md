@@ -6,172 +6,158 @@
 MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 seapig provides confidence-based selective inference for deep learning
-predictions by analysing latent-space embeddings. The library implements
-a set of lightweight, composable confidence scores that decide whether
-to accept or reject individual query samples at prediction time.
-Thresholds are calibrated on an independent validation set.
+models by analysing latent-space embeddings. The library implements a
+small set of lightweight, composable confidence scores that are used to
+decide whether to accept or reject an individual query sample at
+prediction time. Thresholds are calibrated on an independent validation
+set.
 
-The basic idea is simple: query samples that deviate from the training
-embeddings should be excluded from prediction because the model’s
-expected performance may not hold. Several families of scores are
-provided (KNN-based metrics, PCA-reconstruction errors and PyOD
-detectors) and most accept either pre-computed embeddings (as tensors)
-or will extract embeddings on-the-fly from a model that implements an
-.embed() method.
+### Why selective prediction?
 
-Key features include:
+- Machine learning models often fail silently on out-of-distribution
+  inputs.
+- Selective prediction lets a system abstain from predicting when the
+  input is unreliable, improving safety and downstream decision-making.
+- seapig uses embeddings (internal model representations) to detect such
+  atypical inputs with interpretable, fast-to-compute scores.
 
-- Fit from tensors (fit) or from dataloaders using a model with a
-  .embed() method (fit_dl / score_dl / select_dl).
-- KNN-based scores (Euclidean, Cosine, Mahalanobis) with configurable
-  aggregation statistic: stat in {"max", "mean", "median", "min"}.
-- Optional PCA dimensionality reduction via exp_var (fraction of
-  explained variance retained) to speed up nearest-neighbour search.
-- PyOD-based detectors via PyODScore.
-- Embeddings can be saved to / loaded from disk with outdir and prefix
-  when using the \*\_dl helpers.
+The core idea is to compute an embedding for each input, score how
+similar the embedding is to training embeddings, and reject inputs whose
+score indicates low support.
 
-If you have a trained model that inherits from `torchgeo` tasks or your
-own lightning module, you can wrap your task in the
-`SelectiveInferenceTask` wrapper and use any of the provided confidence
-scores for selective inference. Here’s a minimal example using toy data
-and a tiny task:
+### From confidence scores to selective inference
+
+All confidence scores produce a scalar score $\kappa(x)$ for each query
+$x$. Given a threshold $\lambda$, we derive from the output of a
+selection functions which samples to accept. For example, accepting
+samples with score below $\lambda$:
+
+$$
+g_{\lambda}(x) = \mathbf{1}\{\kappa(x) \le \lambda\}.
+$$
+
+### Quickstart
+
+The code snippets show how to use KNN-based scores: (1) compute or
+provide embeddings, (2) fit a confidence score, (3) calibrate a
+threshold on validation data, and (4) accept/reject predictions at
+inference time. These illustrative examples follow — they are
+intentionally minimal so the flow is immediately clear. See the tests/
+and dev/ directories for runnable examples.
+
+#### Precomputed embeddings
 
 ``` python
 import torch
-from torch import nn
-from torch.utils.data import TensorDataset, DataLoader
-from pytorch_lightning import LightningModule
-from torchmetrics import Accuracy, MetricCollection
-
 from seapig.scores.knn import EuclideanScore
-from seapig.model import SelectiveInferenceTask
-from seapig.metric import SelectiveMetric
+torch.manual_seed(0)  # for reproducibility
+# ref_emb, val_emb, query_emb: torch.Tensor shapes (N, D), (M, D), (Q, D)
+ref_emb, val_emb, query_emb = torch.randn(1000, 32), torch.randn(200, 32), torch.randn(10, 32)
 
-
-# Define a minimal LightningModule task
-class TinyTask(LightningModule):
-    """Minimal LightningModule task exposing `predict(x)`."""
-
-    def __init__(self, num_classes: int = 2) -> None:
-        super().__init__()
-        self.backbone = nn.Sequential(
-            nn.Linear(2, 8), nn.ReLU(), nn.Linear(8, num_classes)
-        )
-        self.test_metrics = MetricCollection(
-            {"accuracy": Accuracy(task="binary")}
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Return logits."""
-        logits = self.backbone(x)
-        return torch.argmax(logits, dim=1)
-        
-    def predict(self, x: torch.Tensor) -> torch.Tensor:
-        """Return class predictions."""
-        self.forward(x)
-    
-    def embed(self, x: torch.Tensor) -> torch.Tensor:
-        """Return intermediate embeddings (for confidence scoring)."""
-        with torch.no_grad():
-            return self.backbone[0](x) 
-
-
-# Toy "embedding" datasets (N x 2 features) with labels
-train = torch.tensor([[0.0, 0.0], [1.0, 1.0]], dtype=torch.float32)
-val = torch.tensor([[0.1, 0.0], [0.9, 1.1]], dtype=torch.float32)
-test = torch.tensor([[0.0, 0.1], [10.0, 10.0]], dtype=torch.float32)
-train_y = torch.tensor([0, 1])
-val_y = torch.tensor([0, 1])
-test_y = torch.tensor([0, 1])
-
-# Fit confidence score on embeddings and calibrate a threshold
-score = EuclideanScore(k=1, stat="max")
-score.fit(X=train, Y=val)
-score.set_threshold(q=0.50)
-
-# Wrap the task with the score; default keys match torchgeo-style batches
-task = TinyTask(num_classes=2)
-wrapper = SelectiveInferenceTask(
-    task=task, score=score, input_key="image", target_key="label"
-)
-
-# Construct an inference/test batch
-batch = {"image": test, "label": test_y}
-
-# Attach selection to predictions, and update/log the metric in test_step
-out = wrapper.predict_step(batch, batch_idx=0)
-
-# Evaluate selective performance using SelectiveMetric
-metrics = MetricCollection({"accuracy": Accuracy(task="binary")})
-selective_metric = SelectiveMetric(metrics)
-selective_metric.update(out, test_y)
-results = selective_metric.compute()
-
-print("Selective evaluation results:", results)
+score = EuclideanScore(k=5, stat="mean")
+score.fit(X=ref_emb, Y=val_emb)
+score.set_threshold(q=0.90)   # keep ~90% coverage on validation set
+sel = score.select(query_emb)
+print(sel)
 ```
 
-    Selective evaluation results: {'full/accuracy': tensor(0.5000), 'selected/accuracy': tensor(0.), 'rejected/accuracy': tensor(0.5000)}
+    {'score': tensor([6.2663, 5.5952, 6.0250, 5.8910, 6.2953, 4.8393, 5.7325, 5.3731, 5.6600,
+            5.9184]), 'selected': tensor([ True,  True,  True,  True, False,  True,  True,  True,  True,  True])}
 
     Your CPU supports instructions that this binary was not compiled to use: SSE3 SSE4.1 SSE4.2 AVX AVX2
     For maximum performance, you can install NMSLIB from sources 
     pip install --no-binary :all: nmslib
 
-Available scores
+#### On-the-fly embedding extraction
 
-- KNN distances: EuclideanScore, CosineScore, MahalanobisScore (all
-  inherit KNNScore)
+``` python
+from torch.utils.data import TensorDataset, DataLoader
+ds_train = TensorDataset(torch.randn(1000, 32), torch.randint(0, 2, (1000,)))
+ds_val = TensorDataset(torch.randn(200, 32), torch.randint(0, 2, (200,)))
+ds_test = TensorDataset(torch.randn(10, 32), torch.randint(0, 2, (10,))) 
+train_loader = DataLoader(ds_train, batch_size=64)
+val_loader = DataLoader(ds_val, batch_size=64)
+test_loader = DataLoader(ds_test, batch_size=64)
+
+# model exposes .embed(x) -> (B, D)
+class Model(torch.nn.Module):
+    def embed(self, x):
+        image = x[0]
+        label = x[1]
+        return torch.randn(image.shape[0], 32)  # dummy embedding
+
+model = Model()
+
+score = EuclideanScore(k=3)
+score.fit_dl(model=model, loaders = {"train": train_loader, "val": val_loader})
+score.set_threshold(q=0.80) # keep ~80% coverage on validation set
+
+sel = score.select_dl(model=model, loader=test_loader)
+print(sel)
+```
+
+    Embedding 16 batches:   0%|          | 0/16 [00:00<?, ?batches/s]Embedding 16 batches: 100%|██████████| 16/16 [00:00<00:00, 4180.72batches/s]
+    Embedding 4 batches:   0%|          | 0/4 [00:00<?, ?batches/s]Embedding 4 batches: 100%|██████████| 4/4 [00:00<00:00, 1518.16batches/s]
+    Embedding 1 batches:   0%|          | 0/1 [00:00<?, ?batches/s]Embedding 1 batches: 100%|██████████| 1/1 [00:00<00:00, 2430.07batches/s]
+
+    {'score': tensor([5.8678, 5.4841, 5.2515, 5.8003, 5.7443, 6.2480, 5.4707, 5.4662, 5.9107,
+            5.4375]), 'selected': tensor([ True,  True,  True,  True,  True, False,  True,  True,  True,  True])}
+
+#### Using SelectiveInferenceTask with a pytorch-lightning module
+
+``` python
+from seapig import SelectiveInferenceTask
+# assumes model is a PyTorch Lightning module exposing .embed(x) -> (B, D)
+trainer.fit(model=model, train_dataloaders=train_loader, val_dataloaders=val_loader)
+# after we fitted the model the usual way, we can wrap it together with
+# a calibrated score into a SelectiveInferenceTask for evaluation and prediction
+sel_task = SelectiveInferenceTask(model=model, score=score)
+# evaluate on test set, will return metrics for the full, selected, and rejected samples
+metrics = trainer.test(sel_task, dataloaders=test_loader)
+# or for prediction. will return a dict with keys "predictions", "selected", and "score" for each sample
+preds = trainer.predict(sel_task, dataloaders=test_loader)
+```
+
+### Notes and guidance
+
+- Embeddings: seapig works with precomputed embeddings (tensors) or with
+  models exposing .embed(), giving flexibility for integration into
+  existing training/evaluation pipelines.
+- Threshold calibration: call score.set_threshold(q) to fix a desired
+  coverage level on the calibration set (fraction of accepted samples).
+  Use an independent validation set to avoid optimistic thresholds.
+- Choice of score:
+  - KNN distances (Euclidean, Cosine, Mahalanobis).
+  - PCA-based reconstruction is helpful when large-scale
+    nearest-neighbour search is costly.
+  - PyOD detectors plug into more advanced unsupervised outlier
+    detectors.
+- Performance tips:
+  - Optionally reduce dimensionality with PCA (pca parameter of KNN
+    scores) before indexing.
+
+#### Available scores
+
+- KNN distances: EuclideanScore, CosineScore, MahalanobisScore
 - PCA reconstruction: PCAScore
 - PyOD detectors: PyODScore
 - Random baseline: RandomScore
 
-Math
+#### Risk-coverage analysis
 
-All confidence scores follow a consistent definition: low scores
-indicate likely inliers (samples similar to the training distribution)
-while high scores indicate likely outliers (samples deviating from the
-training distribution). Each method induces a selection function
+- The risk-coverage curve quantifies the trade-off between coverage
+  (fraction accepted) and risk (error rate). seapig computes E-AURC
+  (excess area under risk-coverage curve) to summarise how well
+  confidence scores rank errors; lower is better.
 
-## Risk-Coverage Analysis
+### Further reading and examples
 
-The library provides tools for evaluating selective prediction systems
-using risk-coverage curves. This analysis describes the trade-off
-between coverage (fraction of samples accepted) and risk (error rate)
-across different confidence thresholds.
+- See the examples in docs/ dev/ and the tests/ directory for
+  unit-tested, minimal workflows.
+- For production usage, compute embeddings on GPU and persist them to
+  disk with the built-in save/load helpers to avoid repeated embedding
+  computation.
 
-``` python
-import torch
-from seapig import risk_coverage
+### License
 
-# Example with confidence scores and prediction residuals
-score = torch.rand(100)      # Lower scores = higher confidence
-residuals = torch.rand(100)  # Prediction errors
-
-# Calculate risk-coverage curve
-rc = risk_coverage(score, residuals, risk="generalized")
-
-# Access metrics
-print(f"E-AURC: {rc.auc_excess:.4f}")
-
-# Visualize (requires matplotlib)
-fig = rc.plot()
-```
-
-The risk-coverage curve compares an empirical curve (based on your
-confidence scores) to a reference curve (optimal ordering by residuals).
-The difference between these curves, quantified by the Excess Area Under
-the Risk-Coverage Curve (E-AURC), indicates how well the confidence
-scores predict prediction errors. Lower E-AURC values indicate better
-calibrated confidence scores.
-
-Each of the methods above induces a selection function
-$g_{\lambda}(x|\kappa,f) = \mathbb{1}[\kappa(x|f)>\lambda]$, either
-accepting or rejecting a query sample during prediction time. We thus
-derive a selective prediction system,
-
-<span id="eq-selective-model">$$
-  (f,g_{\lambda})(x) \equiv \begin{cases}
-  \text{$f(x)$, if $g_{\lambda}(x) = 1$,}\\
-  \text{reject, if $g_{\lambda}(x) = 0$.}
-  \end{cases}.
- \qquad(1)$$</span>
+- [MIT](LICENSE)
