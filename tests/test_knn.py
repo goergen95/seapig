@@ -203,14 +203,14 @@ def test_pca_reduces_dimension_and_preserves_euclidean() -> None:
 def test_pca_preserves_cosine_similarity() -> None:
     """Same check for cosine-based scores."""
     torch.manual_seed(1)
-    n, D = 40, 8
+    n, D = 40, 64
     base = torch.randn(n, 1)
     direction = torch.randn(1, D)
     refs = (base @ direction) + 0.01 * torch.randn(n, D)
 
     q = torch.randn(1, D)
 
-    s_pca = CosineScore(k=2, pca=TensorPCA(exp_var=0.95))
+    s_pca = CosineScore(k=2, pca=TensorPCA(exp_var=0.99))
     s_pca.cal_required = False
     s_pca.ref_embeddings = refs.float()
     s_pca._fit_impl(q=None)
