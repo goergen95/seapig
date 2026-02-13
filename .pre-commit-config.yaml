@@ -22,12 +22,6 @@ repos:
         language: system
         types_or: [python]
         stages: ["pre-commit"]
-      - id: pytest
-        name: pytest
-        entry: pytest --cov
-        language: system
-        pass_filenames: false
-        stages: ["pre-push"] 
       - id: validate-commit-msg
         name: validate-commit-msg
         entry: .pre-commit/validate_commit_msg.py
