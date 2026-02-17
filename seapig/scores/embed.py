@@ -139,8 +139,17 @@ class EmbeddingScore(ConfidenceScore, ABC):
         model: torch.nn.Module,
         loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
     ) -> torch.Tensor:
-        """Extract embeddings by iterating over a DataLoader."""
+        """Extract embeddings by iterating over a DataLoader.
+        
+        This method ensures the model is in eval mode during embedding extraction
+        to ensure consistent behavior regardless of the model's initial state.
+        The model's original training state is restored after embedding extraction.
+        """
         assert callable(model.embed)
+        # Save the current training state and set model to eval mode
+        was_training = model.training
+        model.eval()
+        
         pbar = tqdm(
             total=len(loader),
             desc=f"Embedding {len(loader)} batches",
@@ -152,6 +161,11 @@ class EmbeddingScore(ConfidenceScore, ABC):
             embs_ls.append(z)
             _ = pbar.update(n=1)
         embs = torch.cat(embs_ls, dim=0)
+        
+        # Restore the original training state
+        if was_training:
+            model.train()
+        
         return embs
 
     @classmethod
