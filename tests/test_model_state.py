@@ -80,13 +80,17 @@ def test_model_state_preserved_in_forward() -> None:
     model.eval()
     assert not model.training, "Model should be in eval mode"
     _ = task.forward(x)
-    assert not model.training, "Model should still be in eval mode after forward"
+    assert not model.training, (
+        "Model should still be in eval mode after forward"
+    )
 
     # Test 2: Model in training mode should stay in training mode
     model.train()
     assert model.training, "Model should be in training mode"
     _ = task.forward(x)
-    assert model.training, "Model should still be in training mode after forward"
+    assert model.training, (
+        "Model should still be in training mode after forward"
+    )
 
 
 def test_embeddings_consistent_across_modes() -> None:
@@ -187,13 +191,19 @@ def test_score_dl_preserves_model_state() -> None:
     # Test score_dl with model in eval mode
     model.eval()
     assert not model.training, "Model should be in eval mode"
-    _ = score.score_dl(model=model, loader=test_loader, outdir=None, prefix=None)
-    assert not model.training, "Model should still be in eval mode after score_dl"
+    _ = score.score_dl(
+        model=model, loader=test_loader, outdir=None, prefix=None
+    )
+    assert not model.training, (
+        "Model should still be in eval mode after score_dl"
+    )
 
     # Test score_dl with model in training mode
     model.train()
     assert model.training, "Model should be in training mode"
-    _ = score.score_dl(model=model, loader=test_loader, outdir=None, prefix=None)
+    _ = score.score_dl(
+        model=model, loader=test_loader, outdir=None, prefix=None
+    )
     assert model.training, (
         "Model should still be in training mode after score_dl"
     )
@@ -288,7 +298,7 @@ def test_fit_dl_forces_eval_mode_during_embedding() -> None:
     This is the actual bug: if the model is in training mode when fit_dl is called,
     the embeddings will be extracted using batch statistics (in training mode),
     which gives different results than when the model is in eval mode.
-    
+
     The fix should ensure that embeddings are always extracted in eval mode,
     regardless of the model's initial state.
     """
