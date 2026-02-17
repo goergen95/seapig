@@ -3,6 +3,5 @@ pandas
 torch
 torchmetrics
 tqdm
-pyarrow
 nmslib
 lightning
