@@ -5,6 +5,7 @@ score so that the model’s output is automatically combined with the score’s
 selection results.
 """
 
+import copy
 from typing import Any, Literal, get_args
 
 import torch
@@ -67,7 +68,8 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         assert isinstance(task.test_metrics, (MetricCollection, Metric)), (
             "Wrapped task's test_metrics must be a Metric or MetricCollection"
         )
-        self.task = task
+        self.task = copy.deepcopy(task)
+        self.task.eval()  # Ensure the wrapped task is in eval mode
         assert isinstance(score, ConfidenceScore), (
             "score must be a seapig ConfidenceScore instance"
         )
@@ -116,16 +118,8 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
             preds = {"predictions": preds}
         assert isinstance(preds, dict)
 
-        # Save the current training state and set model to eval mode for embedding
-        was_training = self.task.training
-        self.task.eval()
-        
         embs: torch.Tensor = self.task.embed(x)
         selection = self.score.select(embs)
-        
-        # Restore the original training state
-        if was_training:
-            self.task.train()
 
         return preds | selection
 
