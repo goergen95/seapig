@@ -239,6 +239,7 @@ def test_suggest_index_params_small_n() -> None:
     assert params["query_defaults"]["efSearch"] == 3
 
 
+@pytest.mark.filterwarnings(r"ignore:.*Loading existing index from disk.*")
 def test_build_index_saves_and_loads(tmp_path) -> None:
     """_build_index saves index to disk and a second instance loads it."""
     path = tmp_path / "test_index.bin"
