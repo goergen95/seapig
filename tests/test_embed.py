@@ -275,9 +275,9 @@ def test_select_dl_respects_threshold(tmp_path) -> None:
 
 def test_visualize_embeddings():
     # Mock embeddings
-    ref_embeddings = torch.randn(100, 64)
-    cal_embeddings = torch.randn(50, 64)
-    query_embeddings = torch.randn(20, 64)
+    ref_embeddings = torch.randn(10, 64)
+    cal_embeddings = torch.randn(10, 64)
+    query_embeddings = torch.randn(10, 64)
 
     pca = TensorPCA(exp_var=0.75)
 
@@ -287,7 +287,7 @@ def test_visualize_embeddings():
     score._fit_pca()
 
     # Mock method arguments
-    tsne_args = {"perplexity": 30, "random_state": 42}
+    tsne_args = {"perplexity": 5, "random_state": 42}
 
     with pytest.raises(ValueError):
         score.plot_embs(
