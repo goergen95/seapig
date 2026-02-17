@@ -103,7 +103,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
     ) -> torch.Tensor:
         """Load from file or iterate over dataloader to extract embeddings."""
         if path is not None and path.is_file():
-            print(f"Loading pre-existing embeddings from {path}.")
+            warnings.warn(f"Loading pre-existing embeddings from {path}.", UserWarning)
             v = self._load_parquet(path)
             device = next(model.parameters()).device
             v = v.to(device)

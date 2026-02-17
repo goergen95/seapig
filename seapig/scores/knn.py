@@ -247,9 +247,13 @@ class KNNScore(EmbeddingScore, ABC):
             index.addDataPointBatch(embs.cpu())
             index.createIndex(index_params=params["build_defaults"])
             if index_path:
-                index.saveIndex(index_path.as_posix(), save_data=True)
+                index.saveIndex(index_path.as_posix(), save_data=False)
         else:
-            index.loadIndex(index_path.as_posix(), load_data=True)
+            warnings.warn(
+                f"Index file {index_path} already exists. Loading existing index from disk.",
+                UserWarning,
+            )
+            index.loadIndex(index_path.as_posix(), load_data=False)
 
         self.index_params = params
         self.index = index
