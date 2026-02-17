@@ -71,7 +71,7 @@ class KNNScore(EmbeddingScore, ABC):
         self.stat: str = stat
         self.k = k
         self.ident: str = (
-            f"{self.ident}-k{self.k}-{'full' if pca is not None else 'pca'}"
+            f"{self.ident}-k{self.k}-{'full' if pca is None else 'pca'}"
         )
         if save_index:
             if isinstance(save_index, bool):
