@@ -48,7 +48,7 @@ def test_setup_path_creates_dir_and_returns_path(tmp_path) -> None:
     path = EmbeddingScore._setup_path(outdir=outdir, prefix="myprefix")
     assert path is not None
     # the helper should return a Path ending with .parquet but not yet create the file
-    assert path.suffix == ".parquet"
+    assert path.suffix == ".pt"
     assert outdir.is_dir()
     assert "myprefix" in path.name
     # cleanup
@@ -67,12 +67,12 @@ def test_check_model_valid_and_invalid():
         EmbeddingScore._check_model(DummyBadSignature())
 
 
-def test_write_and_load_parquet_roundtrip(tmp_path) -> None:
+def test_write_and_load_roundtrip(tmp_path) -> None:
     x = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
-    path = tmp_path / "embs.parquet"
-    EmbeddingScore._write_parquet(x, path)
+    path = tmp_path / "embs.pt"
+    EmbeddingScore._write_pt(x, path)
     assert path.exists()
-    y = EmbeddingScore._load_parquet(path)
+    y = EmbeddingScore._load_pt(path)
     assert isinstance(y, torch.Tensor)
     assert torch.allclose(y, x)
     # cleanup
@@ -149,7 +149,7 @@ def test_embed_from_dict_errors_and_saves(tmp_path) -> None:
     )
     assert isinstance(embs, torch.Tensor)
     # file should have been written
-    expected = tmp_path / "pfx-embeddings-train.parquet"
+    expected = tmp_path / "pfx-embeddings-train.pt"
     assert expected.exists()
     # cleanup
     expected.unlink()
@@ -242,9 +242,9 @@ def test_score_dl_writes_and_returns_tensor(tmp_path) -> None:
     )
     assert isinstance(out, torch.Tensor)
     assert out.shape[0] == 2
-    assert (tmp_path / "pfx.parquet").exists()
+    assert (tmp_path / "pfx.pt").exists()
     # cleanup
-    (tmp_path / "pfx.parquet").unlink()
+    (tmp_path / "pfx.pt").unlink()
 
 
 def test_select_dl_respects_threshold(tmp_path) -> None:

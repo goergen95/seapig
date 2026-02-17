@@ -6,7 +6,6 @@ from abc import ABC
 from pathlib import Path
 from typing import Any, Literal, override
 
-import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -66,7 +65,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
             return None
         if not outdir.is_dir():
             outdir.mkdir(parents=True, exist_ok=True)
-        return outdir / f"{prefix}.parquet"
+        return outdir / f"{prefix}.pt"
 
     @staticmethod
     def _check_model(model: torch.nn.Module) -> None:
@@ -81,18 +80,15 @@ class EmbeddingScore(ConfidenceScore, ABC):
             )
 
     @staticmethod
-    def _write_parquet(x: torch.Tensor, path: Path) -> None:
-        """Write a `torch.Tensor` to parquet."""
-        df = pd.DataFrame(x.cpu())
-        df.to_parquet(path, index=False)
+    def _write_pt(x: torch.Tensor, path: Path) -> None:
+        """Write a `torch.Tensor` to disk."""
+        torch.save(x.cpu(), path)
 
     @staticmethod
     @torch.inference_mode()  # type: ignore[untyped-decorator]
-    def _load_parquet(path: Path) -> torch.Tensor:
-        """Read a parquet file to a `torch.Tensor`."""
-        df = pd.read_parquet(path)
-        arr = df.to_numpy(copy=True)
-        return torch.as_tensor(arr).squeeze()
+    def _load_pt(path: Path) -> torch.Tensor:
+        """Read a file from disk to a `torch.Tensor`."""
+        return torch.load(path)
 
     @classmethod
     def _loadorembed(
@@ -104,13 +100,13 @@ class EmbeddingScore(ConfidenceScore, ABC):
         """Load from file or iterate over dataloader to extract embeddings."""
         if path is not None and path.is_file():
             warnings.warn(f"Loading pre-existing embeddings from {path}.", UserWarning)
-            v = self._load_parquet(path)
+            v = self._load_pt(path)
             device = next(model.parameters()).device
             v = v.to(device)
         else:
             v = self._embed_dl(model=model, loader=loader)
             if path is not None:
-                self._write_parquet(v, path)
+                self._write_pt(v, path)
         return v
 
     @classmethod
@@ -126,6 +122,8 @@ class EmbeddingScore(ConfidenceScore, ABC):
                     'A batch dictionary is required to contain the "image" key.'
                 )
             z = model.embed(X["image"])
+        elif isinstance(X, (list, tuple)):
+            z = model.embed(X[0])
         else:
             z = model.embed(X)
         assert isinstance(z, torch.Tensor)
