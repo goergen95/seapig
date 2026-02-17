@@ -99,7 +99,9 @@ class EmbeddingScore(ConfidenceScore, ABC):
     ) -> torch.Tensor:
         """Load from file or iterate over dataloader to extract embeddings."""
         if path is not None and path.is_file():
-            warnings.warn(f"Loading pre-existing embeddings from {path}.", UserWarning)
+            warnings.warn(
+                f"Loading pre-existing embeddings from {path}.", UserWarning
+            )
             v = self._load_pt(path)
             device = next(model.parameters()).device
             v = v.to(device)
@@ -140,7 +142,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
     ) -> torch.Tensor:
         """Extract embeddings by iterating over a DataLoader.
-        
+
         This method ensures the model is in eval mode during embedding extraction
         to ensure consistent behavior regardless of the model's initial state.
         The model's original training state is restored after embedding extraction.
@@ -149,7 +151,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         # Save the current training state and set model to eval mode
         was_training = model.training
         model.eval()
-        
+
         pbar = tqdm(
             total=len(loader),
             desc=f"Embedding {len(loader)} batches",
@@ -161,11 +163,11 @@ class EmbeddingScore(ConfidenceScore, ABC):
             embs_ls.append(z)
             _ = pbar.update(n=1)
         embs = torch.cat(embs_ls, dim=0)
-        
+
         # Restore the original training state
         if was_training:
             model.train()
-        
+
         return embs
 
     @classmethod
