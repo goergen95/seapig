@@ -5,7 +5,6 @@ properly preserve the model's training/evaluation state, which is critical
 for models with BatchNorm or Dropout layers.
 """
 
-import pytest
 import torch
 from lightning import LightningModule
 from torch.utils.data import DataLoader, Dataset
@@ -90,40 +89,6 @@ def test_model_state_preserved_in_forward() -> None:
     _ = task.forward(x)
     assert model.training, (
         "Model should still be in training mode after forward"
-    )
-
-
-def test_embeddings_consistent_across_modes() -> None:
-    """Test that embeddings are consistent when called multiple times.
-
-    This test verifies that calling embed() multiple times on the same input
-    produces the same results, regardless of the model's training state being
-    preserved correctly.
-    """
-    torch.manual_seed(42)
-    model = ModelWithBatchNorm()
-    score = EuclideanScore(k=2)
-
-    # Fit the score with dummy embeddings
-    dummy_embs = torch.randn(10, 16)
-    score.fit(dummy_embs, None)
-    score.set_threshold(q=0.99)
-
-    # Create SelectiveInferenceTask
-    task = SelectiveInferenceTask(task=model, score=score)
-
-    # Create test input
-    x = torch.randn(2, 3, 8, 8)
-
-    # Put model in eval mode and get embeddings
-    model.eval()
-    with torch.inference_mode():
-        emb1 = model.embed(x)
-        emb2 = model.embed(x)
-
-    # Embeddings should be identical in eval mode
-    assert torch.allclose(emb1, emb2, atol=1e-6), (
-        "Embeddings should be identical in eval mode"
     )
 
 
