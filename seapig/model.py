@@ -116,8 +116,16 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
             preds = {"predictions": preds}
         assert isinstance(preds, dict)
 
+        # Save the current training state and set model to eval mode for embedding
+        was_training = self.task.training
+        self.task.eval()
+        
         embs: torch.Tensor = self.task.embed(x)
         selection = self.score.select(embs)
+        
+        # Restore the original training state
+        if was_training:
+            self.task.train()
 
         return preds | selection
 
