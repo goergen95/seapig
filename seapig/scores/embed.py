@@ -358,12 +358,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
             stacklevel=2,
         )
         self.fit(
-            model=model,
-            loaders=loaders,
-            outdir=outdir,
-            prefix=prefix,
-            *args,
-            **kwargs,
+            X=None, Y=None, model=model, loaders=loaders, outdir=outdir, prefix=prefix
         )
 
     @override

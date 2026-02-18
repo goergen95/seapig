@@ -94,8 +94,8 @@ class LogitScore(ConfidenceScore, abc.ABC):
 
     def fit(
         self,
-        logits: torch.Tensor | None = None,
-        labels: torch.Tensor | None = None,
+        X: torch.Tensor | None = None,
+        Y: torch.Tensor | None = None,
         model: torch.nn.Module | None = None,
         loader: DataLoader[object] | None = None,
         outdir: Path | str | None = None,
@@ -108,8 +108,8 @@ class LogitScore(ConfidenceScore, abc.ABC):
 
         This method supports two usage modes:
 
-        1. **Precomputed logits**: Supply logits directly, with optional labels
-           for temperature fitting.
+        1. **Precomputed logits**: Supply logits directly via `X`, with optional 
+           labels via `Y` for temperature fitting.
         2. **On-the-fly extraction**: Supply a `model` with a `.logits()` method
            and a `DataLoader` to extract logits automatically.
 
@@ -117,10 +117,10 @@ class LogitScore(ConfidenceScore, abc.ABC):
 
         Parameters
         ----------
-        logits : torch.Tensor or None
+        X : torch.Tensor or None
             Reference logits. Shape depends on task (see class docstring).
             Required when not using `model` and `loader`.
-        labels : torch.Tensor or None
+        Y : torch.Tensor or None
             Optional labels for temperature fitting. Shape/type depends on task.
         model : torch.nn.Module or None
             Model with a `.logits(x)` method. Required when not using precomputed logits.
@@ -135,6 +135,10 @@ class LogitScore(ConfidenceScore, abc.ABC):
         -----
         If labels are provided, temperature is fitted to minimize NLL for the task.
         """
+        # For backward compatibility, also support 'logits' and 'labels' as kwargs
+        logits = X if X is not None else kwargs.get("logits")
+        labels = Y if Y is not None else kwargs.get("labels")
+
         # Validate parameter combinations
         using_precomputed = logits is not None
         using_model = model is not None or loader is not None
@@ -155,7 +159,9 @@ class LogitScore(ConfidenceScore, abc.ABC):
             self.logits = logits
             self.labels = labels
             if self.labels is not None:
+                assert self.logits is not None
                 self._fit_temperature(logits=self.logits, labels=self.labels)
+            assert self.logits is not None
             self.scores = self.score(self.logits)
         else:
             # Mode 2: Extract logits on-the-fly
@@ -539,13 +545,14 @@ class LogitScore(ConfidenceScore, abc.ABC):
             DeprecationWarning,
             stacklevel=2,
         )
+        # Pass X/Y as None to force model+loader path
         self.fit(
+            X=None,
+            Y=None,
             model=model,
             loader=loader,
             outdir=outdir,
             prefix=prefix,
-            *args,
-            **kwargs,
         )
 
 
