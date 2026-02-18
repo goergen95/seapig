@@ -1,0 +1,43 @@
+{
+  "name": "seapig dev",
+  "image": "ghcr.io/goergen95/seapig:latest",
+  "workspaceFolder": "/workspaces/vscode",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "hostRequirements": {
+    "gpu": "optional"
+  },
+  "postStartCommand": "python -m pip install -e .",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "quarto.quarto",
+        "ms-python.python",
+        "meta.pyrefly",
+        "ms-toolsai.jupyter",
+        "ms-azuretools.vscode-docker",
+        "charliermarsh.ruff",
+        "ms-python.isort"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/bin/python",
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": [
+          "tests"
+        ],
+        "python.linting.enabled": true,
+        "python.linting.ruffEnabled": true,
+        "python.formatting.provider": "ruff",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.organizeImports": "explicit"
+        }
+      }
+    }
+  },
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": true,
+  "forwardPorts": [4200, 8888, 8000]
+}

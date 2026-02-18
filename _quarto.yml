@@ -2,6 +2,8 @@ project:
   type: website
   pre-render: docs/version_config.py
   output-dir: _site
+  preview:
+    port: 4200
 
 metadata-files:
   - docs/reference/_sidebar.yml
