@@ -1,10 +1,7 @@
 pytest
+pytest-cov
+pre-commit
 ruff
+mypy
 nbmake
 build
-mypy
-types-tqdm
-pytest-cov
-torchgeo
-pandas-stubs
-pre-commit
