@@ -79,7 +79,8 @@ class Model(torch.nn.Module):
 model = Model()
 
 score = EuclideanScore(k=3)
-score.fit_dl(model=model, loaders = {"train": train_loader, "val": val_loader})
+# Unified fit() method supports both precomputed embeddings and on-the-fly extraction
+score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
 score.set_threshold(q=0.80) # keep ~80% coverage on validation set
 
 sel = score.select_dl(model=model, loader=test_loader)
@@ -103,6 +104,10 @@ preds = trainer.predict(sel_task, dataloaders=test_loader)
 
 
 ### Notes and guidance
+- **Unified fit() API**: All confidence scores now support a unified `fit()` method that 
+  accepts either precomputed embeddings (`X`, `Y`) or a model with loaders 
+  (`model`, `loaders`). The deprecated `fit_dl()` method is maintained for backward 
+  compatibility but will be removed in a future version.
 - Embeddings: seapig works with precomputed embeddings (tensors) or with models
   exposing .embed(), giving flexibility for integration into existing training/evaluation pipelines.
 - Threshold calibration: call score.set_threshold(q) to fix a desired
