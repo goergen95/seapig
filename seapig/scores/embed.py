@@ -399,7 +399,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
         if using_embeddings:
             # Mode 1: Use precomputed embeddings - call subclass implementation
-            return super().score(X)
+            return self._score_embeddings(X)
         else:
             # Mode 2: Extract embeddings on-the-fly
             if model is None:
@@ -413,7 +413,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
             if prefix is not None:
                 path = self._setup_path(outdir, prefix)
             embeddings = self._loadorembed(path, model, loader)
-            return super().score(embeddings)
+            return self._score_embeddings(embeddings)
 
     @override
     def select(

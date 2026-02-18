@@ -122,7 +122,7 @@ class PCAScore(EmbeddingScore):
             self.set_calibrated()
 
     @override
-    def score(self, X: torch.Tensor) -> torch.Tensor:
+    def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
         """Compute a confidence score based on sample embeddings.
 
         Returns reconstruction error scores where low values indicate samples that

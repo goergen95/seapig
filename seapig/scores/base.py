@@ -112,13 +112,28 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
         raise NotImplementedError()
 
     @abstractmethod
-    def score(self, X: torch.Tensor, *args: Any, **kwargs: Any) -> torch.Tensor:
-        """Calculate the confidence score for a tensor of samples.
+    def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
+        """Calculate the confidence score for a tensor of embeddings.
+
+        This internal method is implemented by subclasses to compute scores
+        from embeddings. The public `score()` method handles parameter dispatch
+        and calls this method.
 
         Returns scores where low values indicate likely inliers and high values
         indicate likely outliers.
         """
         raise NotImplementedError()
+
+    def score(self, X: torch.Tensor, *args: Any, **kwargs: Any) -> torch.Tensor:
+        """Calculate the confidence score for a tensor of samples.
+
+        Returns scores where low values indicate likely inliers and high values
+        indicate likely outliers.
+        
+        This default implementation calls `_score_embeddings()`. Subclasses
+        like `EmbeddingScore` may override to provide additional functionality.
+        """
+        return self._score_embeddings(X)
 
     def select(
         self, X: torch.Tensor, *args: Any, **kwargs: Any
@@ -273,7 +288,7 @@ class RandomScore(ConfidenceScore):
 
     @override
     @torch.inference_mode()  # type: ignore[untyped-decorator]
-    def score(self, X: torch.Tensor) -> torch.Tensor:
+    def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
         """Compute a confidence score for every sample in a batch.
 
         Returns random scores where low values indicate likely inliers and

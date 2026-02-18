@@ -176,7 +176,7 @@ class KNNScore(EmbeddingScore, ABC):
             self.set_calibrated()
 
     @override
-    def score(self, X: torch.Tensor) -> torch.Tensor:
+    def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
         """Compute a confidence score based on sample embeddings.
 
         Returns scores where low values indicate likely inliers (samples similar

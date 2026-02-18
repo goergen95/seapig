@@ -30,7 +30,7 @@ class DummyEmbedding(EmbeddingScore):
     def __init__(self, pca=None):
         super().__init__(pca=pca)
 
-    def score(self, X: torch.Tensor) -> torch.Tensor:
+    def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
         # simple deterministic score: sum over features per row
         return X.sum(dim=1)
 
@@ -195,7 +195,7 @@ class MinimalEmbedding(EmbeddingScore):
         self.train_required = False
         self.cal_required = False
 
-    def score(self, X: torch.Tensor) -> torch.Tensor:
+    def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
         """Simple deterministic score used in tests.
 
         Compute per-row sum over features so tests can assert shapes and
