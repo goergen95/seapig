@@ -61,12 +61,12 @@ sel = score.select(query_emb)
 print(sel)
 ```
 
-    {'score': tensor([6.2663, 5.5952, 6.0250, 5.8910, 6.2953, 4.8393, 5.7325, 5.3731, 5.6600,
-            5.9184]), 'selected': tensor([ True,  True,  True,  True, False,  True,  True,  True,  True,  True])}
-
     Your CPU supports instructions that this binary was not compiled to use: SSE3 SSE4.1 SSE4.2 AVX AVX2
     For maximum performance, you can install NMSLIB from sources 
     pip install --no-binary :all: nmslib
+
+    {'score': tensor([6.2663, 5.5952, 6.0250, 5.8910, 6.2953, 4.8393, 5.7325, 5.3731, 5.6600,
+            5.9184]), 'selected': tensor([ True,  True,  True,  True, False,  True,  True,  True,  True,  True])}
 
 #### On-the-fly embedding extraction
 
@@ -92,13 +92,13 @@ score = EuclideanScore(k=3)
 score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
 score.set_threshold(q=0.80) # keep ~80% coverage on validation set
 
-sel = score.select_dl(model=model, loader=test_loader)
+sel = score.select(model=model, loader=test_loader)
 print(sel)
 ```
 
-    Embedding 16 batches:   0%|          | 0/16 [00:00<?, ?batches/s]Embedding 16 batches: 100%|██████████| 16/16 [00:00<00:00, 3808.68batches/s]
-    Embedding 4 batches:   0%|          | 0/4 [00:00<?, ?batches/s]Embedding 4 batches: 100%|██████████| 4/4 [00:00<00:00, 2057.80batches/s]
-    Embedding 1 batches:   0%|          | 0/1 [00:00<?, ?batches/s]Embedding 1 batches: 100%|██████████| 1/1 [00:00<00:00, 1817.29batches/s]
+    Embedding 16 batches:   0%|          | 0/16 [00:00<?, ?batches/s]Embedding 16 batches: 100%|██████████| 16/16 [00:00<00:00, 3460.11batches/s]
+    Embedding 4 batches:   0%|          | 0/4 [00:00<?, ?batches/s]Embedding 4 batches: 100%|██████████| 4/4 [00:00<00:00, 2140.50batches/s]
+    Embedding 1 batches:   0%|          | 0/1 [00:00<?, ?batches/s]Embedding 1 batches: 100%|██████████| 1/1 [00:00<00:00, 1845.27batches/s]
 
     {'score': tensor([6.4586, 5.5724, 5.6794, 5.7046, 5.0609, 5.8174, 5.5684, 5.3449, 5.4205,
             5.6091, 5.5898, 6.2813, 6.1693, 6.3420, 6.3664, 5.5906, 4.6899, 5.6637,
