@@ -1,0 +1,15 @@
+_extensions
+_inv
+_site
+.mypy_cache
+.pytest_cache
+.quarto
+.ruff_cache
+build
+env
+plans
+README_files
+*egg-info*
+objects.jspw
+coverage.xml
+README.html
