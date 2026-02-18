@@ -26,7 +26,7 @@ class DummyScore(ConfidenceScore):
             "selected": torch.ones(b, dtype=torch.bool, device=x.device),
         }
 
-    def score(self, x: torch.Tensor) -> torch.Tensor:
+    def _score_embeddings(self, x: torch.Tensor) -> torch.Tensor:
         return torch.zeros(x.shape[0], dtype=x.dtype, device=x.device)
 
     def fit(self, x: torch.Tensor) -> None:
