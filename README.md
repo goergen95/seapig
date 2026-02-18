@@ -89,19 +89,24 @@ class Model(torch.nn.Module):
 model = Model()
 
 score = EuclideanScore(k=3)
-score.fit_dl(model=model, loaders = {"train": train_loader, "val": val_loader})
+score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
 score.set_threshold(q=0.80) # keep ~80% coverage on validation set
 
 sel = score.select_dl(model=model, loader=test_loader)
 print(sel)
 ```
 
-    Embedding 16 batches:   0%|          | 0/16 [00:00<?, ?batches/s]Embedding 16 batches: 100%|██████████| 16/16 [00:00<00:00, 4180.72batches/s]
-    Embedding 4 batches:   0%|          | 0/4 [00:00<?, ?batches/s]Embedding 4 batches: 100%|██████████| 4/4 [00:00<00:00, 1518.16batches/s]
-    Embedding 1 batches:   0%|          | 0/1 [00:00<?, ?batches/s]Embedding 1 batches: 100%|██████████| 1/1 [00:00<00:00, 2430.07batches/s]
+    Embedding 16 batches:   0%|          | 0/16 [00:00<?, ?batches/s]Embedding 16 batches: 100%|██████████| 16/16 [00:00<00:00, 3808.68batches/s]
+    Embedding 4 batches:   0%|          | 0/4 [00:00<?, ?batches/s]Embedding 4 batches: 100%|██████████| 4/4 [00:00<00:00, 2057.80batches/s]
+    Embedding 1 batches:   0%|          | 0/1 [00:00<?, ?batches/s]Embedding 1 batches: 100%|██████████| 1/1 [00:00<00:00, 1817.29batches/s]
 
-    {'score': tensor([5.8678, 5.4841, 5.2515, 5.8003, 5.7443, 6.2480, 5.4707, 5.4662, 5.9107,
-            5.4375]), 'selected': tensor([ True,  True,  True,  True,  True, False,  True,  True,  True,  True])}
+    {'score': tensor([6.4586, 5.5724, 5.6794, 5.7046, 5.0609, 5.8174, 5.5684, 5.3449, 5.4205,
+            5.6091, 5.5898, 6.2813, 6.1693, 6.3420, 6.3664, 5.5906, 4.6899, 5.6637,
+            5.7695, 5.1600, 5.2580, 5.1575, 5.9254, 6.0015, 6.5361, 5.4042, 5.6627,
+            5.7872, 5.4679, 6.0055, 6.1751, 5.7445]), 'selected': tensor([False,  True,  True,  True,  True,  True,  True,  True,  True,  True,
+             True, False, False, False, False,  True,  True,  True,  True,  True,
+             True,  True,  True,  True, False,  True,  True,  True,  True,  True,
+            False,  True])}
 
 #### Using SelectiveInferenceTask with a pytorch-lightning module
 
@@ -120,6 +125,9 @@ preds = trainer.predict(sel_task, dataloaders=test_loader)
 
 ### Notes and guidance
 
+- **Unified fit() API**: All confidence scores support a unified `fit()`
+  method that accepts either precomputed embeddings (`X`, `Y`) or a
+  model with loaders (`model`, `loaders`).
 - Embeddings: seapig works with precomputed embeddings (tensors) or with
   models exposing .embed(), giving flexibility for integration into
   existing training/evaluation pipelines.
