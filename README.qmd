@@ -82,7 +82,7 @@ score = EuclideanScore(k=3)
 score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
 score.set_threshold(q=0.80) # keep ~80% coverage on validation set
 
-sel = score.select_dl(model=model, loader=test_loader)
+sel = score.select(model=model, loader=test_loader)
 print(sel)
 ```
 
