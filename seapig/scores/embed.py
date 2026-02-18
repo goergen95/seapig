@@ -330,11 +330,13 @@ class EmbeddingScore(ConfidenceScore, ABC):
         assert self.scores is not None
         self.threshold = self.scores.float().quantile(q=q)
 
+    @override
     def score(
         self,
         X: torch.Tensor | None = None,
         model: torch.nn.Module | None = None,
-        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]] | None = None,
+        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]]
+        | None = None,
         outdir: Path | None = None,
         prefix: str | None = None,
     ) -> torch.Tensor:
@@ -348,7 +350,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
         You must use either embeddings (X) OR model+loader, but not both.
 
-        Iterates over a dataloader (if provided), embeds samples on-the-fly using 
+        Iterates over a dataloader (if provided), embeds samples on-the-fly using
         the supplied model's `.embed()` method and returns their confidence scores.
 
         ```python
@@ -415,12 +417,36 @@ class EmbeddingScore(ConfidenceScore, ABC):
             embeddings = self._loadorembed(path, model, loader)
             return self._score_embeddings(embeddings)
 
+    def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
+        """Compute confidence scores based on query embeddings.
+
+        This method should be implemented by subclasses to compute confidence
+        scores based on the query embeddings `X`. The base class does not
+        implement any specific scoring logic, as this will depend on the
+        particular method (e.g., k-nearest neighbors, PyOD scores, etc.).
+
+        Parameters
+        ----------
+        X:
+            A `torch.Tensor` with query embeddings of shape (N, D).
+
+        Returns
+        -------
+        torch.Tensor
+            A `torch.Tensor` with confidence scores for each query sample.
+            Low scores indicate likely inliers, high scores indicate likely outliers.
+        """
+        raise NotImplementedError(
+            "Subclasses must implement the `_score_embeddings` method."
+        )
+
     @override
     def select(
         self,
         X: torch.Tensor | None = None,
         model: torch.nn.Module | None = None,
-        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]] | None = None,
+        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]]
+        | None = None,
         outdir: Path | None = None,
         prefix: str | None = None,
     ) -> dict[str, torch.Tensor]:
@@ -483,8 +509,10 @@ class EmbeddingScore(ConfidenceScore, ABC):
             )
             self.set_threshold()
         assert self.threshold is not None
-        
-        score = self.score(X=X, model=model, loader=loader, outdir=outdir, prefix=prefix)
+
+        score = self.score(
+            X=X, model=model, loader=loader, outdir=outdir, prefix=prefix
+        )
         return {"score": score, "selected": score < self.threshold}
 
     def plot_embs(

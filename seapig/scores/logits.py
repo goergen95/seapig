@@ -11,6 +11,7 @@ from __future__ import annotations
 import abc
 import inspect
 from pathlib import Path
+from typing import override
 
 import torch
 import torch.nn.functional as F
@@ -190,10 +191,10 @@ class LogitScore(ConfidenceScore, abc.ABC):
             self.labels = extracted_labels
             if self.labels is not None:
                 self._fit_temperature(logits=self.logits, labels=self.labels)
-            self.scores = self._score_embeddings(self.logits)
+            self.scores = self.score(self.logits)
 
     @abc.abstractmethod
-    def _score_embeddings(self, query_logits: torch.Tensor) -> torch.Tensor:
+    def score(self, query_logits: torch.Tensor) -> torch.Tensor:
         """
         Compute confidence scores for query logits.
 
@@ -529,7 +530,8 @@ class SoftmaxScore(LogitScore):
     ) -> None:
         super().__init__(temperature=temperature, task=task)
 
-    def _score_embeddings(self, query_logits: torch.Tensor) -> torch.Tensor:
+    @override
+    def score(self, query_logits: torch.Tensor) -> torch.Tensor:
         """Compute task-aware softmax-based confidence score.
 
         For multiclass: -max softmax probability.
@@ -591,7 +593,8 @@ class EnergyScore(LogitScore):
     ) -> None:
         super().__init__(temperature=temperature, task=task)
 
-    def _score_embeddings(self, query_logits: torch.Tensor) -> torch.Tensor:
+    @override
+    def score(self, query_logits: torch.Tensor) -> torch.Tensor:
         """Compute energy for query logits (task-aware).
 
         Returns a 1-D tensor of shape (M,) where lower values are more
@@ -648,7 +651,8 @@ class MarginScore(LogitScore):
     ) -> None:
         super().__init__(temperature=temperature, task=task)
 
-    def _score_embeddings(self, query_logits: torch.Tensor) -> torch.Tensor:
+    @override
+    def score(self, query_logits: torch.Tensor) -> torch.Tensor:
         """Compute task-aware margin-based confidence score.
 
         For multiclass: negative top-two margin.
@@ -711,7 +715,8 @@ class EntropyScore(LogitScore):
     ) -> None:
         super().__init__(temperature=temperature, task=task)
 
-    def _score_embeddings(self, query_logits: torch.Tensor) -> torch.Tensor:
+    @override
+    def score(self, query_logits: torch.Tensor) -> torch.Tensor:
         """Compute predictive entropy for each sample (task-aware).
 
         Returns
