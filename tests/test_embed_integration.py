@@ -1,5 +1,6 @@
 import pytest
 import torch
+from pathlib import Path
 from lightning import LightningDataModule, Trainer
 from torch.utils.data import DataLoader, Dataset
 from torchmetrics import Accuracy, MetricCollection
@@ -104,8 +105,19 @@ class SimpleL2Score(EmbeddingScore):
         super().fit_dl(model=model, loaders=loaders, *args, **kwargs)
         self._fit_impl()
 
-    def fit(self, X: torch.Tensor, Y: torch.Tensor) -> None:
-        super().fit(X=X, Y=Y)
+    def fit(
+        self,
+        X: torch.Tensor | None = None,
+        Y: torch.Tensor | None = None,
+        model: torch.nn.Module | None = None,
+        loaders: dict[str, DataLoader[torch.Tensor | dict[str, torch.Tensor]]]
+        | None = None,
+        outdir: Path | None = None,
+        prefix: str | None = None,
+    ) -> None:
+        super().fit(
+            X=X, Y=Y, model=model, loaders=loaders, outdir=outdir, prefix=prefix
+        )
         self._fit_impl()
 
     @torch.inference_mode()  # type: ignore[untyped-decorator]
