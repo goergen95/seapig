@@ -75,38 +75,33 @@ quartodoc:
       contents:
         - name: EuclideanScore
           members:
+            - fit
             - score
             - select
-            - fit
-            - fit_dl
             - set_threshold
         - name: CosineScore
           members:
+            - fit
             - score
             - select
-            - fit
-            - fit_dl
             - set_threshold
         - name: MahalanobisScore
           members:
+            - fit
             - score
             - select
-            - fit
-            - fit_dl
             - set_threshold
         - name: PyODScore
           members: 
+            - fit
             - score
             - select
-            - fit
-            - fit_dl
             - set_threshold
         - name: PCAScore
           members: 
+            - fit
             - score
             - select
-            - fit
-            - fit_dl
             - set_threshold
     - title: Logit-based Scores
       desc: ""
