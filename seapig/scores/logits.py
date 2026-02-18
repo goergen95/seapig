@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import abc
 import inspect
+import warnings
 from pathlib import Path
 
 import torch
@@ -92,27 +93,99 @@ class LogitScore(ConfidenceScore, abc.ABC):
             )
 
     def fit(
-        self, logits: torch.Tensor, labels: torch.Tensor | None = None
+        self,
+        logits: torch.Tensor | None = None,
+        labels: torch.Tensor | None = None,
+        model: torch.nn.Module | None = None,
+        loader: DataLoader[object] | None = None,
+        outdir: Path | str | None = None,
+        prefix: str | None = None,
+        *args: object,
+        **kwargs: object,
     ) -> None:
         """
         Fit the score on reference logits.
 
+        This method supports two usage modes:
+
+        1. **Precomputed logits**: Supply logits directly, with optional labels
+           for temperature fitting.
+        2. **On-the-fly extraction**: Supply a `model` with a `.logits()` method
+           and a `DataLoader` to extract logits automatically.
+
+        You must use either logits OR model+loader, but not both.
+
         Parameters
         ----------
-        logits : torch.Tensor
+        logits : torch.Tensor or None
             Reference logits. Shape depends on task (see class docstring).
+            Required when not using `model` and `loader`.
         labels : torch.Tensor or None
             Optional labels for temperature fitting. Shape/type depends on task.
+        model : torch.nn.Module or None
+            Model with a `.logits(x)` method. Required when not using precomputed logits.
+        loader : DataLoader or None
+            DataLoader yielding batches for inference. Required when using `model`.
+        outdir : Path or str or None
+            Optional directory to save/load logits. Only used with `model` and `loader`.
+        prefix : str or None
+            Optional prefix for saved files. Only used with `model` and `loader`.
 
         Notes
         -----
         If labels are provided, temperature is fitted to minimize NLL for the task.
         """
-        self.logits = logits
-        self.labels = labels
-        if self.labels is not None:
-            self._fit_temperature(logits=self.logits, labels=self.labels)
-        self.scores = self.score(self.logits)
+        # Validate parameter combinations
+        using_precomputed = logits is not None
+        using_model = model is not None or loader is not None
+
+        if using_precomputed and using_model:
+            raise ValueError(
+                "Cannot specify both precomputed logits and model+loader. "
+                "Use either precomputed logits OR on-the-fly extraction."
+            )
+
+        if not using_precomputed and not using_model:
+            raise ValueError(
+                "Must specify either logits or model+loader for fitting."
+            )
+
+        if using_precomputed:
+            # Mode 1: Use precomputed logits
+            self.logits = logits
+            self.labels = labels
+            if self.labels is not None:
+                self._fit_temperature(logits=self.logits, labels=self.labels)
+            self.scores = self.score(self.logits)
+        else:
+            # Mode 2: Extract logits on-the-fly
+            if model is None:
+                raise ValueError(
+                    "model is required when not using precomputed logits."
+                )
+            if loader is None:
+                raise ValueError("loader is required when using a model.")
+
+            assert isinstance(loader, DataLoader)
+            assert isinstance(model, torch.nn.Module)
+
+            # prepare output path if requested
+            path: Path | None = None
+            if outdir is not None:
+                out_path = Path(outdir)
+                out_path.mkdir(parents=True, exist_ok=True)
+                base = prefix if (prefix and prefix.strip()) else "logits"
+                path = out_path / f"{base}_train.pt"
+
+            extracted_logits, extracted_labels = self._loadorpredict(
+                path=path, model=model, loader=loader
+            )
+
+            self.logits = extracted_logits
+            self.labels = extracted_labels
+            if self.labels is not None:
+                self._fit_temperature(logits=self.logits, labels=self.labels)
+            self.scores = self.score(self.logits)
 
     @abc.abstractmethod
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
@@ -432,6 +505,10 @@ class LogitScore(ConfidenceScore, abc.ABC):
         """
         Fit the score by extracting logits from a DataLoader.
 
+        .. deprecated::
+            `fit_dl()` is deprecated and will be removed in a future version.
+            Use `fit(model=model, loader=loader, ...)` instead.
+
         Loads logits/labels from disk if available, else computes from model.
 
         Parameters
@@ -450,25 +527,21 @@ class LogitScore(ConfidenceScore, abc.ABC):
         ```python
         # Minimal example (pseudo-code)
         score = SoftmaxScore()
+        # Deprecated:
         score.fit_dl(model, loader)
+        # Use instead:
+        score.fit(model=model, loader=loader)
         ```
         """
-        assert isinstance(loader, DataLoader)
-        assert isinstance(model, torch.nn.Module)
-
-        # prepare output path if requested
-        path: Path | None = None
-        if outdir is not None:
-            out_path = Path(outdir)
-            out_path.mkdir(parents=True, exist_ok=True)
-            base = prefix if (prefix and prefix.strip()) else "logits"
-            path = out_path / f"{base}_train.pt"
-
-        logits, labels = self._loadorpredict(
-            path=path, model=model, loader=loader
+        warnings.warn(
+            "fit_dl() is deprecated and will be removed in a future version. "
+            "Use fit(model=model, loader=loader, ...) instead.",
+            DeprecationWarning,
+            stacklevel=2,
         )
-
-        self.fit(logits=logits, labels=labels)
+        self.fit(
+            model=model, loader=loader, outdir=outdir, prefix=prefix, *args, **kwargs
+        )
 
 
 class SoftmaxScore(LogitScore):

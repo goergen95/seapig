@@ -206,32 +206,102 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
     @override
     def fit(
-        self, X: torch.Tensor, Y: torch.Tensor | None, *args: Any, **kwargs: Any
+        self,
+        X: torch.Tensor | None = None,
+        Y: torch.Tensor | None = None,
+        model: torch.nn.Module | None = None,
+        loaders: dict[str, DataLoader[torch.Tensor | dict[str, torch.Tensor]]]
+        | None = None,
+        outdir: Path | None = None,
+        prefix: str | None = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         """Train a confidence score based on sample embeddings.
 
-        Training embeddings are required to be supplied as a `torch.tensor` with
-        parameter `X`. Calibration embeddings are supplied with the `Y` parameter.
-        As an alternative, use `fit_dl()` to supply a model with an `.embed()` method
-        and a dictionary with `DataLoaders` to extract embeddings on the fly.
+        This method supports two usage modes:
 
-        These are later used to retrieve confidence scores for query samples.
+        1. **Precomputed embeddings**: Supply training embeddings via `X` and
+           optional calibration embeddings via `Y`.
+        2. **On-the-fly extraction**: Supply a `model` with an `.embed()` method
+           and a dictionary of `DataLoaders` to extract embeddings automatically.
+
+        You must use either embeddings (X/Y) OR model+loaders, but not both.
 
         ```python
+        # Mode 1: Precomputed embeddings
         my_score = EmbeddingScore(k=2)
-        my_score.fit(train_embs, val_embs)
+        my_score.fit(X=train_embs, Y=val_embs)
+
+        # Mode 2: On-the-fly extraction
+        my_score = EmbeddingScore(k=2)
+        my_score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
         ```
 
         Parameters
         ----------
         X:
-            A `torch.tensor` or an `np.Array` with samples representing training
-            samples embeddings.
-        Y:  A `torch.tensor` or an `np.Array` with samples representing calibration
-            samples embeddings.
+            A `torch.tensor` with training sample embeddings. Required when not
+            using `model` and `loaders`.
+        Y:
+            A `torch.tensor` with calibration sample embeddings. Optional.
+        model:
+            A `torch.nn.Module` with an `.embed()` method. Required when not
+            using `X`.
+        loaders:
+            A `dict` with `DataLoader` objects. Required keys: `["train"]`.
+            Optional key: `["val"]`. Required when using `model`.
+        outdir:
+            A `pathlib.Path` pointing to a directory for saving/loading embeddings.
+            Only used with `model` and `loaders`.
+        prefix:
+            A `str` used as filename prefix for saved embeddings.
+            Only used with `model` and `loaders`.
         """
-        self.ref_embeddings = X
-        self.cal_embeddings = Y
+        # Validate parameter combinations
+        using_embeddings = X is not None
+        using_model = model is not None or loaders is not None
+
+        if using_embeddings and using_model:
+            raise ValueError(
+                "Cannot specify both embeddings (X/Y) and model+loaders. "
+                "Use either precomputed embeddings OR on-the-fly extraction."
+            )
+
+        if not using_embeddings and not using_model:
+            raise ValueError(
+                "Must specify either embeddings (X) or model+loaders for fitting."
+            )
+
+        if using_embeddings:
+            # Mode 1: Use precomputed embeddings
+            self.ref_embeddings = X
+            self.cal_embeddings = Y
+        else:
+            # Mode 2: Extract embeddings on-the-fly
+            if model is None:
+                raise ValueError("model is required when not using precomputed embeddings.")
+            if loaders is None:
+                raise ValueError("loaders is required when using a model.")
+
+            assert isinstance(loaders, dict)
+            assert isinstance(model, torch.nn.Module)
+            self._check_model(model)
+            self.ref_embeddings = self._embed_from_dict(
+                loaders=loaders,
+                model=model,
+                key="train",
+                outdir=outdir,
+                prefix=prefix,
+            )
+            if "val" in loaders.keys():
+                self.cal_embeddings = self._embed_from_dict(
+                    loaders=loaders,
+                    model=model,
+                    key="val",
+                    outdir=outdir,
+                    prefix=prefix,
+                )
 
     def fit_dl(
         self,
@@ -244,6 +314,10 @@ class EmbeddingScore(ConfidenceScore, ABC):
     ) -> None:
         """Train a confidence score based on samples from a `DataLoader`.
 
+        .. deprecated::
+            `fit_dl()` is deprecated and will be removed in a future version.
+            Use `fit(model=model, loaders=loaders, ...)` instead.
+
         Training embeddings are extracted from the supplied models and the data
         loader with the `"train"` key in the supplied `loaders` argument.
         Calibration embeddings are extracted from the `DataLoader` object with
@@ -252,7 +326,10 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
         ```python
         my_score = EmbeddingScore(k=2)
+        # Deprecated:
         my_score.fit_dl(model=model, loaders={"train": train_loader, "val": val_loader})
+        # Use instead:
+        my_score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
         ```
 
         Parameters
@@ -272,24 +349,20 @@ class EmbeddingScore(ConfidenceScore, ABC):
             A `str`ing used as filename prefix to save embeddings, by default
             `None`. See `outdir` parameter above.
         """
-        assert isinstance(loaders, dict)
-        assert isinstance(model, torch.nn.Module)
-        self._check_model(model)
-        self.ref_embeddings = self._embed_from_dict(
-            loaders=loaders,
+        warnings.warn(
+            "fit_dl() is deprecated and will be removed in a future version. "
+            "Use fit(model=model, loaders=loaders, ...) instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.fit(
             model=model,
-            key="train",
+            loaders=loaders,
             outdir=outdir,
             prefix=prefix,
+            *args,
+            **kwargs,
         )
-        if "val" in loaders.keys():
-            self.cal_embeddings = self._embed_from_dict(
-                loaders=loaders,
-                model=model,
-                key="val",
-                outdir=outdir,
-                prefix=prefix,
-            )
 
     @override
     def set_threshold(self, q: float = 0.99) -> None:
