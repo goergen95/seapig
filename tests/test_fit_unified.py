@@ -276,7 +276,8 @@ def test_logit_score_fit_with_logits() -> None:
     logits = torch.randn(10, 3)
     labels = torch.randint(0, 3, (10,))
 
-    score.fit(logits=logits, labels=labels)
+    # Use X and Y parameters (logits and labels as kwargs also supported)
+    score.fit(X=logits, Y=labels)
 
     assert score.logits is not None
     assert score.labels is not None
@@ -308,7 +309,7 @@ def test_logit_score_rejects_both_logits_and_model() -> None:
 
     score = SoftmaxScore()
     with pytest.raises(ValueError, match="Cannot specify both"):
-        score.fit(logits=logits, model=model, loader=loader)
+        score.fit(X=logits, model=model, loader=loader)
 
 
 def test_logit_score_rejects_neither_logits_nor_model() -> None:
@@ -333,3 +334,17 @@ def test_logit_score_fit_dl_deprecated() -> None:
         score.fit_dl(model=model, loader=loader)
 
     assert score.logits is not None
+
+
+def test_logit_score_fit_with_legacy_kwargs() -> None:
+    """Test that LogitScore fit() accepts legacy 'logits' and 'labels' kwargs."""
+    score = SoftmaxScore()
+    logits = torch.randn(10, 3)
+    labels = torch.randint(0, 3, (10,))
+
+    # Use legacy kwargs for backward compatibility
+    score.fit(logits=logits, labels=labels)
+
+    assert score.logits is not None
+    assert score.labels is not None
+    assert score.temperature is not None

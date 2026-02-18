@@ -97,7 +97,11 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
 
     @abstractmethod
     def fit(
-        self, X: torch.Tensor, Y: torch.Tensor | None, *args: Any, **kwargs: Any
+        self,
+        X: torch.Tensor | None = None,
+        Y: torch.Tensor | None = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         """Fit a confidence score.
 
