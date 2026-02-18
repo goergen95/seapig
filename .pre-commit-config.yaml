@@ -22,8 +22,10 @@ repos:
         language: system
         types_or: [python]
         stages: ["pre-commit"]
-      - id: validate-commit-msg
-        name: validate-commit-msg
-        entry: .pre-commit/validate_commit_msg.py
-        language: system
-        stages: [commit-msg]
+      - id: commit-msg
+        name: conventional commit messages
+        language: pygrep
+        entry: '^(build|ci|chore|test|feat|fix|build|docs|perf|refactor|revert|style|test)!?(\([a-z]+\))?: (?![A-Z])(?![a-z]+(ed|ing)\s).*$'
+        args: ["--multiline", "--negate"]
+        stages: ["commit-msg"]
+
