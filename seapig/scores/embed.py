@@ -280,7 +280,9 @@ class EmbeddingScore(ConfidenceScore, ABC):
         else:
             # Mode 2: Extract embeddings on-the-fly
             if model is None:
-                raise ValueError("model is required when not using precomputed embeddings.")
+                raise ValueError(
+                    "model is required when not using precomputed embeddings."
+                )
             if loaders is None:
                 raise ValueError("loaders is required when using a model.")
 

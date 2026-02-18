@@ -540,7 +540,12 @@ class LogitScore(ConfidenceScore, abc.ABC):
             stacklevel=2,
         )
         self.fit(
-            model=model, loader=loader, outdir=outdir, prefix=prefix, *args, **kwargs
+            model=model,
+            loader=loader,
+            outdir=outdir,
+            prefix=prefix,
+            *args,
+            **kwargs,
         )
 
 
