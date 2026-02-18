@@ -204,7 +204,7 @@ class MinimalEmbedding(EmbeddingScore):
         return X.sum(dim=1)
 
 
-def test_fit_dl_model_without_embed_raises(tmp_path) -> None:
+def test_fit_model_without_embed_raises(tmp_path) -> None:
     class NoEmbedModel(torch.nn.Module):
         pass
 
@@ -215,7 +215,7 @@ def test_fit_dl_model_without_embed_raises(tmp_path) -> None:
 
     s = MinimalEmbedding()
     with pytest.raises(Exception):
-        s.fit_dl(model=NoEmbedModel(), loaders=loaders)
+        s.fit(model=NoEmbedModel(), loaders=loaders)
 
 
 def test_score_dl_writes_and_returns_tensor(tmp_path) -> None:

@@ -139,24 +139,6 @@ def test_fit_rejects_loaders_without_model() -> None:
         score.fit(loaders={"train": train_loader})
 
 
-def test_fit_dl_deprecated_but_works() -> None:
-    """Test that fit_dl() still works but raises deprecation warning."""
-    model = DummyModel()
-    train_data = torch.randn(10, 5)
-    train_loader = DataLoader(
-        TensorDataset(train_data),
-        batch_size=2,
-        collate_fn=lambda b: torch.stack([x[0] for x in b], 0),
-    )
-
-    score = MinimalEmbedding()
-    with pytest.warns(DeprecationWarning, match="fit_dl.*deprecated"):
-        score.fit_dl(model=model, loaders={"train": train_loader})
-
-    assert score.ref_embeddings is not None
-    assert score.ref_embeddings.shape[0] == 10
-
-
 def test_euclidean_score_fit_with_embeddings() -> None:
     """Test EuclideanScore fit() with precomputed embeddings."""
     score = EuclideanScore(k=2)
@@ -317,34 +299,3 @@ def test_logit_score_rejects_neither_logits_nor_model() -> None:
     score = SoftmaxScore()
     with pytest.raises(ValueError, match="Must specify either"):
         score.fit()
-
-
-def test_logit_score_fit_dl_deprecated() -> None:
-    """Test that LogitScore fit_dl() raises deprecation warning."""
-    model = DummyLogitsModel()
-    data = torch.randn(10, 8)
-    loader = DataLoader(
-        TensorDataset(data),
-        batch_size=2,
-        collate_fn=lambda b: torch.stack([x[0] for x in b], 0),
-    )
-
-    score = SoftmaxScore()
-    with pytest.warns(DeprecationWarning, match="fit_dl.*deprecated"):
-        score.fit_dl(model=model, loader=loader)
-
-    assert score.logits is not None
-
-
-def test_logit_score_fit_with_legacy_kwargs() -> None:
-    """Test that LogitScore fit() accepts legacy 'logits' and 'labels' kwargs."""
-    score = SoftmaxScore()
-    logits = torch.randn(10, 3)
-    labels = torch.randint(0, 3, (10,))
-
-    # Use legacy kwargs for backward compatibility
-    score.fit(logits=logits, labels=labels)
-
-    assert score.logits is not None
-    assert score.labels is not None
-    assert score.temperature is not None

@@ -92,8 +92,8 @@ def test_model_state_preserved_in_forward() -> None:
     )
 
 
-def test_fit_dl_preserves_model_state() -> None:
-    """Test that EmbeddingScore.fit_dl preserves model training state."""
+def test_fit_preserves_model_state() -> None:
+    """Test that EmbeddingScore.fit preserves model training state."""
     torch.manual_seed(42)
     model = ModelWithBatchNorm()
 
@@ -113,8 +113,8 @@ def test_fit_dl_preserves_model_state() -> None:
     # Test with model in eval mode
     model.eval()
     assert not model.training, "Model should be in eval mode"
-    score.fit_dl(model=model, loaders=loaders)
-    assert not model.training, "Model should still be in eval mode after fit_dl"
+    score.fit(model=model, loaders=loaders)
+    assert not model.training, "Model should still be in eval mode after fit"
 
     # Reset score for next test
     score = EuclideanScore(k=2)
@@ -122,8 +122,8 @@ def test_fit_dl_preserves_model_state() -> None:
     # Test with model in training mode
     model.train()
     assert model.training, "Model should be in training mode"
-    score.fit_dl(model=model, loaders=loaders)
-    assert model.training, "Model should still be in training mode after fit_dl"
+    score.fit(model=model, loaders=loaders)
+    assert model.training, "Model should still be in training mode after fit"
 
 
 def test_score_dl_preserves_model_state() -> None:
@@ -150,7 +150,7 @@ def test_score_dl_preserves_model_state() -> None:
 
     # First fit the score
     model.eval()
-    score.fit_dl(model=model, loaders=loaders)
+    score.fit(model=model, loaders=loaders)
     score.set_threshold(q=0.99)
 
     # Test score_dl with model in eval mode
@@ -202,7 +202,7 @@ def test_loop_vs_standalone_scores_match() -> None:
     # Scenario 1: Fit score and compute test scores (standalone)
     model.eval()
     score1 = EuclideanScore(k=2)
-    score1.fit_dl(model=model, loaders=loaders)
+    score1.fit(model=model, loaders=loaders)
     score1.set_threshold(q=0.99)
     scores_standalone = score1.score_dl(
         model=model, loader=test_loader, outdir=None, prefix=None
@@ -211,7 +211,7 @@ def test_loop_vs_standalone_scores_match() -> None:
     # Scenario 2: Fit score in a "loop" (simulate repeated usage)
     model.eval()
     score2 = EuclideanScore(k=2)
-    score2.fit_dl(model=model, loaders=loaders)
+    score2.fit(model=model, loaders=loaders)
     score2.set_threshold(q=0.99)
 
     # Simulate some intermediate model usage (like in a loop)
@@ -257,10 +257,10 @@ def test_embeddings_differ_in_train_vs_eval_mode() -> None:
     )
 
 
-def test_fit_dl_forces_eval_mode_during_embedding() -> None:
-    """Test that fit_dl forces eval mode during embedding extraction.
+def test_fit_forces_eval_mode_during_embedding() -> None:
+    """Test that fit forces eval mode during embedding extraction.
 
-    This is the actual bug: if the model is in training mode when fit_dl is called,
+    This is the actual bug: if the model is in training mode when fit is called,
     the embeddings will be extracted using batch statistics (in training mode),
     which gives different results than when the model is in eval mode.
 
@@ -284,20 +284,20 @@ def test_fit_dl_forces_eval_mode_during_embedding() -> None:
     # Scenario 1: Fit with model in eval mode
     model.eval()
     score1 = EuclideanScore(k=2)
-    score1.fit_dl(model=model, loaders=loaders)
+    score1.fit(model=model, loaders=loaders)
     ref_emb_eval = score1.ref_embeddings.clone()
 
     # Scenario 2: Fit with model in training mode
-    # The embeddings should be THE SAME as scenario 1, because fit_dl should
+    # The embeddings should be THE SAME as scenario 1, because fit should
     # force eval mode during embedding extraction
     model.train()
     score2 = EuclideanScore(k=2)
-    score2.fit_dl(model=model, loaders=loaders)
+    score2.fit(model=model, loaders=loaders)
     ref_emb_train = score2.ref_embeddings
 
-    # These should be IDENTICAL because fit_dl should force eval mode
+    # These should be IDENTICAL because fit should force eval mode
     # This will FAIL with the current implementation
     assert torch.allclose(ref_emb_eval, ref_emb_train, atol=1e-5), (
         "Embeddings should be identical regardless of initial model mode. "
-        "fit_dl should force eval mode during embedding extraction."
+        "fit should force eval mode during embedding extraction."
     )

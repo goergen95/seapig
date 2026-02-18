@@ -1,6 +1,7 @@
+from pathlib import Path
+
 import pytest
 import torch
-from pathlib import Path
 from lightning import LightningDataModule, Trainer
 from torch.utils.data import DataLoader, Dataset
 from torchmetrics import Accuracy, MetricCollection
@@ -95,16 +96,6 @@ class SimpleL2Score(EmbeddingScore):
             )
             self.set_calibrated()
 
-    def fit_dl(
-        self,
-        model: torch.nn.Module,
-        loaders: dict[str, DataLoader],
-        *args,
-        **kwargs,
-    ) -> None:
-        super().fit_dl(model=model, loaders=loaders, *args, **kwargs)
-        self._fit_impl()
-
     def fit(
         self,
         X: torch.Tensor | None = None,
@@ -154,7 +145,7 @@ def test_datamodule_transform_applied_consistently(tmp_path):
     score = SimpleL2Score()
 
     # Fit the score by extracting embeddings from the dataloaders
-    score.fit_dl(
+    score.fit(
         model=model,
         loaders={"train": dm.train_dataloader(), "val": dm.val_dataloader()},
     )

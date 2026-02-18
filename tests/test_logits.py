@@ -49,7 +49,7 @@ def make_loader_from_tensors(logits, labels=None):
     return DataLoader(SimpleBatchDataset(items), batch_size=1, shuffle=False)
 
 
-def test_fit_dl_saves_files(tmp_path: Path):
+def test_fit_saves_files(tmp_path: Path):
     logits = torch.tensor([[2.0, 0.5], [0.1, 1.2]])
     labels = logits.argmax(dim=1)
     loader = make_loader_from_tensors(logits, labels)
@@ -61,7 +61,7 @@ def test_fit_dl_saves_files(tmp_path: Path):
     model = IdentityModel()
     score = SoftmaxScore()
     outdir = tmp_path / "saved_logits"
-    score.fit_dl(model=model, loader=loader, outdir=outdir, prefix="mytest")
+    score.fit(model=model, loader=loader, outdir=outdir, prefix="mytest")
     train_file = outdir / "mytest_train.pt"
     assert train_file.exists()
     loaded = torch.load(train_file)
@@ -73,7 +73,7 @@ def test_fit_dl_saves_files(tmp_path: Path):
 
 
 @pytest.mark.parametrize("out_kind", ["tensor", "logits", "preds", "y_hat"])
-def test_fit_dl_accepts_output_formats(out_kind):
+def test_fit_accepts_output_formats(out_kind):
     logits = torch.tensor([[0.5, 1.5], [2.0, 0.1], [0.0, 0.0]])
     labels = logits.argmax(dim=1)
     loader = make_loader_from_tensors(logits, labels)
@@ -84,14 +84,14 @@ def test_fit_dl_accepts_output_formats(out_kind):
 
     model = FlexibleModel()
     score = SoftmaxScore()
-    score.fit_dl(model=model, loader=loader)
+    score.fit(model=model, loader=loader)
     assert hasattr(score, "logits")
     assert score.logits is not None
     assert score.logits.shape[0] == logits.shape[0]
 
 
 @pytest.mark.parametrize("batch_format", ["dict", "tensor_only"])
-def test_fit_dl_batch_formats(batch_format):
+def test_fit_batch_formats(batch_format):
     logits = torch.tensor([[1.0, 0.0], [0.2, 0.8]])
     labels = logits.argmax(dim=1)
     if batch_format == "dict":
@@ -109,7 +109,7 @@ def test_fit_dl_batch_formats(batch_format):
 
     model = IdentityModel()
     score = EnergyScore()
-    score.fit_dl(model=model, loader=loader)
+    score.fit(model=model, loader=loader)
     assert score.logits is not None
     assert score.logits.shape[0] == logits.shape[0]
 
@@ -499,7 +499,7 @@ def test_multilabel_all_zero_logits():
     assert torch.isfinite(out).all()
 
 
-def test_fit_dl_empty_loader(tmp_path: Path):
+def test_fit_empty_loader(tmp_path: Path):
     class DummyModel(torch.nn.Module):
         def logits(self, x):
             return x
@@ -507,7 +507,7 @@ def test_fit_dl_empty_loader(tmp_path: Path):
     loader = DataLoader(SimpleBatchDataset([]), batch_size=1)
     score = SoftmaxScore()
     with pytest.raises(ValueError, match="No batches found in loader"):
-        score.fit_dl(model=DummyModel(), loader=loader, outdir=tmp_path)
+        score.fit(model=DummyModel(), loader=loader, outdir=tmp_path)
 
 
 def test_fit_temperature_nan_labels():
