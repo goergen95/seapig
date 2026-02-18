@@ -43,7 +43,7 @@ class FlagScore(ConfidenceScore):
         # no-op: store reference embeddings for completeness
         self.ref_embeddings = ref_embeddings
 
-    def score(self, embeddings: torch.Tensor) -> torch.Tensor:
+    def _score_embeddings(self, embeddings: torch.Tensor) -> torch.Tensor:
         # return a dummy score vector (lower is better). Not used by select().
         return torch.zeros(embeddings.shape[0], dtype=torch.float32)
 

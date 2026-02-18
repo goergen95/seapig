@@ -112,7 +112,7 @@ class SimpleL2Score(EmbeddingScore):
         self._fit_impl()
 
     @torch.inference_mode()  # type: ignore[untyped-decorator]
-    def score(self, X: torch.Tensor) -> torch.Tensor:
+    def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
         assert self.ref_embeddings is not None
         dists = torch.cdist(X, self.ref_embeddings)
         return dists.min(dim=1).values
