@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import abc
 import inspect
-import warnings
 from pathlib import Path
 
 import torch
@@ -108,7 +107,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
 
         This method supports two usage modes:
 
-        1. **Precomputed logits**: Supply logits directly via `X`, with optional 
+        1. **Precomputed logits**: Supply logits directly via `X`, with optional
            labels via `Y` for temperature fitting.
         2. **On-the-fly extraction**: Supply a `model` with a `.logits()` method
            and a `DataLoader` to extract logits automatically.
@@ -136,8 +135,8 @@ class LogitScore(ConfidenceScore, abc.ABC):
         If labels are provided, temperature is fitted to minimize NLL for the task.
         """
         # For backward compatibility, also support 'logits' and 'labels' as kwargs
-        logits = X if X is not None else kwargs.get("logits")
-        labels = Y if Y is not None else kwargs.get("labels")
+        logits = X if X is not None else None
+        labels = Y if Y is not None else None
 
         # Validate parameter combinations
         using_precomputed = logits is not None
@@ -498,62 +497,6 @@ class LogitScore(ConfidenceScore, abc.ABC):
         logits = torch.cat(logits_ls, dim=0)
         labels = torch.cat(labels_ls, dim=0) if len(labels_ls) > 0 else None
         return logits, labels
-
-    def fit_dl(
-        self,
-        model: torch.nn.Module,
-        loader: DataLoader[object],
-        outdir: Path | str | None = None,
-        prefix: str | None = None,
-        *args: object,
-        **kwargs: object,
-    ) -> None:
-        """
-        Fit the score by extracting logits from a DataLoader.
-
-        .. deprecated::
-            `fit_dl()` is deprecated and will be removed in a future version.
-            Use `fit(model=model, loader=loader, ...)` instead.
-
-        Loads logits/labels from disk if available, else computes from model.
-
-        Parameters
-        ----------
-        model : torch.nn.Module
-            Model with a `.logits(x)` method.
-        loader : DataLoader
-            DataLoader yielding batches for inference.
-        outdir : Path or str or None
-            Optional directory to save/load logits.
-        prefix : str or None
-            Optional prefix for saved files.
-
-        Examples
-        --------
-        ```python
-        # Minimal example (pseudo-code)
-        score = SoftmaxScore()
-        # Deprecated:
-        score.fit_dl(model, loader)
-        # Use instead:
-        score.fit(model=model, loader=loader)
-        ```
-        """
-        warnings.warn(
-            "fit_dl() is deprecated and will be removed in a future version. "
-            "Use fit(model=model, loader=loader, ...) instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        # Pass X/Y as None to force model+loader path
-        self.fit(
-            X=None,
-            Y=None,
-            model=model,
-            loader=loader,
-            outdir=outdir,
-            prefix=prefix,
-        )
 
 
 class SoftmaxScore(LogitScore):

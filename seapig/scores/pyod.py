@@ -1,6 +1,5 @@
 """Confidence score based on an arbitrary PyOD model."""
 
-import warnings
 from pathlib import Path
 from typing import override
 
@@ -120,65 +119,6 @@ class PyODScore(EmbeddingScore):
             X=X, Y=Y, model=model, loaders=loaders, outdir=outdir, prefix=prefix
         )
         self._fit_impl(q=q)
-
-    @override
-    def fit_dl(
-        self,
-        model: torch.nn.Module,
-        loaders: dict[str, DataLoader[torch.Tensor | dict[str, torch.Tensor]]],
-        outdir: Path | None = None,
-        prefix: str | None = None,
-        q: bool | float = False,
-    ) -> None:
-        """Train a confidence score based on samples from a `DataLoader`.
-
-        .. deprecated::
-            `fit_dl()` is deprecated and will be removed in a future version.
-            Use `fit(model=model, loaders=loaders, ...)` instead.
-
-        Training embeddings are extracted from the supplied models and the data
-        loader with the `"train"` key in the supplied `loaders` argument.
-        Calibration embeddings are extracted from the `DataLoader` object with
-        the `"val"` key. The confidence score is then calibrated based on the
-        extracted embeddings.
-
-        ```python
-        my_score = PyODScore()
-        # Deprecated:
-        my_score.fit_dl(model=model, loaders={"train": train_loader, "val": val_loader})
-        # Use instead:
-        my_score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
-        ```
-
-        Parameters
-        ----------
-        model:
-            A torch.nn.Module representing a trained model instance. It is
-            required to have an `.embed()` method.
-        loaders:
-            A `dict`ionary with dataloader objects with required keys `["train", "val"]`.
-            The `DataLoaders` are expected to return `torch.Tensor`s or a `dict`
-            of `torch.Tensor`s with the `"image"` key present.
-        outdir:
-            A `pathlib.Path` object pointing towards a directory, by default `None`.
-            If specified, embeddings are read to disk, if previously written. Otherwise,
-            embeddings will be written to disk.
-        prefix:
-            A `str`ing used as filename prefix to save embeddings, by default
-            `None`. See `outdir` parameter above.
-        q:
-            A `float` or a `bool` indicating if the scores should be filtered to
-            remove outliers from the training distribution. Defaults to `False`.
-        """
-        warnings.warn(
-            "fit_dl() is deprecated and will be removed in a future version. "
-            "Use fit(model=model, loaders=loaders, ...) instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self.fit(
-            model=model, loaders=loaders, outdir=outdir, prefix=prefix, q=q
-        )
 
     def _fit_impl(self, q: float | None = None) -> None:
         """Fit implementation."""
