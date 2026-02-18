@@ -74,7 +74,7 @@ def main() -> None:
     # Train confidence score
     print("\n1. Training Euclidean confidence score...")
     score = EuclideanScore(k=1)
-    score.fit_dl(model, loaders={"train": train_loader, "val": val_loader})
+    score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
     score.set_threshold(q=0.75)
     print(f"   Threshold set at: {score.get_threshold():.4f}")
 
@@ -82,8 +82,8 @@ def main() -> None:
     print("\n2. Calculating confidence scores and residuals...")
     all_residuals = []
 
-    # Get confidence scores using score_dl
-    all_scores = score.score_dl(
+    # Get confidence scores using score
+    all_scores = score.score(
         model=model, loader=val_loader, outdir=None, prefix=None
     )
 

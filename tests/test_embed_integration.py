@@ -175,8 +175,8 @@ def test_datamodule_transform_applied_consistently(tmp_path):
         [p["selected"].detach().cpu() for p in preds], dim=0
     )
 
-    # compute scores manually using the datamodule's test_dataloader (score_dl embeds on the fly)
-    manual_scores = score.score_dl(
+    # compute scores manually using the datamodule's test_dataloader (score embeds on the fly)
+    manual_scores = score.score(
         model=model, loader=dm.test_dataloader(), outdir=None, prefix=None
     )
     manual_selected = manual_scores < score.get_threshold()
