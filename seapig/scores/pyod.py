@@ -156,7 +156,7 @@ class PyODScore(EmbeddingScore):
 
     @override
     @torch.inference_mode()  # type: ignore[untyped-decorator]
-    def score(self, X: torch.Tensor) -> torch.Tensor:
+    def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
         """Compute a confidence score based on sample embeddings.
 
         Returns outlier scores where low values indicate likely inliers (samples
