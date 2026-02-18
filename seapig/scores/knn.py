@@ -86,34 +86,63 @@ class KNNScore(EmbeddingScore, ABC):
 
     @override
     def fit(
-        self, X: torch.Tensor, Y: torch.Tensor | None, q: bool | float = False
+        self,
+        X: torch.Tensor | None = None,
+        Y: torch.Tensor | None = None,
+        model: torch.nn.Module | None = None,
+        loaders: dict[str, DataLoader[torch.Tensor | dict[str, torch.Tensor]]]
+        | None = None,
+        outdir: Path | None = None,
+        prefix: str | None = None,
+        q: bool | float = False,
     ) -> None:
         """Train a confidence score based on sample embeddings.
 
-        Training embeddings are required to be supplied as a `torch.tensor` with
-        parameter `X`. Calibration embeddings are supplied with the `Y` parameter.
-        As an alternative, use `fit_dl()` to supply a model with an `.embed()` method
-        and a dictionary with `DataLoaders` to extract embeddings on the fly.
+        This method supports two usage modes:
 
-        These are later used to retrieve confidence scores for query samples.
+        1. **Precomputed embeddings**: Supply training embeddings via `X` and
+           optional calibration embeddings via `Y`.
+        2. **On-the-fly extraction**: Supply a `model` with an `.embed()` method
+           and a dictionary of `DataLoaders` to extract embeddings automatically.
+
+        You must use either embeddings (X/Y) OR model+loaders, but not both.
 
         ```python
+        # Mode 1: Precomputed embeddings
         my_score = EmbeddingScore(k=2)
-        my_score.fit(train_embs, val_embs)
+        my_score.fit(X=train_embs, Y=val_embs)
+
+        # Mode 2: On-the-fly extraction
+        my_score = EmbeddingScore(k=2)
+        my_score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
         ```
 
         Parameters
         ----------
         X:
-            A `torch.tensor` or an `np.Array` with samples representing training
-            samples.
-        Y:  A `torch.tensor` or an `np.Array` with samples representing calibration
-            samples.
+            A `torch.tensor` with training sample embeddings. Required when not
+            using `model` and `loaders`.
+        Y:
+            A `torch.tensor` with calibration sample embeddings. Optional.
+        model:
+            A `torch.nn.Module` with an `.embed()` method. Required when not
+            using `X`.
+        loaders:
+            A `dict` with `DataLoader` objects. Required keys: `["train"]`.
+            Optional key: `["val"]`. Required when using `model`.
+        outdir:
+            A `pathlib.Path` pointing to a directory for saving/loading embeddings.
+            Only used with `model` and `loaders`.
+        prefix:
+            A `str` used as filename prefix for saved embeddings.
+            Only used with `model` and `loaders`.
         q:
             A `float` or a `bool` indicating if the scores should be filtered to
             remove outliers from the training distribution. Defaults to `False`.
         """
-        super().fit(X=X, Y=Y)
+        super().fit(
+            X=X, Y=Y, model=model, loaders=loaders, outdir=outdir, prefix=prefix
+        )
         self._fit_impl(q=q)
 
     @override
@@ -127,6 +156,10 @@ class KNNScore(EmbeddingScore, ABC):
     ) -> None:
         """Train a confidence score based on samples from a `DataLoader`.
 
+        .. deprecated::
+            `fit_dl()` is deprecated and will be removed in a future version.
+            Use `fit(model=model, loaders=loaders, ...)` instead.
+
         Training embeddings are extracted from the supplied models and the data
         loader with the `"train"` key in the supplied `loaders` argument.
         Calibration embeddings are extracted from the `DataLoader` object with
@@ -135,7 +168,10 @@ class KNNScore(EmbeddingScore, ABC):
 
         ```python
         my_score = KNNScore(k=2)
+        # Deprecated:
         my_score.fit_dl(model=model, loaders={"train": train_loader, "val": val_loader})
+        # Use instead:
+        my_score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
         ```
 
         Parameters
@@ -158,8 +194,15 @@ class KNNScore(EmbeddingScore, ABC):
             A `float` or a `bool` indicating if the scores should be filtered to
             remove outliers from the training distribution. Defaults to `False`.
         """
-        super().fit_dl(model, loaders, outdir, prefix)
-        self._fit_impl(q=q)
+        warnings.warn(
+            "fit_dl() is deprecated and will be removed in a future version. "
+            "Use fit(model=model, loaders=loaders, ...) instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.fit(
+            model=model, loaders=loaders, outdir=outdir, prefix=prefix, q=q
+        )
 
     def _fit_impl(self, q: float | None = None) -> None:
         """Fit implementation."""
