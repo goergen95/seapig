@@ -330,9 +330,109 @@ class EmbeddingScore(ConfidenceScore, ABC):
         assert self.scores is not None
         self.threshold = self.scores.float().quantile(q=q)
 
+    def score(
+        self,
+        X: torch.Tensor | None = None,
+        model: torch.nn.Module | None = None,
+        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]] | None = None,
+        outdir: Path | None = None,
+        prefix: str | None = None,
+    ) -> torch.Tensor:
+        """Compute confidence scores for query samples.
+
+        This method supports two usage modes:
+
+        1. **Precomputed embeddings**: Supply query embeddings via `X`.
+        2. **On-the-fly extraction**: Supply a `model` with an `.embed()` method
+           and a `DataLoader` to extract embeddings automatically.
+
+        You must use either embeddings (X) OR model+loader, but not both.
+
+        Iterates over a dataloader (if provided), embeds samples on-the-fly using 
+        the supplied model's `.embed()` method and returns their confidence scores.
+
+        ```python
+        # Mode 1: Precomputed embeddings
+        my_score = KNNScore()
+        scores = my_score.score(X=test_embeddings)
+
+        # Mode 2: On-the-fly extraction
+        my_score = KNNScore()
+        scores = my_score.score(model=model, loader=test_dl)
+        ```
+
+        Parameters
+        ----------
+        X:
+            A `torch.Tensor` with query embeddings of shape (N, D).
+            Required when not using `model` and `loader`.
+        model:
+            A torch.nn.Module representing a trained model instance. It is
+            required to have an `.embed()` method.
+            Required when not using `X`.
+        loader:
+            A `torch.utils.data.DataLoader` object returning `torch.Tensor`s or
+            a `dict` of `torch.Tensor`s with the `"image"` key.
+            Required when using `model`.
+        outdir:
+            A `pathlib.Path` object pointing towards a directory, by default `None`.
+            If specified, embeddings are read to disk, if previously written. Otherwise,
+            embeddings will be written to disk. Only used with `model` and `loader`.
+        prefix:
+            A `str`ing used as filename prefix to save embeddings, by default
+            `None`. Only used with `model` and `loader`.
+        """
+        # Validate parameter combinations
+        using_embeddings = X is not None
+        using_model = model is not None or loader is not None
+
+        if using_embeddings and using_model:
+            raise ValueError(
+                "Cannot specify both embeddings (X) and model+loader. "
+                "Use either precomputed embeddings OR on-the-fly extraction."
+            )
+
+        if not using_embeddings and not using_model:
+            raise ValueError(
+                "Must specify either embeddings (X) or model+loader for scoring."
+            )
+
+        if using_embeddings:
+            # Mode 1: Use precomputed embeddings - call subclass implementation
+            return super().score(X)
+        else:
+            # Mode 2: Extract embeddings on-the-fly
+            if model is None:
+                raise ValueError(
+                    "model is required when not using precomputed embeddings."
+                )
+            if loader is None:
+                raise ValueError("loader is required when using a model.")
+
+            path = None
+            if prefix is not None:
+                path = self._setup_path(outdir, prefix)
+            embeddings = self._loadorembed(path, model, loader)
+            return super().score(embeddings)
+
     @override
-    def select(self, X: torch.Tensor) -> dict[str, torch.Tensor]:
+    def select(
+        self,
+        X: torch.Tensor | None = None,
+        model: torch.nn.Module | None = None,
+        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]] | None = None,
+        outdir: Path | None = None,
+        prefix: str | None = None,
+    ) -> dict[str, torch.Tensor]:
         """Select samples for prediction based on their confidence score.
+
+        This method supports two usage modes:
+
+        1. **Precomputed embeddings**: Supply query embeddings via `X`.
+        2. **On-the-fly extraction**: Supply a `model` with an `.embed()` method
+           and a `DataLoader` to extract embeddings automatically.
+
+        You must use either embeddings (X) OR model+loader, but not both.
 
         Samples are selected for prediction based on their confidence score compared
         to a threshold. Samples with scores lower than the threshold are selected,
@@ -340,9 +440,15 @@ class EmbeddingScore(ConfidenceScore, ABC):
         expected that the threshold was previously calibrated on, e.g. validation samples.
 
         ```python
+        # Mode 1: Precomputed embeddings
         my_score = ConfidenceScore()
         my_score = my_score.fit(X=train_data, Y=val_data)
-        scores = my_score.select(test_data)
+        scores = my_score.select(X=test_data)
+
+        # Mode 2: On-the-fly extraction
+        my_score = ConfidenceScore()
+        my_score = my_score.fit(X=train_data, Y=val_data)
+        scores = my_score.select(model=model, loader=test_loader)
         ```
 
         Parameters
@@ -350,6 +456,22 @@ class EmbeddingScore(ConfidenceScore, ABC):
         X:
             A `torch.tensor` with samples representing testing
             embeddings to select based on a pre-calibrated threshold.
+            Required when not using `model` and `loader`.
+        model:
+            A torch.nn.Module representing a trained model instance. It is
+            required to have an `.embed()` method.
+            Required when not using `X`.
+        loader:
+            A `torch.utils.data.DataLoader` object returning `torch.Tensor`s or
+            a `dict` of `torch.Tensor`s with the `"image"` key available.
+            Required when using `model`.
+        outdir:
+            A `pathlib.Path` object pointing towards a directory, by default `None`.
+            If specified, embeddings are read to disk, if previously written. Otherwise,
+            embeddings will be written to disk. Only used with `model` and `loader`.
+        prefix:
+            A `str`ing used as filename prefix to save embeddings, by default
+            `None`. Only used with `model` and `loader`.
         """
         if self.train_required:
             assert self.is_trained()
@@ -361,93 +483,9 @@ class EmbeddingScore(ConfidenceScore, ABC):
             )
             self.set_threshold()
         assert self.threshold is not None
-        score = self.score(X=X)
+        
+        score = self.score(X=X, model=model, loader=loader, outdir=outdir, prefix=prefix)
         return {"score": score, "selected": score < self.threshold}
-
-    def select_dl(
-        self,
-        model: torch.nn.Sequential,
-        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
-        outdir: Path | None = None,
-        prefix: str | None = None,
-    ) -> dict[str, torch.Tensor]:
-        """Select samples for prediction based on their confidence score.
-
-        Samples are selected for prediction based on their confidence score compared
-        to a threshold. Samples with scores lower than the threshold are selected,
-        while samples with scores higher than the threshold are excluded. It is
-        expected that the threshold was previously calibrated on, e.g. validation
-        samples. This method will embed input samples on the fly using the supplied
-        models `.embed()` method.
-
-        ```python
-        my_score = ConfidenceScore()
-        my_score = my_score.fit(X=train_data, Y=val_data)
-        scores = my_score.select(test_dl)
-        ```
-
-        Parameters
-        ----------
-        model:
-            A torch.nn.Module representing a trained model instance. It is
-            required to have an `.embed()` method, by default None.
-        loader:
-            A `torch.utils.data.DataLoader` object returning `torch.Tensor`s or
-            a `dict` of `torch.Tensor`s with the `"image"` key available,
-            by default None.
-        outdir:
-            A `pathlib.Path` object pointing towards a directory, by default `None`.
-            If specified, embeddings are read to disk, if previously written. Otherwise,
-            embeddings will be written to disk.
-        prefix:
-            A `str`ing used as filename prefix to save embeddings, by default
-            `None`. See `outdir` parameter above.
-        """
-        scores = self.score_dl(
-            model=model, loader=loader, outdir=outdir, prefix=prefix
-        )
-        assert isinstance(self.threshold, torch.Tensor)
-        return {"score": scores, "selected": scores < self.threshold}
-
-    def score_dl(
-        self,
-        model: torch.nn.Module,
-        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
-        outdir: Path | None,
-        prefix: str | None,
-    ) -> torch.Tensor:
-        """Compute confidence scores for all samples in a DataLoader.
-
-        Iterates over a dataloader, embeds samples on-the-fly using the supplied
-        models `.embed()` method and returns their confidence scores.
-
-        ```python
-        my_score = KNNScore()
-        scores = my_score.score_dl(model, test_dl)
-        ```
-
-        Parameters
-        ----------
-        model:
-            A torch.nn.Module representing a trained model instance. It is
-            required to have an `.embed()` method.
-        loader:
-            A `torch.utils.data.DataLoader` object returning `torch.Tensor`s or
-            a `dict` of `torch.Tensor`s with the `"image"` key.
-        outdir:
-            A `pathlib.Path` object pointing towards a directory, by default `None`.
-            If specified, embeddings are read to disk, if previously written. Otherwise,
-            embeddings will be written to disk.
-        prefix:
-            A `str`ing used as filename prefix to save embeddings, by default
-            `None`. See `outdir` parameter above.
-        """
-        path = None
-        if prefix is not None:
-            path = self._setup_path(outdir, prefix)
-        X = self._loadorembed(path, model, loader)
-        score = self.score(X)
-        return score
 
     def plot_embs(
         self,

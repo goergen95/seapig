@@ -126,8 +126,8 @@ def test_fit_preserves_model_state() -> None:
     assert model.training, "Model should still be in training mode after fit"
 
 
-def test_score_dl_preserves_model_state() -> None:
-    """Test that EmbeddingScore.score_dl preserves model training state."""
+def test_score_preserves_model_state() -> None:
+    """Test that EmbeddingScore.score preserves model training state."""
     torch.manual_seed(42)
     model = ModelWithBatchNorm()
 
@@ -153,24 +153,24 @@ def test_score_dl_preserves_model_state() -> None:
     score.fit(model=model, loaders=loaders)
     score.set_threshold(q=0.99)
 
-    # Test score_dl with model in eval mode
+    # Test score with model in eval mode
     model.eval()
     assert not model.training, "Model should be in eval mode"
-    _ = score.score_dl(
+    _ = score.score(
         model=model, loader=test_loader, outdir=None, prefix=None
     )
     assert not model.training, (
-        "Model should still be in eval mode after score_dl"
+        "Model should still be in eval mode after score"
     )
 
-    # Test score_dl with model in training mode
+    # Test score with model in training mode
     model.train()
     assert model.training, "Model should be in training mode"
-    _ = score.score_dl(
+    _ = score.score(
         model=model, loader=test_loader, outdir=None, prefix=None
     )
     assert model.training, (
-        "Model should still be in training mode after score_dl"
+        "Model should still be in training mode after score"
     )
 
 
@@ -204,7 +204,7 @@ def test_loop_vs_standalone_scores_match() -> None:
     score1 = EuclideanScore(k=2)
     score1.fit(model=model, loaders=loaders)
     score1.set_threshold(q=0.99)
-    scores_standalone = score1.score_dl(
+    scores_standalone = score1.score(
         model=model, loader=test_loader, outdir=None, prefix=None
     )
 
@@ -218,7 +218,7 @@ def test_loop_vs_standalone_scores_match() -> None:
     for _ in range(3):
         _ = model(train_data[:4])
 
-    scores_after_loop = score2.score_dl(
+    scores_after_loop = score2.score(
         model=model, loader=test_loader, outdir=None, prefix=None
     )
 

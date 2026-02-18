@@ -185,7 +185,7 @@ def test_set_threshold_and_select_behavior() -> None:
 class MinimalEmbedding(EmbeddingScore):
     """Small concrete subclass for testing high-level methods.
 
-    Disable training/calibration requirements so tests can call score_dl/select_dl
+    Disable training/calibration requirements so tests can call score/select
     without extra setup.
     """
 
@@ -218,7 +218,7 @@ def test_fit_model_without_embed_raises(tmp_path) -> None:
         s.fit(model=NoEmbedModel(), loaders=loaders)
 
 
-def test_score_dl_writes_and_returns_tensor(tmp_path) -> None:
+def test_score_with_model_loader_writes_and_returns_tensor(tmp_path) -> None:
     class IdentityModel(torch.nn.Module):
         def embed(self, x):
             if isinstance(x, dict):
@@ -237,7 +237,7 @@ def test_score_dl_writes_and_returns_tensor(tmp_path) -> None:
     s.train_required = False
     s.cal_required = False
 
-    out = s.score_dl(
+    out = s.score(
         model=IdentityModel(), loader=loader, outdir=tmp_path, prefix="pfx"
     )
     assert isinstance(out, torch.Tensor)
@@ -247,7 +247,7 @@ def test_score_dl_writes_and_returns_tensor(tmp_path) -> None:
     (tmp_path / "pfx.pt").unlink()
 
 
-def test_select_dl_respects_threshold(tmp_path) -> None:
+def test_select_with_model_loader_respects_threshold(tmp_path) -> None:
     class IdentityModel(torch.nn.Module):
         def embed(self, x):
             if isinstance(x, dict):
@@ -265,7 +265,7 @@ def test_select_dl_respects_threshold(tmp_path) -> None:
     s = MinimalEmbedding()
     s.threshold = torch.tensor(5.0)
 
-    out = s.select_dl(
+    out = s.select(
         model=IdentityModel(), loader=loader, outdir=None, prefix=None
     )
     assert "score" in out and "selected" in out
@@ -307,3 +307,168 @@ def test_visualize_embeddings():
 
     # Ensure no exceptions were raised
     assert True
+
+
+def test_score_with_embeddings_only() -> None:
+    """Test that score() works with precomputed embeddings (X parameter)."""
+    s = MinimalEmbedding()
+    s.train_required = False
+    s.cal_required = False
+    
+    # Create some sample embeddings
+    embeddings = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+    
+    # Call score with embeddings
+    scores = s.score(X=embeddings)
+    
+    assert isinstance(scores, torch.Tensor)
+    assert scores.shape[0] == 3
+
+
+def test_score_with_model_loader_only() -> None:
+    """Test that score() works with model+loader parameters."""
+    class IdentityModel(torch.nn.Module):
+        def embed(self, x):
+            if isinstance(x, dict):
+                x = x["image"]
+            return x
+    
+    s = MinimalEmbedding()
+    s.train_required = False
+    s.cal_required = False
+    
+    # Create a simple dataloader
+    samples = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+    dataset = TensorDataset(samples)
+    loader = DataLoader(dataset, batch_size=1, collate_fn=lambda b: torch.stack([x[0] for x in b], 0))
+    
+    # Call score with model and loader
+    scores = s.score(model=IdentityModel(), loader=loader)
+    
+    assert isinstance(scores, torch.Tensor)
+    assert scores.shape[0] == 2
+
+
+def test_score_rejects_mixed_parameters() -> None:
+    """Test that score() rejects mixing embeddings with model+loader."""
+    s = MinimalEmbedding()
+    s.train_required = False
+    s.cal_required = False
+    
+    embeddings = torch.tensor([[1.0, 2.0]])
+    samples = torch.tensor([[1.0, 2.0]])
+    dataset = TensorDataset(samples)
+    loader = DataLoader(dataset, batch_size=1)
+    
+    class IdentityModel(torch.nn.Module):
+        def embed(self, x):
+            return x
+    
+    # Should raise ValueError when both X and model are provided
+    with pytest.raises(ValueError, match="Cannot specify both embeddings"):
+        s.score(X=embeddings, model=IdentityModel(), loader=loader)
+
+
+def test_score_requires_parameters() -> None:
+    """Test that score() requires either X or model+loader."""
+    s = MinimalEmbedding()
+    s.train_required = False
+    s.cal_required = False
+    
+    # Should raise ValueError when no parameters provided
+    with pytest.raises(ValueError, match="Must specify either embeddings"):
+        s.score()
+
+
+def test_score_requires_loader_when_model_provided() -> None:
+    """Test that score() requires loader when model is provided."""
+    s = MinimalEmbedding()
+    s.train_required = False
+    s.cal_required = False
+    
+    class IdentityModel(torch.nn.Module):
+        def embed(self, x):
+            return x
+    
+    # Should raise ValueError when model provided without loader
+    with pytest.raises(ValueError, match="loader is required when using a model"):
+        s.score(model=IdentityModel())
+
+
+def test_select_with_embeddings_only() -> None:
+    """Test that select() works with precomputed embeddings (X parameter)."""
+    s = MinimalEmbedding()
+    s.train_required = False
+    s.cal_required = False
+    s.threshold = torch.tensor(5.0)
+    
+    # Create some sample embeddings
+    embeddings = torch.tensor([[1.0, 2.0], [10.0, 10.0]])
+    
+    # Call select with embeddings
+    result = s.select(X=embeddings)
+    
+    assert "score" in result
+    assert "selected" in result
+    assert result["score"].shape[0] == 2
+    assert result["selected"].dtype == torch.bool
+
+
+def test_select_with_model_loader_only() -> None:
+    """Test that select() works with model+loader parameters."""
+    class IdentityModel(torch.nn.Module):
+        def embed(self, x):
+            if isinstance(x, dict):
+                x = x["image"]
+            return x
+    
+    s = MinimalEmbedding()
+    s.train_required = False
+    s.cal_required = False
+    s.threshold = torch.tensor(5.0)
+    
+    # Create a simple dataloader
+    samples = torch.tensor([[0.0, 0.0], [10.0, 10.0]])
+    dataset = TensorDataset(samples)
+    loader = DataLoader(dataset, batch_size=1, collate_fn=lambda b: torch.stack([x[0] for x in b], 0))
+    
+    # Call select with model and loader
+    result = s.select(model=IdentityModel(), loader=loader)
+    
+    assert "score" in result
+    assert "selected" in result
+    assert result["score"].shape[0] == 2
+    assert result["selected"].dtype == torch.bool
+
+
+def test_select_rejects_mixed_parameters() -> None:
+    """Test that select() rejects mixing embeddings with model+loader."""
+    s = MinimalEmbedding()
+    s.train_required = False
+    s.cal_required = False
+    s.threshold = torch.tensor(5.0)
+    
+    embeddings = torch.tensor([[1.0, 2.0]])
+    samples = torch.tensor([[1.0, 2.0]])
+    dataset = TensorDataset(samples)
+    loader = DataLoader(dataset, batch_size=1)
+    
+    class IdentityModel(torch.nn.Module):
+        def embed(self, x):
+            return x
+    
+    # Should raise ValueError when both X and model are provided
+    with pytest.raises(ValueError, match="Cannot specify both embeddings"):
+        s.select(X=embeddings, model=IdentityModel(), loader=loader)
+
+
+def test_select_requires_parameters() -> None:
+    """Test that select() requires either X or model+loader."""
+    s = MinimalEmbedding()
+    s.train_required = False
+    s.cal_required = False
+    s.threshold = torch.tensor(5.0)
+    
+    # Should raise ValueError when no parameters provided
+    with pytest.raises(ValueError, match="Must specify either embeddings"):
+        s.select()
