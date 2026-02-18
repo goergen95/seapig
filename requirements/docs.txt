@@ -3,3 +3,4 @@ quartodoc
 ipykernel
 ipywidgets
 importlib_metadata
+griffe<2.0.0 # see https://github.com/machow/quartodoc/issues/423
