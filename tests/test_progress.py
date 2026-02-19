@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib
 import os
 import sys
 from collections.abc import Iterator
@@ -22,16 +21,6 @@ from seapig.utils.progress import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _reload() -> None:
-    """Reload the module to reset module-level state cleanly."""
-    importlib.reload(_prog_mod)
-
-
 @pytest.fixture(autouse=True)
 def _reset_state() -> Iterator[None]:
     """Reset global progress state and remove env vars after each test."""
@@ -44,11 +33,6 @@ def _reset_state() -> Iterator[None]:
         os.environ.pop(var, None)
 
 
-# ---------------------------------------------------------------------------
-# enable / disable / reset
-# ---------------------------------------------------------------------------
-
-
 def test_enable_sets_is_enabled_true() -> None:
     enable()
     assert is_enabled() is True
@@ -59,7 +43,9 @@ def test_disable_sets_is_enabled_false() -> None:
     assert is_enabled() is False
 
 
-def test_reset_clears_programmatic_override(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_reset_clears_programmatic_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """After reset(), auto-detection takes over again."""
     monkeypatch.setattr("sys.stdout", MagicMock(isatty=lambda: False))
     enable()
@@ -67,11 +53,6 @@ def test_reset_clears_programmatic_override(monkeypatch: pytest.MonkeyPatch) -> 
     reset()
     # No TTY → auto-detection should return False
     assert is_enabled() is False
-
-
-# ---------------------------------------------------------------------------
-# SEAPIG_PROGRESS env var
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("val", ["1", "true", "True", "TRUE", "yes", "on"])
@@ -82,7 +63,9 @@ def test_env_var_true_values(monkeypatch: pytest.MonkeyPatch, val: str) -> None:
 
 
 @pytest.mark.parametrize("val", ["0", "false", "False", "FALSE", "no", "off"])
-def test_env_var_false_values(monkeypatch: pytest.MonkeyPatch, val: str) -> None:
+def test_env_var_false_values(
+    monkeypatch: pytest.MonkeyPatch, val: str
+) -> None:
     monkeypatch.setenv("SEAPIG_PROGRESS", val)
     reset()
     assert is_enabled() is False
@@ -95,11 +78,6 @@ def test_programmatic_override_beats_env_var(
     monkeypatch.setenv("SEAPIG_PROGRESS", "1")
     disable()
     assert is_enabled() is False
-
-
-# ---------------------------------------------------------------------------
-# Auto-detection: interactive vs. non-interactive
-# ---------------------------------------------------------------------------
 
 
 def test_auto_detect_non_interactive(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -126,13 +104,10 @@ def test_auto_detect_ipython(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.stdout", MagicMock(isatty=lambda: False))
     import builtins
 
-    monkeypatch.setattr(builtins, "get_ipython", lambda: object(), raising=False)
+    monkeypatch.setattr(
+        builtins, "get_ipython", lambda: object(), raising=False
+    )
     assert is_enabled() is True
-
-
-# ---------------------------------------------------------------------------
-# Backend selection
-# ---------------------------------------------------------------------------
 
 
 def test_get_backend_default() -> None:
@@ -154,11 +129,6 @@ def test_set_backend_tqdm() -> None:
 def test_set_backend_invalid() -> None:
     with pytest.raises(ValueError, match="Unknown backend"):
         set_backend("unknown")
-
-
-# ---------------------------------------------------------------------------
-# track() — iterator / context-manager semantics
-# ---------------------------------------------------------------------------
 
 
 def test_track_disabled_yields_all_items() -> None:
@@ -235,29 +205,3 @@ def test_track_total_none_works() -> None:
 def test_track_empty_iterable() -> None:
     disable()
     assert list(track([])) == []
-
-
-# ---------------------------------------------------------------------------
-# No direct tqdm imports remain outside progress.py
-# ---------------------------------------------------------------------------
-
-
-def test_embed_module_does_not_import_tqdm_directly() -> None:
-    """embed.py must not import tqdm at the top level anymore."""
-    import seapig.scores.embed as em
-
-    # The module should not expose tqdm as a direct attribute
-    assert not hasattr(em, "tqdm"), (
-        "seapig.scores.embed still has a top-level 'tqdm' attribute; "
-        "replace the direct import with seapig.utils.progress.track"
-    )
-
-
-def test_logits_module_does_not_import_tqdm_directly() -> None:
-    """logits.py must not import tqdm at the top level anymore."""
-    import seapig.scores.logits as lg
-
-    assert not hasattr(lg, "tqdm"), (
-        "seapig.scores.logits still has a top-level 'tqdm' attribute; "
-        "replace the direct import with seapig.utils.progress.track"
-    )

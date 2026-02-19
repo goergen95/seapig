@@ -1,6 +1,3 @@
-# Copyright (c) seapig Contributors. All rights reserved.
-# Licensed under the MIT License.
-
 """Unified progress-reporting subsystem for seapig.
 
 Provides a single, configurable progress interface that:
@@ -198,7 +195,7 @@ def get_backend() -> str:
 def track[T](
     iterable: Iterable[T],
     total: int | None = None,
-    desc: str = "",
+    desc: str = "Working…",
     unit: str = "it",
     leave: bool = True,
     colour: str | None = None,
@@ -249,12 +246,17 @@ def track[T](
         yield from iterable
         return
 
+    if _backend not in ("tqdm", "rich"):
+        raise ValueError(
+            f"Unknown backend {_backend!r}. Supported values: 'tqdm', 'rich'."
+        )
+
     if _backend == "rich":
         try:
             from rich.progress import track as _rich_track
 
             yield from _rich_track(
-                iterable, total=total, description=desc or "Working…", **kwargs
+                iterable, total=total, description=desc, **kwargs
             )
             return
         except ImportError:
