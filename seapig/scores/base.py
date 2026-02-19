@@ -1,10 +1,13 @@
 """Base Classes for Confidence Scores."""
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, override
 
 import numpy as np
 import torch
+
+logger = logging.getLogger(__name__)
 
 
 class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
@@ -316,7 +319,7 @@ class RandomScore(ConfidenceScore):
             A `torch.Tensor`.
         """
         if self.get_threshold() is None:
-            print("Trying to set it via `set_threshold()`.")
+            logger.warning("Trying to set it via `set_threshold()`.")
             self.set_threshold()
         assert self.threshold is not None
         score = self.score(X=X)
