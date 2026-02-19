@@ -16,9 +16,9 @@ from typing import override
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from tqdm import tqdm
 
 from seapig.scores.base import ConfidenceScore
+from seapig.utils.progress import track
 
 
 class LogitScore(ConfidenceScore, abc.ABC):
@@ -458,11 +458,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
             Logits and labels.
         """
         self._check_model(model=model)
-        pbar = tqdm(
-            total=len(loader),
-            desc=f"Forward {len(loader)} batches",
-            unit="batches",
-        )
+        pbar_desc = f"Forward {len(loader)} batches"
         logits_ls: list[torch.Tensor] = []
         labels_ls: list[torch.Tensor] = []
         device = None
@@ -473,7 +469,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
                 device = next(model.buffers()).device
             except StopIteration:
                 device = torch.device("cpu")
-        for batch in loader:
+        for batch in track(loader, total=len(loader), desc=pbar_desc, unit="batches"):
             if isinstance(batch, torch.Tensor):
                 x = batch
                 y = None
@@ -491,8 +487,6 @@ class LogitScore(ConfidenceScore, abc.ABC):
                     "Batch size of labels must match logits"
                 )
                 labels_ls.append(y.to(device))
-            if pbar is not None:
-                _ = pbar.update(n=1)
         if len(logits_ls) == 0:
             raise ValueError("No batches found in loader")
         logits = torch.cat(logits_ls, dim=0)
