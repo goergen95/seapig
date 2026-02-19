@@ -1,8 +1,11 @@
 """Utilities accessed by several modules."""
 
+import logging
 from typing import final
 
 import torch
+
+logger = logging.getLogger(__name__)
 
 
 @final
@@ -83,8 +86,10 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
         q_idx = (self.s_acc >= self.exp_var).nonzero()[0][0]
         self.q = max(1, int(q_idx.item()) + 1)
         explained = self.s_acc[self.q - 1].item()
-        print(
-            f"Explained variance of {explained:.4f} reached at dimension {self.q}."
+        logger.info(
+            "Explained variance of %s reached at dimension %s.",
+            f"{explained:.4f}",
+            self.q,
         )
         self.u_q = self.u[:, : self.q]
         self.u_q_dot = self.u_q @ self.u_q.T

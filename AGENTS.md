@@ -74,8 +74,58 @@ seapig/
 - `seapig.scores.embed.EmbeddingScore`: DataLoader helpers (fit_dl, score_dl)
 - `seapig.scores.knn.KNNScore`: FAISS-backed KNN score base
 - `seapig.utils.progress`: Centralised progress reporting (track(), enable(), set_backend(), ...)
+- `seapig.logging`: Package logging scaffold (get_logger, configure_logging)
 - `seapig.model.SelectiveInferenceTask`: Lightning integration wrapper
 - `seapig.metric.SelectiveMetric`: TorchMetrics wrapper for selective risk
+
+---
+
+## Logging (seapig.logging)
+
+All informational and diagnostic messages in library code **must** use the
+Python `logging` module instead of `print()`.  The package ships with a
+`NullHandler` on the `"seapig"` logger so consumers see no output by default.
+
+### Module-level pattern
+
+Every module that emits messages should do this at the top:
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Then use:
+logger.debug("verbose detail")
+logger.info("normal informational message")
+logger.warning("something unexpected but non-fatal")
+```
+
+### Public helpers in `seapig.logging`
+
+- `get_logger(name)` — return a child logger scoped to the seapig package.
+- `configure_logging(level, handler)` — set level + attach a handler; honours
+  the `SEAPIG_LOG_LEVEL` environment variable.
+
+### Policy on `warnings.warn()`
+
+Do **not** replace existing `warnings.warn(...)` calls with logging.
+Deprecation warnings and other catchable signals remain as `warnings.warn()`
+so that test code and consumers can use `pytest.warns` / `warnings.catch_warnings`.
+
+### Environment variables
+
+- `SEAPIG_LOG_LEVEL` — sets the minimum log level when `configure_logging()` is
+  called (e.g. `SEAPIG_LOG_LEVEL=INFO`).
+- `SEAPIG_PROGRESS` / `SEAPIG_PROGRESS_BACKEND` — control progress bars (see
+  *Reporting progress* section above).
+
+### Consumer example
+
+```python
+from seapig.logging import configure_logging
+configure_logging(level="INFO")   # writes to stderr; respects SEAPIG_LOG_LEVEL
+```
 
 ---
 

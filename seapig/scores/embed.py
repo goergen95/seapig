@@ -1,6 +1,7 @@
 """Abstract Base Method for embeddings based confidence scores."""
 
 import inspect
+import logging
 import warnings
 from abc import ABC
 from pathlib import Path
@@ -12,6 +13,8 @@ from torch.utils.data import DataLoader
 from seapig.scores.base import ConfidenceScore
 from seapig.scores.utils import TensorPCA
 from seapig.utils.progress import track
+
+logger = logging.getLogger(__name__)
 
 
 class EmbeddingScore(ConfidenceScore, ABC):
@@ -499,7 +502,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         if self.cal_required:
             assert self.is_calibrated()
         if self.get_threshold() is None:
-            print(
+            logger.warning(
                 "Threshold has not been set. Trying to set it via `set_threshold()`."
             )
             self.set_threshold()

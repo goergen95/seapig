@@ -10,6 +10,8 @@ to derive confidence scores to be applied for selective prediction systems.
 __author__ = "Darius A. Görgen"
 __version__ = "0.0.1"
 
+import logging
+
 from seapig.metric import RiskCoverageMetric, SelectiveMetric
 from seapig.model import SelectiveInferenceTask
 from seapig.risk_coverage import RiskCoverage, risk_coverage
@@ -24,6 +26,8 @@ from seapig.scores.logits import (
 )
 from seapig.scores.pca import PCAScore
 from seapig.scores.pyod import PyODScore
+
+logging.getLogger("seapig").addHandler(logging.NullHandler())
 
 __all__ = [
     "SelectiveInferenceTask",
