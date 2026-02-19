@@ -18,12 +18,12 @@ RUN python -m pip install --upgrade pip setuptools wheel build
 COPY . /workspace/vscode
 WORKDIR /workspace/vscode
 
-RUN pip install --no-cache-dir -r requirements/required.txt 
+RUN pip install --no-cache-dir -r requirements/required.txt
 RUN pip install --no-cache-dir -r requirements/suggested.txt
 RUN pip install --no-cache-dir -r requirements/dev.txt
 RUN pip install --no-cache-dir -r requirements/docs.txt
 RUN pip install .
-RUN quarto add machow/quartodoc --no-prompt 
+RUN quarto add machow/quartodoc --no-prompt
 
 USER vscode
 ENV HOME=/workspace/vscode

@@ -1,7 +1,7 @@
 {
   "name": "seapig dev",
   "image": "ghcr.io/goergen95/seapig:latest",
-  "workspaceFolder": "/workspaces/vscode",
+  "workspaceFolder": "/workspace/vscode",
   "features": {
     "ghcr.io/devcontainers/features/git:1": {},
     "ghcr.io/devcontainers/features/github-cli:1": {}
@@ -27,12 +27,15 @@
         "python.testing.pytestArgs": [
           "tests"
         ],
-        "python.linting.enabled": true,
-        "python.linting.ruffEnabled": true,
-        "python.formatting.provider": "ruff",
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.formatOnSave": true
+        },
+        "ruff.lintOnSave": true,
         "editor.formatOnSave": true,
         "editor.codeActionsOnSave": {
-          "source.organizeImports": "explicit"
+          "source.organizeImports": "explicit",
+          "source.fixAll.ruff": "explicit"
         }
       }
     }

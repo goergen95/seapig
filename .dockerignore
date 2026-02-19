@@ -10,6 +10,6 @@ env
 plans
 README_files
 *egg-info*
-objects.jspw
+objects.json
 coverage.xml
 README.html
