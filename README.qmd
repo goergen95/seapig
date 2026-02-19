@@ -47,6 +47,8 @@ clear. See the tests/ and dev/ directories for runnable examples.
 ```{python}
 import torch
 from seapig.scores.knn import EuclideanScore
+from seapig.utils.progress import disable
+disable()  # disable progress bars for quickstart example
 torch.manual_seed(0)  # for reproducibility
 # ref_emb, val_emb, query_emb: torch.Tensor shapes (N, D), (M, D), (Q, D)
 ref_emb, val_emb, query_emb = torch.randn(1000, 32), torch.randn(200, 32), torch.randn(10, 32)
