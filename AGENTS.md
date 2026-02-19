@@ -37,44 +37,81 @@ Developer and Coding Agent Guide for seapig
 ```
 seapig/
 ├── seapig/                    # Main package directory
-│   ├── __init__.py           # Package initialization, version, exports
-│   ├── metric.py             # SelectiveMetric wrapper class
-│   ├── model.py              # SelectiveInference wrapper class
-│   └── scores/               # Score implementations
+│   ├── __init__.py            # Package initialization, version, exports
+│   ├── metric.py              # SelectiveMetric wrapper class
+│   ├── model.py               # SelectiveInference wrapper class
+│   ├── utils/                 # Small utilities
+│   │   └── progress.py        # Centralised progress reporting (track, enable...)
+│   └── scores/                # Score implementations
 │       ├── __init__.py
-│       ├── base.py           # Base classes (BaseScore, RandomScore)
-│       ├── embed.py          # EmbeddingScore mixin for DataLoader support
-│       ├── knn.py            # KNN-based scores (Euclidean, Cosine, Mahalanobis)
+│       ├── base.py            # Base classes (BaseScore, RandomScore)
+│       ├── embed.py           # EmbeddingScore mixin for DataLoader support
+│       ├── knn.py             # KNN-based scores (Euclidean, Cosine, Mahalanobis)
 │       ├── pca.py            # PCAScore implementation
-│       ├── pyod.py           # PyODScore wrapper for PyOD detectors
-│       └── utils.py          # Utility functions (load_embeddings, save_embeddings)
+│       ├── pyod.py            # PyODScore wrapper for PyOD detectors
+│       └── utils.py           # Utility functions (load_embeddings, save_embeddings)
 ├── tests/                     # Unit tests
-│   ├── test_embed.py         # Tests for embedding extraction functionality
+│   ├── test_embed.py          # Tests for embedding extraction
 │   ├── test_knn.py           # Tests for KNN-based scores
 │   ├── test_pca.py           # Tests for PCA score
 │   └── test_pyod.py          # Tests for PyOD integration
-├── docs/                      # Documentation (generated via quartodoc)
+├── docs/                      # Documentation (quartodoc / Quarto)
 ├── requirements/              # Dependency specifications
-│   ├── required.txt          # Core runtime dependencies
-│   ├── dev.txt               # Development dependencies (testing, linting)
-│   └── docs.txt              # Documentation build dependencies
+│   ├── required.txt           # required dependencies
+|   ├── suggested.txt          # suggested dependencies
+│   ├── dev.txt                # development dependencies
+│   └── docs.txt               # documentation dependencies
 ├── .github/workflows/         # CI/CD workflows
-│   ├── test.yaml             # Pytest with coverage
-│   ├── style.yaml            # Ruff and mypy checks
-│   └── quarto.yaml           # Documentation build and deployment
-├── pyproject.toml            # Project metadata and tool configuration
-├── Makefile                  # Development automation commands
-├── README.qmd                # Quarto markdown source for README
-└── LICENSE                   # MIT license
+├── pyproject.toml
+├── Makefile
+├── README.qmd
+└── LICENSE
 ```
 
 ### Key Modules
 
-- **`seapig.scores.base.BaseScore`**: Abstract base class defining the score interface (`fit`, `score`, `select`, `set_threshold`)
-- **`seapig.scores.embed.EmbeddingScore`**: Mixin providing `fit_dl`, `score_dl`, `select_dl` methods for DataLoader-based workflows
-- **`seapig.scores.knn.KNNScore`**: Base class for KNN-based distance metrics with FAISS indexing
-- **`seapig.model.SelectiveInferenceTask`**: High-level wrapper combining a LightningModule with a confidence score
-- **`seapig.metric.SelectiveMetric`**: A wrapper around torchmetrics Metrics and MetricCollection to return full and selective risk estimates
+- `seapig.scores.base.BaseScore`: Abstract base class with the score API
+- `seapig.scores.embed.EmbeddingScore`: DataLoader helpers (fit_dl, score_dl)
+- `seapig.scores.knn.KNNScore`: FAISS-backed KNN score base
+- `seapig.utils.progress`: Centralised progress reporting (track(), enable(), set_backend(), ...)
+- `seapig.model.SelectiveInferenceTask`: Lightning integration wrapper
+- `seapig.metric.SelectiveMetric`: TorchMetrics wrapper for selective risk
+
+---
+
+## Reporting progress (seapig.utils.progress) — shortened
+
+Centralised progress helpers for loops and DataLoader embedding passes.
+
+- Auto-detects interactive sessions (TTY / IPython) and enables progress by
+  default only in those cases. Honor `SEAPIG_PROGRESS` to force on/off
+  (`1|true|yes|on` → enabled; `0|false|no|off` → disabled).
+- Default backend: `tqdm`. Call `set_backend("rich")` to use Rich (falls
+  back to tqdm).
+- Key API:
+  - `track(iterable, total=None, desc="…", unit="it", ...)` — drop-in
+    replacement for `tqdm(iterable)`.
+  - `enable()`, `disable()`, `reset()` — programmatic overrides.
+  - `is_enabled()` — query current state.
+  - `set_backend(backend)`, `get_backend()` — choose/query backend.
+
+Examples
+
+```python
+from seapig.utils.progress import track, disable, set_backend
+
+disable()
+list(track(range(3), desc="counting"))
+
+set_backend("rich")
+for batch in track(loader, desc="Embedding batches"):
+    embeddings = model.embed(batch)
+```
+
+Notes for tests/CI
+- Disable progress in tests to avoid flakey output and ANSI codes (call
+  `disable()` in test setup or set `SEAPIG_PROGRESS=0`).
+- Prefer `track` in library code so users/CI control the backend centrally.
 
 ---
 
