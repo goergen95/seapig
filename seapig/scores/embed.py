@@ -8,10 +8,10 @@ from typing import Any, Literal, override
 
 import torch
 from torch.utils.data import DataLoader
-from tqdm import tqdm
 
 from seapig.scores.base import ConfidenceScore
 from seapig.scores.utils import TensorPCA
+from seapig.utils.progress import track
 
 
 class EmbeddingScore(ConfidenceScore, ABC):
@@ -152,16 +152,11 @@ class EmbeddingScore(ConfidenceScore, ABC):
         was_training = model.training
         model.eval()
 
-        pbar = tqdm(
-            total=len(loader),
-            desc=f"Embedding {len(loader)} batches",
-            unit="batches",
-        )
+        pbar_desc = f"Embedding {len(loader)} batches"
         embs_ls = list()
-        for batch in loader:
+        for batch in track(loader, total=len(loader), desc=pbar_desc, unit="batches"):
             z = self._embed(X=batch, model=model)
             embs_ls.append(z)
-            _ = pbar.update(n=1)
         embs = torch.cat(embs_ls, dim=0)
 
         # Restore the original training state
