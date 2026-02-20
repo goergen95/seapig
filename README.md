@@ -175,7 +175,7 @@ Logging — basics - seapig uses the standard library `logging`. Call
 and set the level.
 
 ``` python
-from seapig.logging import configure_logging, get_logger
+from seapig.utils import configure_logging, get_logger
 
 # enable INFO logs for seapig (also respects SEAPIG_LOG_LEVEL env var)
 configure_logging(level="INFO")
@@ -188,7 +188,7 @@ force-enable or disable progress, choose the backend (`"tqdm"` or
 `"rich"`), and wrap any iterable with `track`.
 
 ``` python
-from seapig.utils.progress import enable, set_backend
+from seapig.utils import enable, set_backend
 
 # force-enable progress and select a backend
 enable()
@@ -198,7 +198,7 @@ set_backend("tqdm")  # or "rich"
 You can suppress progress output entirely:
 
 ``` python
-from seapig.utils.progress import disable
+from seapig.utils import disable
 
 # disable progress bars globally for the current process
 disable()
