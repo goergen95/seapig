@@ -63,7 +63,7 @@ sel = score.select(query_emb)
 print(sel)
 ```
 
-    {'score': tensor([6.2663, 5.5952, 6.0250, 5.8910, 6.3260, 4.8393, 5.7325, 5.3731, 5.6600,
+    {'score': tensor([6.2663, 5.5952, 6.0250, 5.8910, 6.2953, 4.8393, 5.7325, 5.3731, 5.6600,
             5.9184]), 'selected': tensor([ True,  True,  True,  True, False,  True,  True,  True,  True,  True])}
 
 #### On-the-fly embedding extraction
@@ -95,7 +95,7 @@ print(sel)
 ```
 
     {'score': tensor([6.4586, 5.5724, 5.6794, 5.7046, 5.0609, 5.8174, 5.5684, 5.3449, 5.4205,
-            5.6091, 5.5898, 6.2813, 6.1693, 6.3420, 6.3664, 5.5906, 4.6899, 5.6637,
+            5.6091, 5.5898, 6.2813, 6.1693, 6.3420, 6.4425, 5.5906, 4.6899, 5.6637,
             5.7695, 5.1600, 5.2580, 5.1575, 5.9254, 6.0015, 6.5361, 5.4042, 5.6627,
             5.7872, 5.4679, 6.0055, 6.1751, 5.7445]), 'selected': tensor([False,  True,  True,  True,  True,  True,  True,  True,  True,  True,
              True, False, False, False, False,  True,  True,  True,  True,  True,
@@ -159,6 +159,55 @@ preds = trainer.predict(sel_task, dataloaders=test_loader)
 - For production usage, compute embeddings on GPU and persist them to
   disk with the built-in save/load helpers to avoid repeated embedding
   computation.
+
+### Enabling logging and progress bar
+
+For interactive analyses you will often want readable logs and progress
+bars. seapig keeps both quiet by default so library output does not
+surprise downstream users or CI: the package attaches a `NullHandler` to
+the `"seapig"` logger, and progress bars are shown only in interactive
+sessions (TTY / Jupyter) unless explicitly enabled. As an user of the
+library, you can enable or disable both behaviours from your script or
+notebook.
+
+Logging — basics - seapig uses the standard library `logging`. Call
+`configure_logging` once from your top-level script to attach a handler
+and set the level.
+
+``` python
+from seapig.logging import configure_logging, get_logger
+
+# enable INFO logs for seapig (also respects SEAPIG_LOG_LEVEL env var)
+configure_logging(level="INFO")
+```
+
+Progress bars — basics - Progress is shown automatically in interactive
+sessions. To control it programmatically (useful in scripts, notebooks,
+and tests) import the helpers from `seapig.utils.progress`. You can
+force-enable or disable progress, choose the backend (`"tqdm"` or
+`"rich"`), and wrap any iterable with `track`.
+
+``` python
+from seapig.utils.progress import enable, set_backend
+
+# force-enable progress and select a backend
+enable()
+set_backend("tqdm")  # or "rich"
+```
+
+You can suppress progress output entirely:
+
+``` python
+from seapig.utils.progress import disable
+
+# disable progress bars globally for the current process
+disable()
+```
+
+Environment variables - SEAPIG_LOG_LEVEL controls default logging level
+when calling `configure_logging`. - SEAPIG_PROGRESS and
+SEAPIG_PROGRESS_BACKEND control progress behaviour when not overridden
+programmatically.
 
 ### License
 
