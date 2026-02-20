@@ -25,7 +25,7 @@ SEAPIG_LOG_LEVEL=INFO python my_script.py
 Retrieve a child logger within a module:
 
 ```python
-from seapig.logging import get_logger
+from seapig.utils.logging import get_logger
 logger = get_logger(__name__)
 logger.info("message")
 ```
@@ -67,8 +67,7 @@ def get_logger(name: str | None = None) -> logging.Logger:
 
 
 def configure_logging(
-    level: str | int = "WARNING",
-    handler: logging.Handler | None = None,
+    level: str | int = "WARNING", handler: logging.Handler | None = None
 ) -> None:
     """Configure the seapig package logger.
 

@@ -1,7 +1,6 @@
 """Abstract Base Method for embeddings based confidence scores."""
 
 import inspect
-import logging
 import warnings
 from abc import ABC
 from pathlib import Path
@@ -12,9 +11,10 @@ from torch.utils.data import DataLoader
 
 from seapig.scores.base import ConfidenceScore
 from seapig.scores.utils import TensorPCA
+from seapig.utils import get_logger
 from seapig.utils.progress import track
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class EmbeddingScore(ConfidenceScore, ABC):
@@ -157,7 +157,9 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
         pbar_desc = f"Embedding {len(loader)} batches"
         embs_ls = list()
-        for batch in track(loader, total=len(loader), desc=pbar_desc, unit="batches"):
+        for batch in track(
+            loader, total=len(loader), desc=pbar_desc, unit="batches"
+        ):
             z = self._embed(X=batch, model=model)
             embs_ls.append(z)
         embs = torch.cat(embs_ls, dim=0)

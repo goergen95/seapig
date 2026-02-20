@@ -1,8 +1,6 @@
-# Copyright (c) seapig Contributors. All rights reserved.
-# Licensed under the MIT License.
-
 """Utility modules for seapig."""
 
+from seapig.utils.logging import configure_logging, get_logger
 from seapig.utils.progress import (
     disable,
     enable,
@@ -21,4 +19,6 @@ __all__ = [
     "is_enabled",
     "set_backend",
     "get_backend",
+    "get_logger",
+    "configure_logging",
 ]

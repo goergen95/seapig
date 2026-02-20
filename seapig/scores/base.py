@@ -1,13 +1,14 @@
 """Base Classes for Confidence Scores."""
 
-import logging
 from abc import ABC, abstractmethod
 from typing import Any, override
 
 import numpy as np
 import torch
 
-logger = logging.getLogger(__name__)
+from seapig.utils import get_logger
+
+logger = get_logger(__name__)
 
 
 class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]

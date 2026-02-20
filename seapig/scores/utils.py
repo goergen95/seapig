@@ -1,11 +1,12 @@
 """Utilities accessed by several modules."""
 
-import logging
 from typing import final
 
 import torch
 
-logger = logging.getLogger(__name__)
+from seapig.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 @final

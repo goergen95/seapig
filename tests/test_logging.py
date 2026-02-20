@@ -8,7 +8,7 @@ from io import StringIO
 import pytest
 
 import seapig
-from seapig.logging import configure_logging, get_logger
+from seapig.utils.logging import configure_logging, get_logger
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -18,7 +18,7 @@ from seapig.logging import configure_logging, get_logger
 @pytest.fixture(autouse=True)
 def _restore_logger() -> pytest.FixtureResult[None]:  # type: ignore[type-arg]
     """Reset the seapig logger to its default state after each test."""
-    pkg_logger = logging.getLogger("seapig")
+    pkg_logger = get_logger("seapig")
     original_level = pkg_logger.level
     original_handlers = list(pkg_logger.handlers)
     original_propagate = pkg_logger.propagate
@@ -39,7 +39,7 @@ def test_package_logger_has_null_handler() -> None:
     """seapig/__init__.py must install a NullHandler on the package logger."""
     # The NullHandler should be present after importing seapig.
     _ = seapig  # noqa: F841 — ensure __init__ has run
-    pkg_logger = logging.getLogger("seapig")
+    pkg_logger = get_logger("seapig")
     null_handlers = [
         h for h in pkg_logger.handlers if isinstance(h, logging.NullHandler)
     ]
@@ -83,25 +83,25 @@ def test_get_logger_returns_logger_instance() -> None:
 
 def test_configure_logging_sets_level_by_string() -> None:
     configure_logging(level="DEBUG")
-    pkg_logger = logging.getLogger("seapig")
+    pkg_logger = get_logger("seapig")
     assert pkg_logger.level == logging.DEBUG
 
 
 def test_configure_logging_sets_level_by_int() -> None:
     configure_logging(level=logging.INFO)
-    pkg_logger = logging.getLogger("seapig")
+    pkg_logger = get_logger("seapig")
     assert pkg_logger.level == logging.INFO
 
 
 def test_configure_logging_default_level_is_warning() -> None:
     configure_logging()
-    pkg_logger = logging.getLogger("seapig")
+    pkg_logger = get_logger("seapig")
     assert pkg_logger.level == logging.WARNING
 
 
 def test_configure_logging_attaches_stream_handler_when_none() -> None:
     configure_logging(level="INFO")
-    pkg_logger = logging.getLogger("seapig")
+    pkg_logger = get_logger("seapig")
     stream_handlers = [
         h for h in pkg_logger.handlers if isinstance(h, logging.StreamHandler)
     ]
@@ -112,7 +112,7 @@ def test_configure_logging_custom_handler() -> None:
     stream = StringIO()
     handler = logging.StreamHandler(stream)
     configure_logging(level="INFO", handler=handler)
-    pkg_logger = logging.getLogger("seapig")
+    pkg_logger = get_logger("seapig")
     assert handler in pkg_logger.handlers
 
 
@@ -121,7 +121,7 @@ def test_configure_logging_removes_previous_handlers() -> None:
     configure_logging(level="INFO", handler=first)
     second = logging.StreamHandler(StringIO())
     configure_logging(level="INFO", handler=second)
-    pkg_logger = logging.getLogger("seapig")
+    pkg_logger = get_logger("seapig")
     assert first not in pkg_logger.handlers
     assert second in pkg_logger.handlers
 
@@ -130,7 +130,7 @@ def test_configure_logging_produces_output() -> None:
     stream = StringIO()
     handler = logging.StreamHandler(stream)
     configure_logging(level="DEBUG", handler=handler)
-    logging.getLogger("seapig").debug("hello from test")
+    get_logger("seapig").debug("hello from test")
     assert "hello from test" in stream.getvalue()
 
 
@@ -138,7 +138,7 @@ def test_configure_logging_suppresses_below_level() -> None:
     stream = StringIO()
     handler = logging.StreamHandler(stream)
     configure_logging(level="WARNING", handler=handler)
-    logging.getLogger("seapig").debug("should be silent")
+    get_logger("seapig").debug("should be silent")
     assert stream.getvalue() == ""
 
 
@@ -152,7 +152,7 @@ def test_seapig_log_level_env_var_overrides_level(
 ) -> None:
     monkeypatch.setenv("SEAPIG_LOG_LEVEL", "DEBUG")
     configure_logging(level="WARNING")  # env var should win
-    pkg_logger = logging.getLogger("seapig")
+    pkg_logger = get_logger("seapig")
     assert pkg_logger.level == logging.DEBUG
 
 
@@ -161,7 +161,7 @@ def test_seapig_log_level_env_var_not_set_uses_param(
 ) -> None:
     monkeypatch.delenv("SEAPIG_LOG_LEVEL", raising=False)
     configure_logging(level="INFO")
-    pkg_logger = logging.getLogger("seapig")
+    pkg_logger = get_logger("seapig")
     assert pkg_logger.level == logging.INFO
 
 
@@ -170,7 +170,9 @@ def test_seapig_log_level_env_var_not_set_uses_param(
 # ---------------------------------------------------------------------------
 
 
-def test_library_does_not_print_by_default(capfd: pytest.CaptureFixture[str]) -> None:
+def test_library_does_not_print_by_default(
+    capfd: pytest.CaptureFixture[str],
+) -> None:
     """Importing seapig and using core objects must not emit print output."""
     import seapig.scores.base  # noqa: F401 — trigger module-level code
     import seapig.scores.embed  # noqa: F401
@@ -195,9 +197,7 @@ def test_no_print_on_random_score_select_without_threshold(
     assert captured.out == ""
 
 
-def test_no_print_on_tensor_pca_fit(
-    capfd: pytest.CaptureFixture[str],
-) -> None:
+def test_no_print_on_tensor_pca_fit(capfd: pytest.CaptureFixture[str]) -> None:
     """TensorPCA.fit() must not print when explaining variance."""
     import torch
 
