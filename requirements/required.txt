@@ -1,7 +1,7 @@
-numpy
-pandas
-torch
-torchmetrics
-tqdm
-nmslib
-lightning
+numpy>=2.3
+pandas>=3.0
+torch>=2.10
+torchmetrics>=1.8
+tqdm>=4.67
+nmslib>=2.1
+lightning>=2.6
