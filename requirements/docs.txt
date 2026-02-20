@@ -1,6 +1,6 @@
-quarto-cli
-quartodoc
-ipykernel
-ipywidgets
-importlib_metadata
-griffe<2.0.0 # see https://github.com/machow/quartodoc/issues/423
+quarto-cli>=1.8
+quartodoc>=0.11
+ipykernel>=7.2
+ipywidgets>=8.1
+importlib_metadata>=8.7
+griffe<2.0 # see https://github.com/machow/quartodoc/issues/423

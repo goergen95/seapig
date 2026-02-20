@@ -1,5 +1,5 @@
-pyod
-umap-learn
-scikit-learn
-matplotlib
-rich
+pyod>=2.0
+umap-learn>=0.5
+scikit-learn>=1.8
+matplotlib>=3.10
+rich>=14.3
