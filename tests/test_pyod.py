@@ -1,5 +1,8 @@
 import numpy as np
+import pytest
 import torch
+
+pytest.importorskip("pyod")
 
 from seapig.scores.pyod import PyODScore
 from seapig.scores.utils import TensorPCA

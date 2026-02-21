@@ -183,6 +183,7 @@ def test_track_rich_falls_back_to_tqdm_when_rich_missing() -> None:
 
 
 def test_track_rich_uses_rich_when_available() -> None:
+    pytest.importorskip("rich")
     enable()
     set_backend("rich")
 

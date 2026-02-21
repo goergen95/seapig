@@ -46,7 +46,7 @@ clear. See the tests/ and dev/ directories for runnable examples.
 
 ```{python}
 import torch
-from seapig.scores.knn import EuclideanScore
+from seapig.scores import EuclideanScore
 from seapig.utils.progress import disable
 disable()  # disable progress bars for quickstart example
 torch.manual_seed(0)  # for reproducibility

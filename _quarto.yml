@@ -67,7 +67,7 @@ quartodoc:
     - title: Random Confidence Score
       desc: ""
       contents:
-        - name: RandomScore
+        - name: scores.RandomScore
           members:
             - score
             - select
@@ -75,31 +75,31 @@ quartodoc:
     - title: Embedding-based Scores
       desc: ""
       contents:
-        - name: EuclideanScore
+        - name: scores.EuclideanScore
           members:
             - fit
             - score
             - select
             - set_threshold
-        - name: CosineScore
+        - name: scores.CosineScore
           members:
             - fit
             - score
             - select
             - set_threshold
-        - name: MahalanobisScore
+        - name: scores.MahalanobisScore
           members:
             - fit
             - score
             - select
             - set_threshold
-        - name: PyODScore
+        - name: scores.pyod.PyODScore
           members: 
             - fit
             - score
             - select
             - set_threshold
-        - name: PCAScore
+        - name: scores.PCAScore
           members: 
             - fit
             - score
@@ -108,22 +108,22 @@ quartodoc:
     - title: Logit-based Scores
       desc: ""
       contents:
-        - name: SoftmaxScore
+        - name: scores.SoftmaxScore
           members:
             - score
             - select
             - set_threshold
-        - name: MarginScore
+        - name: scores.MarginScore
           members:
             - score
             - select
             - set_threshold
-        - name: EntropyScore
+        - name: scores.EntropyScore
           members:
               - score
               - select
               - set_threshold
-        - name: EnergyScore
+        - name: scores.EnergyScore
           members:
               - score
               - select
@@ -136,9 +136,9 @@ quartodoc:
           include_inherited: true
         - name: scores.KNNScore
           include_inherited: true
-        - name: scores.PyODScore
+        - name: scores.pyod.PyODScore
           include_inherited: true
-        - name: scores.logits.LogitScore
+        - name: scores.LogitScore
           include_inherited: true
 
 filters:
