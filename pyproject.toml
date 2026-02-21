@@ -8,9 +8,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "seapig"
 description = "Selective prediction based on confidence scores"
-readme = "README.md"
+readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.12"
-license = {file = "LICENSE"}
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     {name = "Darius A. Görgen", email = "info@dariusgoergen.com"},
 ]
@@ -22,7 +23,6 @@ keywords = ["pytorch", "remote sensing", "area of applicability", "confidence sc
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
@@ -31,6 +31,14 @@ classifiers = [
 
 dynamic = ["version", "dependencies", "optional-dependencies"]
 
+[project.urls]
+"Homepage" = "https://goergen95.github.io/seapig/"
+"Documentation" = "https://goergen95.github.io/seapig/"
+"Codecov" = "https://app.codecov.io/gh/goergen95/seapig"
+"Repository" = "https://github.com/goergen95/seapig"
+"Issue Tracker" = "https://github.com/goergen95/seapig/issues"
+"Changelog" = "https://goergen95.github.io/seapig/NEWS.html"
+
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements/required.txt"] }
 version = {attr = "seapig.__version__"}
@@ -38,7 +46,7 @@ version = {attr = "seapig.__version__"}
 [tool.setuptools.dynamic.optional-dependencies]
 suggested = {file = ["requirements/suggested.txt"]}
 dev = { file = ["requirements/dev.txt"] }
-docs = { file = ["requirements/docs.txt"]}
+docs = { file = ["requirements/docs.txt", "requirements/suggested.txt"]}
 all  = { file = [
     "requirements/suggested.txt",
     "requirements/dev.txt",
