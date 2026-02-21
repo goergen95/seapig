@@ -49,7 +49,7 @@ and dev/ directories for runnable examples.
 
 ``` python
 import torch
-from seapig.scores.knn import EuclideanScore
+from seapig.scores import EuclideanScore
 from seapig.utils.progress import disable
 disable()  # disable progress bars for quickstart example
 torch.manual_seed(0)  # for reproducibility
@@ -95,7 +95,7 @@ print(sel)
 ```
 
     {'score': tensor([6.4586, 5.5724, 5.6794, 5.7046, 5.0609, 5.8174, 5.5684, 5.3449, 5.4205,
-            5.6091, 5.5898, 6.2813, 6.1693, 6.3420, 6.4425, 5.5906, 4.6899, 5.6637,
+            5.6091, 5.5898, 6.2813, 6.1693, 6.3420, 6.3664, 5.5906, 4.6899, 5.6637,
             5.7695, 5.1600, 5.2580, 5.1575, 5.9254, 6.0015, 6.5361, 5.4042, 5.6627,
             5.7872, 5.4679, 6.0055, 6.1751, 5.7445]), 'selected': tensor([False,  True,  True,  True,  True,  True,  True,  True,  True,  True,
              True, False, False, False, False,  True,  True,  True,  True,  True,

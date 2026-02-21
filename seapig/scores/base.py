@@ -249,16 +249,6 @@ class RandomScore(ConfidenceScore):
     This score returns a random float in the range `[0,1]` for each sample
     in a batch. Low scores indicate likely inliers, high scores indicate likely
     outliers. By default, samples with scores below 0.99 are selected for prediction.
-
-    Examples
-    --------
-    ```{python}
-    import torch
-    from seapig import RandomScore
-    my_score = RandomScore()
-    batch = torch.rand(4)
-    my_score.score(batch)
-    ```
     """
 
     train_required: bool = False

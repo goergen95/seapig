@@ -3,8 +3,7 @@ from unittest.mock import patch
 import pytest
 import torch
 
-from seapig import EuclideanScore
-from seapig.scores.base import RandomScore
+from seapig.scores import EuclideanScore, RandomScore
 
 
 def test_random_score():
@@ -32,6 +31,7 @@ def test_random_score():
 
 @pytest.mark.parametrize("include_query", [False, True])
 def test_plot_method(include_query):
+    pytest.importorskip("matplotlib")
     # Create dummy embeddings
     ref_embeddings = torch.randn(100, 64)
     cal_embeddings = torch.randn(100, 64)

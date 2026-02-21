@@ -2,7 +2,8 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
-from seapig import EuclideanScore, risk_coverage
+from seapig.risk_coverage import risk_coverage
+from seapig.scores import EuclideanScore
 
 
 class MockupCNN(nn.Module):

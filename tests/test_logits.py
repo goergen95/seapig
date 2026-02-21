@@ -1,4 +1,3 @@
-import importlib
 import math
 from pathlib import Path
 
@@ -330,12 +329,6 @@ def test_temperature_loss_matches_torch(task: str):
         expected = F.binary_cross_entropy_with_logits(logits, labels)
         got = s._temperature_loss(logits, labels)
         approx_tensor(got, expected)
-
-
-def test_top_level_score_imports():
-    mod = importlib.import_module("seapig")
-    for name in ("SoftmaxScore", "MarginScore", "EntropyScore", "EnergyScore"):
-        assert hasattr(mod, name)
 
 
 @pytest.mark.parametrize(
