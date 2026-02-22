@@ -5,7 +5,7 @@ import torch
 from pytorch_lightning import LightningModule
 from torchmetrics import Accuracy, MetricCollection
 
-from seapig import RiskCoverage, RiskCoverageMetric, SelectiveInferenceTask
+from seapig import RiskCoverageMetric, SelectiveInferenceTask
 from seapig.scores.base import ConfidenceScore
 
 
@@ -173,13 +173,11 @@ def test_test_step_updates_metrics_and_logs_rc(monkeypatch) -> None:
     assert any(k.startswith("rejected/") for k in res.keys())
 
     # RiskCoverageMetric stats should have been logged
-    assert isinstance(calls["log_arg"], RiskCoverageMetric)
-    metrics = calls["log_arg"].compute()
+    assert isinstance(calls["log_arg"], dict)
+    metrics = calls["log_arg"]
     assert "rc/auc_empirical" in metrics
     assert "rc/auc_reference" in metrics
     assert "rc/auc_excess" in metrics
-    rc = calls["log_arg"].get_curve()
-    assert isinstance(rc, RiskCoverage)
 
 
 def test_test_step_with_alt_keys_updates_metrics(monkeypatch) -> None:
