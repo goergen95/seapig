@@ -442,7 +442,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         """
         raise NotImplementedError(
             "Subclasses must implement the `_score_embeddings` method."
-        )
+        )  # pragma: no cover
 
     @override
     def select(
@@ -569,7 +569,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
                     "t-SNE is not installed. Please install it with `pip install scikit-learn`."
                 )
             reducer = TSNE(n_components=2, **method_args)
-        elif method == "umap":
+        elif method == "umap":  # pragma: no cover
             try:
                 from umap import UMAP
             except ImportError:
