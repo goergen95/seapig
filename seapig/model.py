@@ -131,6 +131,7 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
             preds = {"predictions": preds}
         assert isinstance(preds, dict)
 
+        assert callable(self.task.embed)
         embs: torch.Tensor = self.task.embed(x)
         selection = self.score.select(embs)
 
@@ -162,18 +163,17 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         """
         x = batch[self.input_key]
         y = batch[self.target_key]
-        batch_size = x.shape[0]
 
         outputs = self.forward(x)
 
         if self.test_metrics is not None:
             self.test_metrics.update(outputs, y)
-            self.log_dict(self.test_metrics, batch_size=batch_size)
+            self.log_dict(self.test_metrics.compute())
 
         # Update risk‑coverage metric; final values are logged in on_test_epoch_end
         if self.rc_metric is not None:
             self.rc_metric.update(outputs, y)
-            self.log_dict(self.rc_metric, batch_size=batch_size)
+            self.log_dict(self.rc_metric.compute())
 
         if self.test_outputs is not None:
             self.test_outputs.append(outputs)
