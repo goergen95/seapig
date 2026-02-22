@@ -3,6 +3,8 @@ name: "Quarto site — render & deploy (quartodoc)"
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -45,6 +47,9 @@ jobs:
           python -m quartodoc build --verbose
           python -m quartodoc interlinks
           quarto render --no-cache --output-dir _site
+
+      - name: Check site output
+        run: ls -la .
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
