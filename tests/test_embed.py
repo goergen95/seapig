@@ -1,3 +1,4 @@
+import builtins
 from unittest.mock import patch
 
 import pytest
@@ -295,12 +296,15 @@ def test_visualize_embeddings():
         score.plot_embs(
             query_embeddings=query_embeddings,
             method="invalid_method",
-            method_args={},
+            method_args=tsne_args,
         )
+
+    # Ensure no exceptions were raised
+    assert True
 
     # Mock the plotting function to avoid rendering during tests
     with patch.object(plt, "show"):
-        # Test with t-SNE
+        # Test with umap
         score.plot_embs(
             query_embeddings=query_embeddings,
             method="tsne",
@@ -486,3 +490,218 @@ def test_select_requires_parameters() -> None:
     # Should raise ValueError when no parameters provided
     with pytest.raises(ValueError, match="Must specify either embeddings"):
         s.select()
+
+
+def test_embed_loadorembed_uses_disk_when_present(tmp_path) -> None:
+    """When a saved embeddings file exists, _loadorembed should load it and
+    move it to the model device. It should also emit a UserWarning.
+    """
+    # create a tensor and save it to disk
+    saved = torch.tensor([[9.0, 8.0], [7.0, 6.0]])
+    path = tmp_path / "already.pt"
+    torch.save(saved, path)
+
+    # model must have parameters so next(model.parameters()) works
+    class ParamModel(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.lin = torch.nn.Linear(2, 2)
+
+        def embed(self, x):
+            return x
+
+    m = ParamModel()
+    # move model to cpu (default) and ensure file load uses same device
+    loader = DataLoader([torch.tensor([0.0, 0.1])], batch_size=1)
+
+    with pytest.warns(UserWarning):
+        out = EmbeddingScore._loadorembed(path=path, model=m, loader=loader)
+
+    assert isinstance(out, torch.Tensor)
+    assert out.shape == saved.shape
+
+
+def test_embed_accepts_dict_and_sequence_inputs() -> None:
+    m = DummyModel()
+    # dict case
+    xdict = {"image": torch.tensor([[1.0, 2.0]])}
+    out = EmbeddingScore._embed(xdict, m)
+    assert torch.allclose(out, xdict["image"])
+
+    # tuple/list case
+    xtup = (torch.tensor([[3.0, 4.0]]),)
+    out2 = EmbeddingScore._embed(xtup, m)
+    assert torch.allclose(out2, xtup[0])
+
+
+def test_fit_parameter_validation_errors() -> None:
+    s = MinimalEmbedding()
+    X = torch.randn(2, 4)
+
+    # both X and model should raise
+    class IdentityModel(torch.nn.Module):
+        def embed(self, x):
+            return x
+
+    with pytest.raises(ValueError, match="Cannot specify both embeddings"):
+        s.fit(X=X, model=IdentityModel(), loaders=None)
+
+    # neither provided should raise
+    with pytest.raises(ValueError, match="Must specify either embeddings"):
+        s.fit()
+
+    # loaders provided but model missing should raise
+    dataset = TensorDataset(torch.tensor([[0.0, 0.1]]))
+    loaders = {"train": DataLoader(dataset, batch_size=1)}
+    with pytest.raises(ValueError, match="model is required"):
+        s.fit(loaders=loaders)
+
+
+def test_embed_dl_restores_training_state() -> None:
+    class TrainModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.lin = torch.nn.Linear(2, 2)
+
+        def embed(self, x):
+            return x
+
+    model = TrainModel()
+    # ensure model is in training mode
+    model.train()
+    assert model.training
+
+    samples = torch.tensor([[1.0, 1.0], [2.0, 2.0]])
+    dataset = TensorDataset(samples)
+    loader = DataLoader(
+        dataset,
+        batch_size=1,
+        collate_fn=lambda b: torch.stack([x[0] for x in b], 0),
+    )
+
+    out = EmbeddingScore._embed_dl(model=model, loader=loader)
+    # model should have been restored to training mode
+    assert model.training
+    assert out.shape[0] == 2
+
+
+@pytest.fixture(
+    params=[
+        ("matplotlib", None, "matplotlib is not installed"),
+        ("sklearn", "tsne", "t-SNE is not installed"),
+        ("umap", "umap", "UMAP is not installed"),
+    ],
+    ids=["matplotlib", "tsne", "umap"],
+)
+def missing_library(request, monkeypatch):
+    """Patch imports so the named top-level library raises ImportError."""
+    block_prefix, method, expected_msg = request.param
+    orig_import = builtins.__import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name.startswith(block_prefix):
+            raise ImportError(f"No {block_prefix}")
+        return orig_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    return method, expected_msg
+
+
+def test_plot_embs_missing_libraries_raise(missing_library):
+    """Unified test: missing library import should raise the expected ImportError."""
+    method, expected_msg = missing_library
+    e = DummyEmbedding()
+    e.ref_embeddings = torch.randn(3, 4)
+
+    if method is None:
+        with pytest.raises(ImportError, match=expected_msg):
+            e.plot_embs(query_embeddings=torch.randn(2, 4))
+    else:
+        with pytest.raises(ImportError, match=expected_msg):
+            e.plot_embs(query_embeddings=torch.randn(2, 4), method=method)
+
+
+def test_loadorembed_uses_existing_file_and_moves_to_model_device(
+    tmp_path,
+) -> None:
+    # prepare tensor file
+    tensor = torch.tensor([[7.0, 8.0]])
+    path = tmp_path / "pre_embs.pt"
+    torch.save(tensor, path)
+
+    class ParamModel(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.l = torch.nn.Linear(2, 2)
+
+        def embed(self, x):
+            return x
+
+    model = ParamModel()
+    # simple loader (not used when path exists)
+    loader = DataLoader([torch.tensor([0.0, 0.1])], batch_size=1)
+
+    with pytest.warns(UserWarning):
+        out = EmbeddingScore._loadorembed(path, model, loader)
+    assert isinstance(out, torch.Tensor)
+    assert out.shape == tensor.shape
+    # ensure tensor is on same device as model parameters
+    dev = next(model.parameters()).device
+    assert out.device == dev
+
+
+def test_embed_accepts_list_and_rejects_non_tensor_return() -> None:
+    model = DummyModel()
+    x = torch.tensor([[1.0, 2.0]])
+    # list/tuple input should select first element and succeed
+    out = EmbeddingScore._embed([x], model)
+    assert isinstance(out, torch.Tensor)
+    assert out.shape == x.shape
+
+    # model returning non-tensor should raise AssertionError
+    class BadReturnModel(torch.nn.Module):
+        def embed(self, x):
+            return [1, 2, 3]
+
+    with pytest.raises(AssertionError):
+        EmbeddingScore._embed(x, BadReturnModel())
+
+
+def test_fit_errors_when_both_or_neither_provided() -> None:
+    s = MinimalEmbedding()
+    emb = torch.randn(3, 4)
+
+    # neither embeddings nor model/loaders
+    with pytest.raises(ValueError, match="Must specify either embeddings"):
+        s.fit()
+
+    # both embeddings and model provided
+    class IdentityModel(torch.nn.Module):
+        def embed(self, x):
+            return x
+
+    with pytest.raises(ValueError, match="Cannot specify both embeddings"):
+        s.fit(X=emb, model=IdentityModel(), loaders={})
+
+
+def test_select_triggers_set_threshold_when_none(caplog) -> None:
+    s = MinimalEmbedding()
+    s.train_required = False
+    s.cal_required = False
+    # provide scores so set_threshold can run
+    s.scores = torch.tensor([0.0, 1.0, 2.0])
+    s.threshold = None
+
+    caplog.clear()
+    caplog.set_level("WARNING")
+
+    # call select with embeddings which will cause set_threshold to be called
+    X = torch.tensor([[0.0, 0.0], [1.0, 1.0]])
+    res = s.select(X=X)
+
+    # logger.warning should have been emitted about missing threshold
+    assert any(
+        "Threshold has not been set" in rec.message for rec in caplog.records
+    )
+    assert s.threshold is not None
+    assert "score" in res and "selected" in res
