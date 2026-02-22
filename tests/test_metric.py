@@ -1,9 +1,13 @@
+import math
+
 import pytest
 import torch
 from pytorch_lightning import LightningModule
 from torchmetrics import (
     Accuracy,
+    MeanAbsoluteError,
     MeanMetric,
+    MeanSquaredError,
     MetricCollection,
     Precision,
     Recall,
@@ -354,3 +358,167 @@ def test_selective_metric_with_mock_metric_collection(selection_behavior):
         # Ensure the selected metric is not updated
         assert "selected/mean" in results
         assert results["selected/mean"] == 0
+
+
+def _tensor_close(a: torch.Tensor, b: float, tol: float = 1e-6) -> bool:
+    return bool(
+        torch.allclose(
+            a, torch.tensor(b, dtype=a.dtype, device=a.device), atol=tol
+        )
+    )
+
+
+# Additional tests to cover branches in metric.py not exercised above
+
+
+def test_selective_metric_single_metric_selected_and_rejected_values():
+    base = MeanAbsoluteError()
+    sm = SelectiveMetric(base)
+
+    preds = torch.tensor([1.0, 2.0, 3.0, 4.0])
+    target = torch.tensor([1.0, 3.0, 2.0, 5.0])
+    selected = torch.tensor([1, 0, 1, 0], dtype=torch.bool)
+
+    outputs = {"predictions": preds, "selected": selected}
+    sm.update(outputs, target)
+
+    res = sm.compute()
+    # full MAE: abs diffs = [0,1,1,1] -> mean = 0.75
+    assert "full/MeanAbsoluteError" in res
+    assert _tensor_close(res["full/MeanAbsoluteError"], 0.75)
+
+    # selected indices (0,2): diffs [0,1] -> mean = 0.5
+    assert "selected/MeanAbsoluteError" in res
+    assert _tensor_close(res["selected/MeanAbsoluteError"], 0.5)
+
+    # rejected indices (1,3): diffs [1,1] -> mean = 1.0
+    assert "rejected/MeanAbsoluteError" in res
+    assert _tensor_close(res["rejected/MeanAbsoluteError"], 1.0)
+
+    # items/keys/values should be iterable and consistent
+    keys = list(sm.keys())
+    items = list(sm.items())
+    values = list(sm.values())
+    assert len(keys) == len(items) == len(values)
+
+
+def test_selective_metric_no_selected_updates_metric_not_called():
+    # When no samples are selected, the selected submetric should not be updated
+    base = MeanAbsoluteError()
+    sm = SelectiveMetric(base)
+
+    preds = torch.tensor([0.0, 1.0, 2.0])
+    target = torch.tensor([0.5, 0.5, 0.5])
+    selected = torch.zeros(3, dtype=torch.bool)  # none selected
+
+    sm.update({"predictions": preds, "selected": selected}, target)
+    res = sm.compute()
+
+    # selected metric was never updated -> should yield 0.0 tensor
+    assert "selected/MeanAbsoluteError" in res
+    assert _tensor_close(res["selected/MeanAbsoluteError"], 0.0)
+
+    # rejected should be computed
+    assert "rejected/MeanAbsoluteError" in res
+    assert res["rejected/MeanAbsoluteError"].numel() == 1
+    assert res["rejected/MeanAbsoluteError"].dtype == torch.float32
+
+
+def test_selective_metric_with_metric_collection_and_prefixing():
+    coll = MetricCollection(
+        {"mae": MeanAbsoluteError(), "mse": MeanSquaredError()}
+    )
+    smc = SelectiveMetric(coll)
+
+    preds = torch.tensor([1.0, 2.0, 3.0])
+    target = torch.tensor([1.2, 1.8, 2.5])
+    selected = torch.tensor([1, 1, 0], dtype=torch.bool)
+
+    smc.update({"predictions": preds, "selected": selected}, target)
+    out = smc.compute()
+
+    # Ensure both metrics in the collection appear with collection names
+    for prefix in ("full", "selected", "rejected"):
+        assert f"{prefix}/mae" in out
+        assert f"{prefix}/mse" in out
+
+    # Confirm values are tensors
+    assert isinstance(out["full/mae"], torch.Tensor)
+    assert isinstance(out["full/mse"], torch.Tensor)
+
+
+@pytest.mark.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    match="was called before the ``update`` method",
+)
+def test_risk_coverage_metric_no_data_returns_zeros_and_reset_behavior():
+    rcm = RiskCoverageMetric()
+    # no updates yet -> should return zeros
+    empty = rcm.compute()
+    assert _tensor_close(empty["rc/auc_empirical"], 0.0)
+    assert _tensor_close(empty["rc/auc_reference"], 0.0)
+    assert _tensor_close(empty["rc/auc_excess"], 0.0)
+
+    # Provide some data
+    preds = torch.tensor([1.0, 2.0, 3.0])
+    target = torch.tensor([1.5, 1.5, 1.5])
+    scores = torch.tensor([0.1, 0.4, 0.9])
+
+    rcm.update({"predictions": preds, "score": scores}, target)
+
+    # internal buffers should have been concatenated
+    assert rcm.scores.numel() == 3
+    assert rcm.residuals.numel() == 3
+
+    out = rcm.compute()
+    # outputs should be finite tensors
+    for k in ("rc/auc_empirical", "rc/auc_reference", "rc/auc_excess"):
+        assert k in out
+        assert torch.isfinite(out[k]).all()
+
+    curve = rcm.get_curve()
+    assert curve is not None
+    # the stored curve's AUC should match the compute() output (within tolerance)
+    assert math.isclose(
+        float(out["rc/auc_empirical"]), float(curve.auc_empirical), rel_tol=1e-6
+    )
+
+    # Reset should clear buffers but returns last compute result until next update
+    rcm.reset()
+    assert rcm.scores.numel() == 0
+    assert rcm.residuals.numel() == 0
+
+    curve_after_reset = rcm.get_curve()
+    assert curve_after_reset is None
+
+    # expect warnings because update has not been called
+    post_reset = rcm.compute()
+    assert math.isclose(
+        float(post_reset["rc/auc_empirical"]),
+        float(curve.auc_empirical),
+        rel_tol=1e-6,
+    )
+
+
+def test_risk_coverage_metric_multiple_updates_concatenate_states():
+    rcm = RiskCoverageMetric()
+    preds1 = torch.tensor([0.0, 1.0])
+    target1 = torch.tensor([0.2, 0.8])
+    scores1 = torch.tensor([0.05, 0.2])
+
+    preds2 = torch.tensor([2.0, 3.0, 4.0])
+    target2 = torch.tensor([1.5, 1.5, 1.5])
+    scores2 = torch.tensor([0.7, 0.8, 0.9])
+
+    rcm.update({"predictions": preds1, "score": scores1}, target1)
+    rcm.update({"predictions": preds2, "score": scores2}, target2)
+
+    # both updates concatenated
+    assert rcm.scores.numel() == 5
+    assert rcm.residuals.numel() == 5
+
+    # compute should work after concatenation
+    out = rcm.compute()
+    assert "rc/auc_empirical" in out
+    assert torch.isfinite(out["rc/auc_empirical"]).all()
