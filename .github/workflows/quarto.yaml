@@ -48,14 +48,11 @@ jobs:
           python -m quartodoc interlinks
           quarto render --no-cache --output-dir _site
 
-      - name: Check site output
-        run: ls -la .
-
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: _site/
+          publish_dir: /home/runner/work/seapig/_site/
           publish_branch: gh-pages
           user_name: "github-actions[bot]"
           user_email: "github-actions[bot]@users.noreply.github.com"
