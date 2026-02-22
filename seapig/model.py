@@ -48,7 +48,18 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
     target_key : target_keys, optional
         The key in the input batch dictionary corresponding to the model
         targets, by default "label".
+    acc_test_outputs : bool, optional
+        Whether to accumulate the outputs of the wrapped task’s ``test_step`` method
+        (with selection results attached). This is useful if you want to analyse
+        the selection results of test samples. By default, this is set to False,
+        meaning that the wrapper will log the metrics from the wrapped task’s
+        ``test_step`` method as usual.
+        If set to True, the wrapper will accumulate the outputs of the wrapped task’s
+        combined with te selection results to the ``test_outputs`` attribute,
+        which can be accessed after testing is complete.
     """
+
+    test_outputs: list[dict[str, Any]] | None = None
 
     def __init__(
         self,
@@ -57,16 +68,11 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         input_key: INPUT_KEYS = "image",
         target_key: TARGET_KEYS = "label",
         rc_metric: RiskCoverageMetric | None = None,
+        acc_test_outputs: bool = False,
     ) -> None:
         super().__init__()
         assert callable(getattr(task, "embed", None)), (
             "Wrapped task must have an embed() method"
-        )
-        assert hasattr(task, "test_metrics"), (
-            "Wrapped task must have test_metrics"
-        )
-        assert isinstance(task.test_metrics, (MetricCollection, Metric)), (
-            "Wrapped task's test_metrics must be a Metric or MetricCollection"
         )
         self.task = copy.deepcopy(task)
         self.task.eval()  # Ensure the wrapped task is in eval mode
@@ -85,7 +91,11 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
             )
         self.target_key = target_key
 
-        if hasattr(task, "test_metrics"):
+        self.test_metrics = None
+        if hasattr(task, "test_metrics") and task.test_metrics is not None:
+            assert isinstance(task.test_metrics, (MetricCollection, Metric)), (
+                "Wrapped task's test_metrics must be a Metric or MetricCollection"
+            )
             self.test_metrics = SelectiveMetric(
                 base=task.test_metrics,
                 prediction_key="predictions",
@@ -96,6 +106,9 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
             "rc_metric must be a seapig RiskCoverageMetric instance or None"
         )
         self.rc_metric = rc_metric
+
+        if acc_test_outputs:
+            self.test_outputs = []
 
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
@@ -153,17 +166,21 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
 
         outputs = self.forward(x)
 
-        self.test_metrics.update(outputs, y)
-        self.log_dict(self.test_metrics, batch_size=batch_size)
+        if self.test_metrics is not None:
+            self.test_metrics.update(outputs, y)
+            self.log_dict(self.test_metrics, batch_size=batch_size)
 
         # Update risk‑coverage metric; final values are logged in on_test_epoch_end
         if self.rc_metric is not None:
             self.rc_metric.update(outputs, y)
             self.log_dict(self.rc_metric, batch_size=batch_size)
 
+        if self.test_outputs is not None:
+            self.test_outputs.append(outputs)
+
     def on_test_epoch_end(self) -> None:
         """Log final computed test metrics once (avoid per-batch aggregation)."""
-        if hasattr(self, "test_metrics"):
+        if self.test_metrics is not None:
             self.log_dict(self.test_metrics.compute(), sync_dist=True)
         if self.rc_metric is not None:
             self.log_dict(self.rc_metric.compute(), sync_dist=True)

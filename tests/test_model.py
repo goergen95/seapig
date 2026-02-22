@@ -248,3 +248,62 @@ def test_get_risk_coverage_curve() -> None:
     assert hasattr(curve, "auc_empirical")
     assert hasattr(curve, "auc_reference")
     assert hasattr(curve, "auc_excess")
+
+
+def test_return_test_outputs_collects_outputs(monkeypatch) -> None:
+    """When return_test_outputs=True the wrapper accumulates per-batch
+    outputs. Also verify the default behaviour (False) leaves
+    test_outputs as None.
+    """
+    task = DummyTaskDict()
+    score = DummyScore()
+
+    # With collection enabled
+    w = SelectiveInferenceTask(task=task, score=score, acc_test_outputs=True)
+    # avoid noisy logging during the test
+    monkeypatch.setattr(w, "log_dict", lambda *a, **k: None)
+
+    batch = {
+        "image": torch.tensor([[1.0, 2.0]]),
+        "label": torch.tensor([[0, 1]]),
+    }
+    w.test_step(batch, batch_idx=0)
+
+    assert isinstance(w.test_outputs, list)
+    assert len(w.test_outputs) == 1
+    out = w.test_outputs[0]
+    assert "predictions" in out
+    assert "score" in out and "selected" in out
+
+    # With collection disabled (default)
+    w2 = SelectiveInferenceTask(task=task, score=score)
+    assert w2.test_outputs is None
+
+
+def test_return_test_outputs_without_metrics(monkeypatch) -> None:
+    """If the wrapped task does not expose test_metrics, the wrapper
+    should still collect per-batch outputs when return_test_outputs=True.
+    """
+
+    class NoMetricTask(DummyTaskDict):
+        # Explicitly remove metrics to simulate tasks that don't define them
+        test_metrics = None
+
+    task = NoMetricTask()
+    score = DummyScore()
+
+    w = SelectiveInferenceTask(task=task, score=score, acc_test_outputs=True)
+    # avoid noisy logging during the test
+    monkeypatch.setattr(w, "log_dict", lambda *a, **k: None)
+
+    batch = {
+        "image": torch.tensor([[1.0, 2.0]]),
+        "label": torch.tensor([[0, 1]]),
+    }
+    w.test_step(batch, batch_idx=0)
+
+    assert isinstance(w.test_outputs, list)
+    assert len(w.test_outputs) == 1
+    out = w.test_outputs[0]
+    assert "predictions" in out
+    assert "score" in out and "selected" in out
