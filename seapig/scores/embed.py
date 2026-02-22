@@ -442,7 +442,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         """
         raise NotImplementedError(
             "Subclasses must implement the `_score_embeddings` method."
-        )  # pragma: no cover
+        )
 
     @override
     def select(

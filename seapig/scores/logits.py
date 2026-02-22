@@ -208,7 +208,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
         torch.Tensor
             1-D tensor of shape (M,). Lower is more confident.
         """
-        pass  # pragma: no cover
+        raise NotImplementedError()
 
     def _fit_temperature(
         self, logits: torch.Tensor, labels: torch.Tensor
