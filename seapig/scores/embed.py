@@ -91,7 +91,8 @@ class EmbeddingScore(ConfidenceScore, ABC):
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def _load_pt(path: Path) -> torch.Tensor:
         """Read a file from disk to a `torch.Tensor`."""
-        return torch.load(path)
+        v: torch.Tensor = torch.load(path)
+        return v
 
     @classmethod
     def _loadorembed(
@@ -401,6 +402,9 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
         if using_embeddings:
             # Mode 1: Use precomputed embeddings - call subclass implementation
+            assert X is not None, (
+                "X is required when using precomputed embeddings."
+            )
             return self._score_embeddings(X)
         else:
             # Mode 2: Extract embeddings on-the-fly
