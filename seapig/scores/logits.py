@@ -469,12 +469,18 @@ class LogitScore(ConfidenceScore, abc.ABC):
                 device = next(model.buffers()).device
             except StopIteration:
                 device = torch.device("cpu")
-        for batch in track(loader, total=len(loader), desc=pbar_desc, unit="batches"):
+        for batch in track(
+            loader, total=len(loader), desc=pbar_desc, unit="batches"
+        ):
+            x: torch.Tensor
+            y: torch.Tensor | None
             if isinstance(batch, torch.Tensor):
                 x = batch
                 y = None
             elif isinstance(batch, dict):
-                x = batch.get("image", None)
+                _x = batch.get("image")
+                assert isinstance(_x, torch.Tensor)
+                x = _x
                 y = batch.get("label", None)
 
             assert callable(model.logits)

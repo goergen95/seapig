@@ -156,22 +156,14 @@ def test_score_preserves_model_state() -> None:
     # Test score with model in eval mode
     model.eval()
     assert not model.training, "Model should be in eval mode"
-    _ = score.score(
-        model=model, loader=test_loader, outdir=None, prefix=None
-    )
-    assert not model.training, (
-        "Model should still be in eval mode after score"
-    )
+    _ = score.score(model=model, loader=test_loader, outdir=None, prefix=None)
+    assert not model.training, "Model should still be in eval mode after score"
 
     # Test score with model in training mode
     model.train()
     assert model.training, "Model should be in training mode"
-    _ = score.score(
-        model=model, loader=test_loader, outdir=None, prefix=None
-    )
-    assert model.training, (
-        "Model should still be in training mode after score"
-    )
+    _ = score.score(model=model, loader=test_loader, outdir=None, prefix=None)
+    assert model.training, "Model should still be in training mode after score"
 
 
 def test_loop_vs_standalone_scores_match() -> None:

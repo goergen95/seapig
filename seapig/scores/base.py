@@ -186,9 +186,9 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
         # Calculate rejected samples
         if self.threshold is not None:
             threshold_value = self.threshold.cpu().item()
-            rejected_calibration = np.sum(scores > threshold_value)
+            rejected_calibration = int(np.sum(scores > threshold_value))
             rejected_query = (
-                np.sum(q_scores > threshold_value)
+                int(np.sum(q_scores > threshold_value))
                 if q_scores is not None
                 else 0
             )
