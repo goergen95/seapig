@@ -74,3 +74,4 @@ README.html
 .ruff_cache
 .mypy_cache
 plans
+_extensions

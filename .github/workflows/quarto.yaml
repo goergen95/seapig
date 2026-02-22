@@ -40,6 +40,7 @@ jobs:
 
       - name: Render site (Makefile docs sequence)
         run: |
+          quarto add machow/quartodoc --no-prompt
           quarto render README.qmd
           python -m quartodoc build --verbose
           python -m quartodoc interlinks
