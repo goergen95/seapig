@@ -113,7 +113,7 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
         while `Y` as an optional parameter that can be used to calculate
         reference scores for the decision threshold.
         """
-        raise NotImplementedError()  # pragma: no cover
+        raise NotImplementedError()
 
     @abstractmethod
     def score(self, X: torch.Tensor, *args: Any, **kwargs: Any) -> torch.Tensor:
@@ -123,7 +123,7 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
         indicate likely outliers.
 
         """
-        raise NotImplementedError()  # pragma: no cover
+        raise NotImplementedError()
 
     def select(
         self, X: torch.Tensor, *args: Any, **kwargs: Any
@@ -264,7 +264,7 @@ class RandomScore(ConfidenceScore):
         self, X: torch.Tensor | None = None, Y: torch.Tensor | None = None
     ) -> None:
         """Unused."""
-        raise NotImplementedError()  # pragma: no cover
+        raise NotImplementedError()
 
     @override
     @torch.inference_mode()  # type: ignore[untyped-decorator]
