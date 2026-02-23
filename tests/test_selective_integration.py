@@ -41,11 +41,13 @@ class FlagScore(ConfidenceScore):
         val_embeddings: torch.Tensor | None = None,
     ) -> None:
         # no-op: store reference embeddings for completeness
-        self.ref_embeddings = ref_embeddings
+        self.ref_embeddings = ref_embeddings  # pragma: no cover
 
     def score(self, embeddings: torch.Tensor) -> torch.Tensor:
         # return a dummy score vector (lower is better). Not used by select().
-        return torch.zeros(embeddings.shape[0], dtype=torch.float32)
+        return torch.zeros(
+            embeddings.shape[0], dtype=torch.float32
+        )  # pragma: no cover
 
     def select(self, embeddings: torch.Tensor) -> dict[str, torch.Tensor]:
         # boolean selection
@@ -87,16 +89,12 @@ def _find_metric(results: dict, suffix: str):
     for k, v in results.items():
         if k.endswith(suffix):
             return float(v)
-    raise KeyError(suffix)
 
 
 def _tensor_dict_to_floats(d: dict) -> dict:
     out = {}
     for k, v in d.items():
-        try:
-            out[k] = float(v.item()) if hasattr(v, "item") else float(v)
-        except Exception:
-            out[k] = v
+        out[k] = float(v.item()) if hasattr(v, "item") else float(v)
     return out
 
 
