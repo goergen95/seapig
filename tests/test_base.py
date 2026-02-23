@@ -7,6 +7,14 @@ from seapig.scores import EuclideanScore, RandomScore
 from seapig.scores.base import ConfidenceScore
 
 
+class Dummy(ConfidenceScore):
+    def fit(self, X=None, Y=None):
+        return None  # pragma: no cover
+
+    def score(self, X, *args, **kwargs):
+        return X
+
+
 def test_random_score():
     # Create a RandomScore instance
     random_score = RandomScore()
@@ -58,14 +66,6 @@ def test_base_select_sets_threshold_and_computes_selection():
     scores when threshold is None and returns the correct selection mask.
     """
 
-    class Dummy(ConfidenceScore):
-        def fit(self, X=None, Y=None):
-            return None
-
-        def score(self, X, *args, **kwargs):
-            # Return the input values as scores for determinism
-            return X.view(-1)
-
     dummy = Dummy()
 
     # Calibration scores used to compute the quantile threshold
@@ -89,35 +89,22 @@ def test_base_select_sets_threshold_and_computes_selection():
 
 
 def test_flag_methods_and_setters() -> None:
-    class T(ConfidenceScore):
-        def fit(self, X=None, Y=None):
-            return None
 
-        def score(self, X, *args, **kwargs):
-            return torch.zeros(X.shape[0])
-
-    t = T()
+    dummy = Dummy()
     # defaults
-    assert t.requires_training() is False
-    assert t.requires_calibration() is False
-    assert t.is_trained() is False
-    assert t.is_calibrated() is False
+    assert dummy.requires_training() is False
+    assert dummy.requires_calibration() is False
+    assert dummy.is_trained() is False
+    assert dummy.is_calibrated() is False
 
-    t.set_trained()
-    t.set_calibrated()
-    assert t.is_trained() is True
-    assert t.is_calibrated() is True
+    dummy.set_trained()
+    dummy.set_calibrated()
+    assert dummy.is_trained() is True
+    assert dummy.is_calibrated() is True
 
 
 def test_set_threshold_invalid_quantile_raises() -> None:
-    class Local(ConfidenceScore):
-        def fit(self, X=None, Y=None):
-            return None
-
-        def score(self, X, *args, **kwargs):
-            return torch.zeros(X.shape[0])
-
-    s = Local()
+    s = Dummy()
     with pytest.raises(AssertionError):
         s.set_threshold(q=1.0)
     with pytest.raises(AssertionError):
@@ -128,24 +115,12 @@ def test_plot_raises_import_error_when_matplotlib_missing(monkeypatch):
     # Simulate matplotlib not being installed by intercepting imports
     import builtins
 
-    from seapig.scores.base import ConfidenceScore
-
-    class Dummy(ConfidenceScore):
-        def fit(self, X=None, Y=None):
-            return None
-
-        def score(self, X, *args, **kwargs):
-            return torch.zeros(X.shape[0])
-
     d = Dummy()
     d.scores = torch.tensor([0.1, 0.2])
-
-    orig_import = builtins.__import__
 
     def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
         if name == "matplotlib" or name.startswith("matplotlib."):
             raise ImportError("No module named matplotlib")
-        return orig_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
 
