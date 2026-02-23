@@ -68,6 +68,36 @@ seapig/
 └── LICENSE
 ```
 
+## Installation
+
+To install the package, clone the repository and create/activate a virtual 
+environment, then install with pip. Below are short, copy‑paste commands for 
+POSIX systems. 
+
+```bash
+# clone the project
+git clone https://github.com/goergen95/seapig.git
+cd seapig
+
+# create + activate a virtual environment (POSIX)
+python -m venv .venv
+source .venv/bin/activate
+
+# upgrade pip and install the package (core runtime)
+python -m pip install --upgrade pip
+python -m pip install .
+
+# recommended for end users who want extra (optional) features
+python -m pip install ".[suggested]"
+
+# for contributors / developers (tests, linters, docs)
+python -m pip install ".[dev]"
+# for building documentation (quarto-cli, quartodocs, others)
+python -m pip install ".[docs]"
+# or, if you need everything, including optional runtime extras:
+python -m pip install ".[all]"
+```
+
 ### Key Modules
 
 - `seapig.scores.base.BaseScore`: Abstract base class with the score API

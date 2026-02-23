@@ -12,6 +12,36 @@ decide whether to accept or reject an individual query sample at
 prediction time. Thresholds are calibrated on an independent validation
 set.
 
+### Installation
+
+To install the package, clone the repository and create/activate a
+virtual environment, then install with pip. Below are short, copy‑paste
+commands for POSIX systems.
+
+``` bash
+# clone the project
+git clone https://github.com/goergen95/seapig.git
+cd seapig
+
+# create + activate a virtual environment (POSIX)
+python -m venv .venv
+source .venv/bin/activate
+
+# upgrade pip and install the package (core runtime)
+python -m pip install --upgrade pip
+python -m pip install .
+
+# recommended for end users who want extra (optional) features
+python -m pip install ".[suggested]"
+
+# for contributors / developers (tests, linters, docs)
+python -m pip install ".[dev]"
+# for building documentation (quarto-cli, quartodocs, others)
+python -m pip install ".[docs]"
+# or, if you need everything, including optional runtime extras:
+python -m pip install ".[all]"
+```
+
 ### Why selective prediction?
 
 - Machine learning models often fail silently on out-of-distribution
@@ -65,6 +95,10 @@ print(sel)
 
     {'score': tensor([6.2663, 5.5952, 6.0250, 5.8910, 6.2953, 4.8393, 5.7325, 5.3731, 5.6600,
             5.9184]), 'selected': tensor([ True,  True,  True,  True, False,  True,  True,  True,  True,  True])}
+
+    Your CPU supports instructions that this binary was not compiled to use: SSE3 SSE4.1 SSE4.2 AVX AVX2
+    For maximum performance, you can install NMSLIB from sources 
+    pip install --no-binary :all: nmslib
 
 #### On-the-fly embedding extraction
 
