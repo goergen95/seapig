@@ -17,24 +17,6 @@ from seapig import RiskCoverageMetric, SelectiveInferenceTask, SelectiveMetric
 from seapig.scores.base import RandomScore
 
 
-class DummyScore:
-    """Minimal duck-typed score with select() and to()."""
-
-    def __init__(self) -> None:
-        self.last_device: str | None = None
-
-    def to(self, device: str) -> "DummyScore":
-        self.last_device = device
-        return self
-
-    def select(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
-        b = x.shape[0]
-        return {
-            "score": torch.arange(b, dtype=x.dtype, device=x.device),
-            "selected": torch.ones(b, dtype=torch.bool, device=x.device),
-        }
-
-
 class DummyTaskTensor(LightningModule):
     """Task that returns a tensor from predict()."""
 
@@ -56,7 +38,7 @@ class DummyTaskDict(LightningModule):
     test_metrics: MetricCollection = MetricCollection(Accuracy(task="binary"))
 
     def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:  # type: ignore[override]
-        return {"predictions": 3 * x, "extra": x.sum(dim=1)}
+        return {"predictions": 3 * x, "extra": x.sum(dim=1)}  # pragma: no cover
 
 
 def test_selective_metric_binary_accuracy_full_vs_selected() -> None:
