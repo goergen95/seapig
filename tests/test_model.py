@@ -10,14 +10,7 @@ from seapig.scores.base import ConfidenceScore
 
 
 class DummyScore(ConfidenceScore):
-    """Minimal duck-typed score with select() and to()."""
-
-    def __init__(self) -> None:
-        self.last_device: str | None = None
-
-    def to(self, device: str) -> "DummyScore":
-        self.last_device = device
-        return self
+    """Minimal duck-typed score with select()."""
 
     def select(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         b = x.shape[0]
@@ -27,14 +20,16 @@ class DummyScore(ConfidenceScore):
         }
 
     def score(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.zeros(x.shape[0], dtype=x.dtype, device=x.device)
+        return torch.zeros(
+            x.shape[0], dtype=x.dtype, device=x.device
+        )  # pragma: no cover
 
     def fit(self, x: torch.Tensor) -> None:
         """Dummy implementation of fit."""
-        pass
+        raise NotImplementedError()
 
     @override
-    def set_threshold(self, q: float) -> None:
+    def set_threshold(self, q: float) -> None:  # pragma: no cover
         """Dummy implementation of set_threshold."""
         self.threshold = q
 
