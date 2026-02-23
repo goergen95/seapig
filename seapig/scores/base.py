@@ -1,10 +1,11 @@
 """Base Classes for Confidence Scores."""
 
 from abc import ABC, abstractmethod
-from typing import Any, override
+from typing import Any
 
 import numpy as np
 import torch
+from typing_extensions import override
 
 from seapig.utils import get_logger
 

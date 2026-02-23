@@ -4,11 +4,12 @@ import math
 import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, override
+from typing import Any
 
 import nmslib
 import torch
 from torch.utils.data import DataLoader
+from typing_extensions import override
 
 from seapig.scores.embed import EmbeddingScore
 from seapig.scores.utils import TensorPCA

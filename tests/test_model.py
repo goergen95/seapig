@@ -1,9 +1,8 @@
-from typing import override
-
 import pytest
 import torch
 from pytorch_lightning import LightningModule
 from torchmetrics import Accuracy, MetricCollection
+from typing_extensions import override
 
 from seapig import RiskCoverageMetric, SelectiveInferenceTask
 from seapig.scores.base import ConfidenceScore
