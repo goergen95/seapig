@@ -37,6 +37,11 @@ class SimpleBatchDataset(Dataset):
         return self.items[idx]
 
 
+class IdentityModel(torch.nn.Module):
+    def logits(self, x):
+        return x.squeeze(0) if x.dim() > 2 and x.shape[0] == 1 else x
+
+
 def make_loader_from_tensors(logits, labels=None):
     if labels is None:
         items = [la.unsqueeze(0) for la in logits]
@@ -52,10 +57,6 @@ def test_fit_saves_files(tmp_path: Path):
     logits = torch.tensor([[2.0, 0.5], [0.1, 1.2]])
     labels = logits.argmax(dim=1)
     loader = make_loader_from_tensors(logits, labels)
-
-    class IdentityModel(torch.nn.Module):
-        def logits(self, x):
-            return x.squeeze(0) if x.dim() > 2 and x.shape[0] == 1 else x
 
     model = IdentityModel()
     score = SoftmaxScore()
@@ -101,10 +102,6 @@ def test_fit_batch_formats(batch_format):
     else:
         items = [logits[i].unsqueeze(0) for i in range(len(logits))]
     loader = DataLoader(SimpleBatchDataset(items), batch_size=1, shuffle=False)
-
-    class IdentityModel(torch.nn.Module):
-        def logits(self, x):
-            return x.squeeze(0) if x.dim() > 2 and x.shape[0] == 1 else x
 
     model = IdentityModel()
     score = EnergyScore()
@@ -521,14 +518,10 @@ def test_multilabel_all_zero_logits():
 
 
 def test_fit_empty_loader(tmp_path: Path):
-    class DummyModel(torch.nn.Module):
-        def logits(self, x):
-            return x
-
     loader = DataLoader(SimpleBatchDataset([]), batch_size=1)
     score = SoftmaxScore()
     with pytest.raises(ValueError, match="No batches found in loader"):
-        score.fit(model=DummyModel(), loader=loader, outdir=tmp_path)
+        score.fit(model=IdentityModel(), loader=loader, outdir=tmp_path)
 
 
 def test_fit_temperature_nan_labels():
@@ -585,14 +578,10 @@ def test_loadorpredict_loads_from_disk(tmp_path):
     path = tmp_path / "logits.pt"
     torch.save({"logits": logits, "labels": labels}, path)
 
-    class DummyModel(torch.nn.Module):
-        def logits(self, x):
-            return x
-
     loader = []
     score = SoftmaxScore()
     loaded_logits, loaded_labels = score._loadorpredict(
-        path, DummyModel(), loader
+        path, IdentityModel(), loader
     )
     assert torch.allclose(loaded_logits, logits)
     assert torch.allclose(loaded_labels, labels)
@@ -602,14 +591,10 @@ def test_loadorpredict_missing_logits(tmp_path):
     path = tmp_path / "bad.pt"
     torch.save({"labels": torch.tensor([1, 2])}, path)
 
-    class DummyModel(torch.nn.Module):
-        def logits(self, x):
-            return x
-
     loader = []
     score = SoftmaxScore()
     with pytest.raises(ValueError, match="does not contain 'logits'"):
-        score._loadorpredict(path, DummyModel(), loader)
+        score._loadorpredict(path, IdentityModel(), loader)
 
 
 def test_check_model_requires_x_param():
