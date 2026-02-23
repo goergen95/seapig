@@ -271,6 +271,9 @@ def test_normalize_multiclass():
     labels2 = labels.unsqueeze(1)
     nl2, lab2 = s._normalize_logits_and_labels(logits, labels2)
     assert lab2.shape == (7,)
+    logits_bad_shape = logits.unsqueeze(0)
+    with pytest.raises(ValueError, match="multiclass logits must have shape"):
+        s._normalize_logits_and_labels(logits_bad_shape, labels)
 
 
 def test_normalize_binary_single_logit():
@@ -291,6 +294,16 @@ def test_normalize_binary_two_logit():
     assert nl.shape == (6, 2)
     assert lab.shape == (6,)
     assert lab.dtype == torch.long
+    logits_bad_shape = torch.randn(6, 3)
+    with pytest.raises(
+        ValueError, match="binary two-logit logits must have shape"
+    ):
+        s._normalize_logits_and_labels(logits_bad_shape, labels)
+    labels = labels.unsqueeze(1).to(dtype=torch.bool)
+    nl, lab = s._normalize_logits_and_labels(logits, labels)
+    assert nl.shape == (6, 2)
+    assert lab.shape == (6,)
+    assert lab.dtype == torch.long
 
 
 def test_normalize_multilabel():
@@ -301,6 +314,21 @@ def test_normalize_multilabel():
     assert nl.shape == (5, 3)
     assert lab.shape == (5, 3)
     assert lab.dtype == torch.float32
+    logits_bad_shape = logits.unsqueeze(0)
+    with pytest.raises(ValueError, match="multilabel logits must have shape"):
+        s._normalize_logits_and_labels(logits_bad_shape, labels)
+    labels_bad_shape = labels.unsqueeze(0)
+    with pytest.raises(
+        ValueError, match="multilabel labels must have same shape as logits"
+    ):
+        s._normalize_logits_and_labels(logits, labels_bad_shape)
+
+
+def test_unknown_task_normalize_raises():
+    s = make_score_with_task("multiclass")
+    s.task = "not_a_task"
+    with pytest.raises(ValueError, match="Unknown task: not_a_task"):
+        s._normalize_logits_and_labels(torch.randn(2, 3), torch.tensor([0, 1]))
 
 
 @pytest.mark.parametrize("task", ["multiclass", "binary", "multilabel"])
@@ -517,11 +545,10 @@ def test_check_model_requires_logits_method():
     class NoLogits(torch.nn.Module):
         pass
 
-    model = NoLogits()
     with pytest.raises(
-        Exception, match="required to have a `\\.logits\\(\\)` method\\..*"
+        Exception, match="model is required to have a `\\.logits\\(\\)` method"
     ):
-        LogitScore._check_model(model)
+        LogitScore._check_model(NoLogits())
 
 
 def test_check_model_logits_signature():
@@ -583,3 +610,101 @@ def test_loadorpredict_missing_logits(tmp_path):
     score = SoftmaxScore()
     with pytest.raises(ValueError, match="does not contain 'logits'"):
         score._loadorpredict(path, DummyModel(), loader)
+
+
+def test_check_model_requires_x_param():
+    class BadSigModel(torch.nn.Module):
+        def logits(self):
+            return torch.tensor([1.0])
+
+    with pytest.raises(
+        Exception,
+        match="`.logits\\(\\)` method is required to except `x` as argument",
+    ):
+        LogitScore._check_model(BadSigModel())
+
+
+def test_fit_arg_validation_conflicting_inputs():
+    s = SoftmaxScore()
+    # both precomputed and model provided -> ValueError
+    with pytest.raises(
+        ValueError, match="Cannot specify both precomputed logits"
+    ):
+        s.fit(X=torch.randn(2, 3), model=object())
+
+
+def test_fit_requires_one_input():
+    s = SoftmaxScore()
+    with pytest.raises(
+        ValueError, match="Must specify either logits or model\\+loader"
+    ):
+        s.fit()
+
+
+def test_loadorpredict_missing_logits_field(tmp_path: Path):
+    s = SoftmaxScore()
+
+    class M(torch.nn.Module):
+        def logits(self, x):
+            return x
+
+    model = M()
+    p = tmp_path / "bad.pt"
+    torch.save({"labels": torch.tensor([1])}, p)
+    with pytest.raises(ValueError, match="does not contain 'logits'"):
+        s._loadorpredict(
+            path=p,
+            model=model,
+            loader=make_loader_from_tensors(torch.randn(1, 2)),
+        )
+
+
+def test_logits_from_loader_non_tensor():
+    class M(torch.nn.Module):
+        def logits(self, x):
+            return [1, 2, 3]
+
+    model = M()
+    loader = make_loader_from_tensors(torch.randn(1, 2))
+    s = SoftmaxScore()
+    with pytest.raises(
+        ValueError, match="Extracted logits is not a torch.Tensor"
+    ):
+        s._logits_from_loader(model=model, loader=loader)
+
+
+def test_logits_from_loader_no_batches():
+    loader = DataLoader(SimpleBatchDataset([]), batch_size=1)
+
+    class M(torch.nn.Module):
+        def logits(self, x):
+            return x
+
+    model = M()
+    s = SoftmaxScore()
+    with pytest.raises(ValueError, match="No batches found in loader"):
+        s._logits_from_loader(model=model, loader=loader)
+
+
+def test_normalize_raises_on_missing_labels():
+    s = make_score_with_task("multiclass")
+    with pytest.raises(ValueError, match="labels must be provided"):
+        s._normalize_logits_and_labels(torch.randn(2, 3), None)
+
+
+def test_temperature_loss_unknown_task_raises():
+    s = make_score_with_task("multiclass")
+    s.task = "unknown_task"
+    with pytest.raises(ValueError, match="Unknown task: unknown_task"):
+        s._temperature_loss(torch.randn(2, 3), torch.tensor([0, 1]))
+
+
+@pytest.mark.parametrize(
+    "cls", [SoftmaxScore, EnergyScore, MarginScore, EntropyScore]
+)
+def test_score_methods_unknown_task_raise(cls):
+    inst = cls()
+    inst.task = "not_a_task"
+    sample = torch.randn(2, 3)
+    with pytest.raises(ValueError, match="Unknown task: not_a_task"):
+        inst.score(sample)
