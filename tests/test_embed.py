@@ -12,18 +12,25 @@ from seapig.scores.utils import TensorPCA
 class DummyModel(torch.nn.Module):
     def embed(self, x):  # must accept 'x' param
         if isinstance(x, dict):
-            x = x["image"]
+            x = x["image"]  # pragma: no cover
         return x
 
 
 class DummyBadModel(torch.nn.Module):
     def not_embed(self, x):
-        return x
+        return x  # pragma: no cover
 
 
 class DummyBadSignature(torch.nn.Module):
     def embed(self):  # missing 'x' param
-        return torch.zeros(1, 2)
+        return torch.zeros(1, 2)  # pragma: no cover
+
+
+class IdentityModel(torch.nn.Module):
+    def embed(self, x):
+        if isinstance(x, dict):
+            x = x["image"]  # pragma: no cover
+        return x
 
 
 class DummyEmbedding(EmbeddingScore):
@@ -219,11 +226,6 @@ def test_fit_model_without_embed_raises(tmp_path) -> None:
 
 
 def test_score_with_model_loader_writes_and_returns_tensor(tmp_path) -> None:
-    class IdentityModel(torch.nn.Module):
-        def embed(self, x):
-            if isinstance(x, dict):
-                x = x["image"]
-            return x
 
     samples = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
     dataset = TensorDataset(samples)
@@ -248,12 +250,6 @@ def test_score_with_model_loader_writes_and_returns_tensor(tmp_path) -> None:
 
 
 def test_select_with_model_loader_respects_threshold(tmp_path) -> None:
-    class IdentityModel(torch.nn.Module):
-        def embed(self, x):
-            if isinstance(x, dict):
-                x = x["image"]
-            return x
-
     samples = torch.tensor([[0.0, 0.0], [10.0, 10.0]])
     dataset = TensorDataset(samples)
     loader = DataLoader(
@@ -333,13 +329,6 @@ def test_score_with_embeddings_only() -> None:
 
 def test_score_with_model_loader_only() -> None:
     """Test that score() works with model+loader parameters."""
-
-    class IdentityModel(torch.nn.Module):
-        def embed(self, x):
-            if isinstance(x, dict):
-                x = x["image"]
-            return x
-
     s = MinimalEmbedding()
     s.train_required = False
     s.cal_required = False
@@ -371,10 +360,6 @@ def test_score_rejects_mixed_parameters() -> None:
     dataset = TensorDataset(samples)
     loader = DataLoader(dataset, batch_size=1)
 
-    class IdentityModel(torch.nn.Module):
-        def embed(self, x):
-            return x
-
     # Should raise ValueError when both X and model are provided
     with pytest.raises(ValueError, match="Cannot specify both embeddings"):
         s.score(X=embeddings, model=IdentityModel(), loader=loader)
@@ -396,10 +381,6 @@ def test_score_requires_loader_when_model_provided() -> None:
     s = MinimalEmbedding()
     s.train_required = False
     s.cal_required = False
-
-    class IdentityModel(torch.nn.Module):
-        def embed(self, x):
-            return x
 
     # Should raise ValueError when model provided without loader
     with pytest.raises(
@@ -429,12 +410,6 @@ def test_select_with_embeddings_only() -> None:
 
 def test_select_with_model_loader_only() -> None:
     """Test that select() works with model+loader parameters."""
-
-    class IdentityModel(torch.nn.Module):
-        def embed(self, x):
-            if isinstance(x, dict):
-                x = x["image"]
-            return x
 
     s = MinimalEmbedding()
     s.train_required = False
@@ -470,10 +445,6 @@ def test_select_rejects_mixed_parameters() -> None:
     samples = torch.tensor([[1.0, 2.0]])
     dataset = TensorDataset(samples)
     loader = DataLoader(dataset, batch_size=1)
-
-    class IdentityModel(torch.nn.Module):
-        def embed(self, x):
-            return x
 
     # Should raise ValueError when both X and model are provided
     with pytest.raises(ValueError, match="Cannot specify both embeddings"):
@@ -537,11 +508,6 @@ def test_embed_accepts_dict_and_sequence_inputs() -> None:
 def test_fit_parameter_validation_errors() -> None:
     s = MinimalEmbedding()
     X = torch.randn(2, 4)
-
-    # both X and model should raise
-    class IdentityModel(torch.nn.Module):
-        def embed(self, x):
-            return x
 
     with pytest.raises(ValueError, match="Cannot specify both embeddings"):
         s.fit(X=X, model=IdentityModel(), loaders=None)
@@ -674,11 +640,6 @@ def test_fit_errors_when_both_or_neither_provided() -> None:
     # neither embeddings nor model/loaders
     with pytest.raises(ValueError, match="Must specify either embeddings"):
         s.fit()
-
-    # both embeddings and model provided
-    class IdentityModel(torch.nn.Module):
-        def embed(self, x):
-            return x
 
     with pytest.raises(ValueError, match="Cannot specify both embeddings"):
         s.fit(X=emb, model=IdentityModel(), loaders={})
