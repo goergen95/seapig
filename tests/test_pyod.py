@@ -21,7 +21,7 @@ class _MockDetectorBasic:
         self.decision_scores_ = np.zeros(X.shape[0])
 
     def decision_function(self, X: np.ndarray) -> np.ndarray:
-        return np.full(X.shape[0], self._call_score)
+        return np.full(X.shape[0], self._call_score)  # pragma: no cover
 
 
 class _MockDetectorRange:
@@ -36,7 +36,7 @@ class _MockDetectorRange:
         self.decision_scores_ = np.linspace(0.0, 1.0, n)
 
     def decision_function(self, X: np.ndarray) -> np.ndarray:
-        return np.zeros(X.shape[0])
+        return np.zeros(X.shape[0])  # pragma: no cover
 
 
 def test_fit_sets_trained_and_scores_without_cal() -> None:
