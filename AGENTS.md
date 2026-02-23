@@ -445,10 +445,10 @@ Three workflows run on push and pull requests to `main`:
 **Purpose**: Run pytest with coverage reporting
 
 **Trigger**: Push/PR to main
-**Python Version**: 3.12
+**Python Version**: [3.10, 3.11, 3.12]
 **Steps**:
 1. Checkout code
-2. Setup Python 3.12
+2. Setup Python
 3. Cache pip dependencies
 4. Install package with dev extras: `pip install .[dev]`
 5. Run tests: `pytest --cov --junitxml=junit.xml`
@@ -744,7 +744,7 @@ make clean                        # Clean build artifacts
 - **Documentation**: Built via Quarto and deployed to GitHub Pages
 - **Issues**: GitHub issue tracker
 - **License**: MIT
-- **Python Version**: >=3.12
+- **Python Version**: >=3.10
 
 ---
 
