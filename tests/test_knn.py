@@ -191,9 +191,9 @@ def test_pca_reduces_dimension_and_preserves_euclidean() -> None:
     s_proj.ref_embeddings = s_pca.ref_embeddings.clone()
     s_proj._setup_index()
 
-    # get the PCA-transformed query via the fitted PCA (KNNScore uses pca.predict)
+    # get the PCA-transformed query via the fitted PCA (KNNScore uses pca.transform)
     assert s_pca.pca is not None
-    q_proj = s_pca.pca.predict(q)
+    q_proj = s_pca.pca.transform(q)
 
     out_with_pca = s_pca.score(q)
     out_manual = s_proj._distance(q_proj, kpn=0)
@@ -223,7 +223,7 @@ def test_pca_preserves_cosine_similarity() -> None:
     s_proj._setup_index()
 
     assert s_pca.pca is not None
-    q_proj = s_pca.pca.predict(q)
+    q_proj = s_pca.pca.transform(q)
 
     out_with_pca = s_pca.score(q)
     out_manual = s_proj._distance(q_proj, kpn=0)

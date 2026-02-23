@@ -30,9 +30,7 @@ class PCAScore(EmbeddingScore):
 
     ident = "pca"
 
-    def __init__(
-        self, pca: TensorPCA = TensorPCA(exp_var=0.50, gamma=3.0, M=4096)
-    ) -> None:
+    def __init__(self, pca: TensorPCA = TensorPCA(exp_var=0.50)) -> None:
         super().__init__(pca=pca)
 
     @override
