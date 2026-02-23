@@ -102,7 +102,7 @@ python -m pip install ".[all]"
 
 - `seapig.scores.base.BaseScore`: Abstract base class with the score API
 - `seapig.scores.embed.EmbeddingScore`: DataLoader helpers (fit_dl, score_dl)
-- `seapig.scores.knn.KNNScore`: FAISS-backed KNN score base
+- `seapig.scores.knn.KNNScore`: NMSLIB-backed KNN score base
 - `seapig.utils.progress`: Centralised progress reporting (track(), enable(), set_backend(), ...)
 - `seapig.logging`: Package logging scaffold (get_logger, configure_logging)
 - `seapig.model.SelectiveInferenceTask`: Lightning integration wrapper
@@ -283,7 +283,7 @@ Core dependencies (from `required.txt`):
 - **scikit-learn**: Machine learning utilities (PCA, metrics)
 - **tqdm**: Progress bars
 - **pyarrow**: Efficient data serialization
-- **faiss-cpu**: Fast approximate nearest neighbor search
+- **nmslib**: Fast approximate nearest neighbor search
 - **pyod**: Outlier detection algorithms
 
 ### Development Dependencies
@@ -728,7 +728,7 @@ If introducing breaking changes:
 ### Performance Considerations
 
 - Use PyTorch operations over Python loops
-- Leverage FAISS for nearest-neighbor search
+- Leverage NMSLIB for nearest-neighbor search
 - Consider memory usage for large embedding sets
 - Profile before optimizing
 - Document computational complexity in docstrings
