@@ -14,7 +14,8 @@ try:
     from pyod.models.knn import KNN
 
     from seapig.scores.pyod import PyODScore
-except ImportError:
+
+except ImportError:  # pragma: no cover
     KNN = None
     print("PyOD is not installed; skipping PyODScore tests.")
 
@@ -24,16 +25,12 @@ class DummyModel(torch.nn.Module):
 
     def embed(self, x):
         if isinstance(x, dict):
-            x = x["image"]
+            x = x["image"]  # pragma: no cover
         return x
-
-
-class DummyLogitsModel(torch.nn.Module):
-    """Dummy model for testing logits extraction."""
 
     def logits(self, x):
         if isinstance(x, dict):
-            x = x["image"]
+            x = x["image"]  # pragma: no cover
         # Return simple logits based on input
         return torch.randn(x.shape[0], 3)
 
@@ -47,7 +44,7 @@ class MinimalEmbedding(EmbeddingScore):
         self.cal_required = False
 
     def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
-        return X.sum(dim=1)
+        return X.sum(dim=1)  # pragma: no cover
 
 
 def test_fit_with_embeddings_only() -> None:
@@ -270,7 +267,7 @@ def test_logit_score_fit_with_logits() -> None:
 
 def test_logit_score_fit_with_model() -> None:
     """Test LogitScore fit() with model and loader."""
-    model = DummyLogitsModel()
+    model = DummyModel()
     data = torch.randn(10, 8)
     loader = DataLoader(
         TensorDataset(data),
@@ -287,7 +284,7 @@ def test_logit_score_fit_with_model() -> None:
 
 def test_logit_score_rejects_both_logits_and_model() -> None:
     """Test that LogitScore fit() rejects both logits and model."""
-    model = DummyLogitsModel()
+    model = DummyModel()
     logits = torch.randn(10, 3)
     loader = DataLoader([torch.randn(8)])
 
