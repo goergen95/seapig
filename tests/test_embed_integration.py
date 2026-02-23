@@ -84,17 +84,12 @@ class SimpleL2Score(EmbeddingScore):
     def _fit_impl(self) -> None:
         assert self.ref_embeddings is not None
         self.set_trained()
-        if self.cal_embeddings is None:
-            dists = torch.cdist(self.ref_embeddings, self.ref_embeddings)
-            dists.fill_diagonal_(float("inf"))
-            self.scores = dists.min(dim=1).values
-        else:
-            self.scores = (
-                torch.cdist(self.cal_embeddings, self.ref_embeddings)
-                .min(dim=1)
-                .values
-            )
-            self.set_calibrated()
+        self.scores = (
+            torch.cdist(self.cal_embeddings, self.ref_embeddings)
+            .min(dim=1)
+            .values
+        )
+        self.set_calibrated()
 
     def fit(
         self,
