@@ -2,6 +2,7 @@
 
 from seapig.scores.base import ConfidenceScore, RandomScore
 from seapig.scores.embed import EmbeddingScore
+from seapig.scores.index_manager import IndexManager
 from seapig.scores.knn import (
     CosineScore,
     EuclideanScore,
@@ -20,6 +21,7 @@ from seapig.scores.pca import PCAScore
 __all__ = [
     "ConfidenceScore",
     "EmbeddingScore",
+    "IndexManager",
     "KNNScore",
     "RandomScore",
     "EuclideanScore",

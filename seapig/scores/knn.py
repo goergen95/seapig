@@ -1,6 +1,5 @@
 """KNN-based confidence scores."""
 
-import math
 import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -12,11 +11,8 @@ from torch.utils.data import DataLoader
 from typing_extensions import override
 
 from seapig.scores.embed import EmbeddingScore
+from seapig.scores.index_manager import IndexManager
 from seapig.scores.utils import TensorPCA
-
-
-def _clamp(value: int, lo: int, hi: int) -> int:
-    return max(lo, min(hi, value))
 
 
 class KNNScore(EmbeddingScore, ABC):
@@ -59,6 +55,7 @@ class KNNScore(EmbeddingScore, ABC):
     cal_embeddings: torch.Tensor | None
     index: Any | None = None
     index_path: Path | None = None
+    _index_manager: IndexManager | None = None
 
     def __init__(
         self,
@@ -199,7 +196,9 @@ class KNNScore(EmbeddingScore, ABC):
             A `torch.tensor`or representing sample embeddings. Expected dimensions
             are (B,D).
         """
-        assert self.index is not None, "Index must be built before scoring"
+        assert self._index_manager is not None, (
+            "Index must be built before scoring"
+        )
         if self.pca is not None:
             X = self.pca.transform(X)
         score = self._distance(query=X)
@@ -216,69 +215,55 @@ class KNNScore(EmbeddingScore, ABC):
         pass
 
     def _build_index(self, embs: torch.Tensor, space: str = "l2") -> None:
-        """Build an index based on reference embeddings.
+        """Build an index via IndexManager.
 
-        The embeddings can be preprocessed (e.g. normalized or transformed) before
-        being passed to this method. The `space` parameter should be set accordingly
-        to match the type of distance being calculated. Typically called
-        within the `_setup_index()` method of child classes.
+        The embeddings can be preprocessed (e.g. normalized or transformed)
+        before being passed to this method. The `space` parameter should
+        be set accordingly to match the type of distance being calculated.
+        Typically called within the `_setup_index()` method of child
+        classes.
         """
         assert isinstance(embs, torch.Tensor)
         index_path = self.index_path
         params = self._suggest_index_params(embs=embs, k=self.k)
-        index = nmslib.init(method="hnsw", space=space)
+
+        mgr = IndexManager(method="hnsw", space=space)
+        mgr.fit(embs)
 
         if index_path is None or not index_path.exists():
-            index.addDataPointBatch(embs.cpu())
-            index.createIndex(index_params=params["build_defaults"])
+            mgr.build_index(hnsw_params=params["build_defaults"])
+            # Override with k-aware query params from _suggest_index_params
+            mgr._index_params = params
             if index_path:
-                index.saveIndex(index_path.as_posix(), save_data=False)
+                assert mgr._index is not None
+                mgr._index.saveIndex(index_path.as_posix(), save_data=False)
         else:
             warnings.warn(
                 f"Index file {index_path} already exists. Loading existing index from disk.",
                 UserWarning,
             )
-            index.loadIndex(index_path.as_posix(), load_data=False)
+            nmslib_index = nmslib.init(method="hnsw", space=space)
+            nmslib_index.addDataPointBatch(embs.cpu())
+            nmslib_index.loadIndex(index_path.as_posix(), load_data=False)
+            mgr._index = nmslib_index
+            mgr._index_params = params
 
+        self._index_manager = mgr
         self.index_params = params
-        self.index = index
+        self.index = mgr._index
 
     @staticmethod
     def _suggest_index_params(
         embs: torch.Tensor, k: int = 10
     ) -> dict[str, Any]:
-        """Suggest conservative HNSW index and query-time parameters."""
-        if embs.dim() != 2:
-            raise ValueError("ref_embeddings must be 2D (N, D)")
-        N, D = map(int, embs.shape)
+        """Suggest conservative HNSW index and query-time parameters.
 
-        if N < 10:
-            return {
-                "build_defaults": {"post": 0},
-                "query_defaults": {"efSearch": k},
-            }
-
-        M = _clamp(int(round(2.0 * math.sqrt(D))), 8, 64)
-        base = 150 if N < 5_000 else 300 if N < 50_000 else 600
-        ef_construction = _clamp(
-            int(round(base * (1.0 + (D / 128.0) * 0.5))), 100, 2000
-        )
-
-        ef_search = max(
-            max(32, k * 8), min(max(128, ef_construction // 4), 512)
-        )
-
-        return {
-            "build_defaults": {
-                "M": M,
-                "efConstruction": ef_construction,
-                "post": 0,
-            },
-            "query_defaults": {"efSearch": ef_search},
-        }
+        Delegates to `IndexManager._suggest_hnsw_params`.
+        """
+        return IndexManager._suggest_hnsw_params(embs=embs, k=k)
 
     def _query_index(self, query: torch.Tensor, kpn: int) -> torch.Tensor:
-        """Query the index for KNN distances.
+        """Query the index for KNN distances via IndexManager.
 
         The `kpn` parameter allows for retrieving additional neighbors beyond the
         specified `k` to handle cases where a point is both in the reference
@@ -290,12 +275,10 @@ class KNNScore(EmbeddingScore, ABC):
         from skewing the scores. The `_query_index()` method is typically called
         within the `_distance()` method of child classes.
         """
-        assert self.index is not None, "Index must be built before querying"
-        nmslib.setQueryTimeParams(
-            self.index, self.index_params["query_defaults"]
+        assert self._index_manager is not None, (
+            "Index must be built before querying"
         )
-        results = self.index.knnQueryBatch(query.cpu(), k=self.k + kpn)
-        distances = self._zeropad(results, kpn=kpn)
+        _, distances = self._index_manager.search(query, k=self.k + kpn)
         distances = self._stat(distances[:, kpn:])
         return distances
 
