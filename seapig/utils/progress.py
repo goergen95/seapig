@@ -39,7 +39,9 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Iterable, Iterator
-from typing import Any
+from typing import Any, TypeVar
+
+T = TypeVar("T")
 
 __all__ = [
     "track",
@@ -192,7 +194,7 @@ def get_backend() -> str:
 # ---------------------------------------------------------------------------
 
 
-def track[T](
+def track(
     iterable: Iterable[T],
     total: int | None = None,
     desc: str = "Working…",
