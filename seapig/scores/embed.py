@@ -4,10 +4,11 @@ import inspect
 import warnings
 from abc import ABC
 from pathlib import Path
-from typing import Any, Literal, override
+from typing import Any, Literal
 
 import torch
 from torch.utils.data import DataLoader
+from typing_extensions import override
 
 from seapig.scores.base import ConfidenceScore
 from seapig.scores.utils import TensorPCA

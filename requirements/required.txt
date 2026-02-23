@@ -5,3 +5,4 @@ torchmetrics
 tqdm
 nmslib
 lightning
+typing_extensions

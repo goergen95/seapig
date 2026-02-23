@@ -1,10 +1,10 @@
 """PCA based dimensionality reduction and confidence scoring."""
 
 from pathlib import Path
-from typing import override
 
 import torch
 from torch.utils.data import DataLoader
+from typing_extensions import override
 
 from seapig.scores.embed import EmbeddingScore
 from seapig.scores.utils import TensorPCA

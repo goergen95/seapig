@@ -11,11 +11,11 @@ from __future__ import annotations
 import abc
 import inspect
 from pathlib import Path
-from typing import override
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from typing_extensions import override
 
 from seapig.scores.base import ConfidenceScore
 from seapig.utils.progress import track
