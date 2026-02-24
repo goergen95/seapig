@@ -63,6 +63,19 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
     See https://arxiv.org/pdf/2505.15284 for motivation.
     """
 
+    mu: torch.Tensor
+    u: torch.Tensor
+    s: torch.Tensor
+    s_acc: torch.Tensor
+    u_q: torch.Tensor
+    u_q_dot: torch.Tensor
+    _rff_w: torch.Tensor
+    _rff_u: torch.Tensor
+    _rff_initialized: torch.Tensor
+    # these may be set to None during reset_partial
+    _sum_X: torch.Tensor | None
+    _sum_outer: torch.Tensor | None
+
     def __init__(
         self,
         exp_var: float | None = None,
@@ -94,8 +107,10 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
         super().__init__()
         # Validate mutual exclusivity: only one of exp_var or n_comp may be set
         if (n_comp is not None) and (exp_var is not None):
-            raise warnings.warn(
-                "Both exp_var and n_comp are provided. n_comp will take precedence."
+            # emit a warning (do not raise an exception)
+            warnings.warn(
+                "Both exp_var and n_comp are provided. n_comp will take precedence.",
+                UserWarning,
             )
 
         if exp_var is not None:
