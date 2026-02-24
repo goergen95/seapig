@@ -52,7 +52,7 @@ def make_loader(
 
 
 # ---------------------------------------------------------------------------
-# TensorPCA incremental parity
+# TensorPCA incremental parity (TensorPCA API unchanged)
 # ---------------------------------------------------------------------------
 
 
@@ -80,23 +80,38 @@ def test_tensor_pca_incremental_parity() -> None:
 
 
 # ---------------------------------------------------------------------------
-# EmbeddingScore parity: precomputed X
+# Pre-computed embeddings: PCA is fitted by the base class
 # ---------------------------------------------------------------------------
 
 
-def test_embedding_score_full_vs_batch_precomputed() -> None:
-    """fit(X, incremental='full') and fit(X, incremental='batch', chunk_size=...)
-    must produce identical ref_embeddings."""
+def test_precomputed_embeddings_fit_pca() -> None:
+    """fit(X) with a PCA should call pca.fit on the training embeddings."""
     disable_progress()
     torch.manual_seed(0)
     X = torch.randn(50, 8).float()
-    Y = torch.randn(10, 8).float()
+    pca = TensorPCA(n_components=4)
+
+    s = SimpleScore(pca=pca)
+    s.fit(X=X, incremental="full")
+
+    assert s.ref_embeddings is not None
+    approx(s.ref_embeddings, X)
+    # PCA should be fitted: u_q must be set (non-empty)
+    assert pca.u_q.numel() > 0
+
+
+def test_precomputed_embeddings_incremental_ignored() -> None:
+    """incremental param is ignored for pre-computed embeddings: same result."""
+    disable_progress()
+    torch.manual_seed(1)
+    X = torch.randn(30, 4).float()
+    Y = torch.randn(10, 4).float()
 
     s_full = SimpleScore()
     s_full.fit(X=X, Y=Y, incremental="full")
 
     s_batch = SimpleScore()
-    s_batch.fit(X=X, Y=Y, incremental="batch", chunk_size=10)
+    s_batch.fit(X=X, Y=Y, incremental="batch")
 
     assert s_full.ref_embeddings is not None
     assert s_batch.ref_embeddings is not None
@@ -106,25 +121,8 @@ def test_embedding_score_full_vs_batch_precomputed() -> None:
     approx(s_full.cal_embeddings, s_batch.cal_embeddings)
 
 
-def test_embedding_score_auto_uses_batch_with_chunk_size() -> None:
-    """incremental='auto' with chunk_size set should behave like 'batch'."""
-    disable_progress()
-    torch.manual_seed(1)
-    X = torch.randn(30, 4).float()
-
-    s_full = SimpleScore()
-    s_full.fit(X=X, incremental="full")
-
-    s_auto = SimpleScore()
-    s_auto.fit(X=X, incremental="auto", chunk_size=10)
-
-    assert s_full.ref_embeddings is not None
-    assert s_auto.ref_embeddings is not None
-    approx(s_full.ref_embeddings, s_auto.ref_embeddings)
-
-
 # ---------------------------------------------------------------------------
-# EmbeddingScore parity: model + loaders
+# Full vs batch parity for model + loaders
 # ---------------------------------------------------------------------------
 
 
@@ -177,7 +175,6 @@ def test_auto_selects_batch_for_multi_batch_loader() -> None:
     )
 
     s_auto = SimpleScore()
-    # auto should choose batch (5 batches)
     s_auto.fit(
         model=model, loaders={"train": make_loader(data, 4)}, incremental="auto"
     )
@@ -210,190 +207,153 @@ def test_auto_selects_full_for_single_batch_loader() -> None:
 
 
 # ---------------------------------------------------------------------------
-# KNN parity via partial_fit / finalize + _fit_impl
+# PCA incremental fitting parity via batch mode
 # ---------------------------------------------------------------------------
 
 
-def test_knn_parity_via_partial_fit() -> None:
-    """EuclideanScore partial_fit/finalize + _fit_impl must give same scores as fit."""
+def test_pca_incremental_during_batch_extraction() -> None:
+    """Batch mode with PCA must produce the same result as full mode."""
     disable_progress()
     torch.manual_seed(5)
-    ref = torch.randn(30, 8).float()
-    query = torch.randn(5, 8).float()
+    data = torch.randn(20, 8).float()
+    model = IdentityModel()
 
-    # full mode
-    score_full = EuclideanScore(k=2)
-    score_full.fit(X=ref)
-    scores_full = score_full.score(X=query)
+    pca_full = TensorPCA(n_components=3)
+    s_full = SimpleScore(pca=pca_full)
+    s_full.fit(
+        model=model, loaders={"train": make_loader(data, 4)}, incremental="full"
+    )
 
-    # manual incremental via partial_fit / finalize + _fit_impl
-    score_inc = EuclideanScore(k=2)
-    chunk = 10
-    for start in range(0, ref.shape[0], chunk):
-        score_inc.partial_fit(X=ref[start : start + chunk])
-    score_inc.finalize()
-    # finalize sets ref_embeddings; now build the KNN index
-    score_inc._fit_impl()
+    pca_batch = TensorPCA(n_components=3)
+    s_batch = SimpleScore(pca=pca_batch)
+    s_batch.fit(
+        model=model,
+        loaders={"train": make_loader(data, 4)},
+        incremental="batch",
+    )
 
-    scores_inc = score_inc.score(X=query)
-    approx(scores_full, scores_inc)
+    # Both should store the same raw embeddings
+    assert s_full.ref_embeddings is not None
+    assert s_batch.ref_embeddings is not None
+    approx(s_full.ref_embeddings, s_batch.ref_embeddings)
+
+    # Both PCA objects should have been fitted (u_q populated)
+    assert pca_full.u_q.numel() > 0
+    assert pca_batch.u_q.numel() > 0
 
 
 # ---------------------------------------------------------------------------
-# Batch-write behavior (disk files)
+# KNN parity: batch mode produces same scores as full mode
 # ---------------------------------------------------------------------------
 
 
-def test_batch_write_creates_and_removes_files(tmp_path: Path) -> None:
-    """With batch_write=True, per-batch files are created and removed after finalize."""
+def test_knn_full_vs_batch_mode_parity() -> None:
+    """EuclideanScore full and batch modes produce identical scores."""
     disable_progress()
     torch.manual_seed(6)
-    X = torch.randn(20, 4).float()
+    ref = torch.randn(30, 8).float()
+    query = torch.randn(5, 8).float()
+    model = IdentityModel()
 
-    s = SimpleScore()
-    s.fit(
-        X=X,
+    score_full = EuclideanScore(k=2)
+    score_full.fit(
+        model=model, loaders={"train": make_loader(ref, 10)}, incremental="full"
+    )
+    scores_full = score_full.score(X=query)
+
+    score_batch = EuclideanScore(k=2)
+    score_batch.fit(
+        model=model,
+        loaders={"train": make_loader(ref, 10)},
         incremental="batch",
-        chunk_size=5,
-        batch_write=True,
-        outdir=tmp_path,
-        prefix="test",
-        keep_batch_files=False,
     )
+    scores_batch = score_batch.score(X=query)
 
-    # After finalize, batch files should be gone
-    batch_files = list(tmp_path.glob("test-embeddings-train-batch-*.pt"))
-    assert len(batch_files) == 0, (
-        f"Expected no batch files, found {batch_files}"
-    )
-
-    # ref_embeddings should be set and equal to X
-    assert s.ref_embeddings is not None
-    approx(s.ref_embeddings, X)
+    approx(scores_full, scores_batch)
 
 
-def test_batch_write_keeps_files_when_requested(tmp_path: Path) -> None:
-    """With keep_batch_files=True, per-batch files remain after finalize."""
+# ---------------------------------------------------------------------------
+# Single-file disk persistence in batch mode
+# ---------------------------------------------------------------------------
+
+
+def test_batch_mode_writes_single_file(tmp_path: Path) -> None:
+    """Batch mode with outdir+prefix writes a single embedding file."""
     disable_progress()
     torch.manual_seed(7)
-    X = torch.randn(20, 4).float()
+    data = torch.randn(20, 4).float()
+    model = IdentityModel()
 
     s = SimpleScore()
     s.fit(
-        X=X,
+        model=model,
+        loaders={"train": make_loader(data, 4)},
         incremental="batch",
-        chunk_size=5,
-        batch_write=True,
         outdir=tmp_path,
-        prefix="keep",
-        keep_batch_files=True,
+        prefix="run",
     )
 
-    batch_files = sorted(tmp_path.glob("keep-embeddings-train-batch-*.pt"))
-    assert len(batch_files) == 4  # 20 samples / 5 chunk_size = 4 batches
+    expected_file = tmp_path / "run-embeddings-train.pt"
+    assert expected_file.exists(), f"Expected single file {expected_file}"
 
+    # ref_embeddings should match the data
     assert s.ref_embeddings is not None
-    approx(s.ref_embeddings, X)
+    approx(s.ref_embeddings, data)
 
 
-def test_batch_write_ref_embeddings_match_full(tmp_path: Path) -> None:
-    """Batch-write mode ref_embeddings must equal full-mode ref_embeddings."""
+def test_batch_mode_reuses_existing_file(tmp_path: Path) -> None:
+    """Batch mode loads from existing file and skips re-embedding."""
     disable_progress()
     torch.manual_seed(8)
-    X = torch.randn(15, 6).float()
+    data = torch.randn(20, 4).float()
+    model = IdentityModel()
+
+    # First fit: writes file
+    s1 = SimpleScore()
+    s1.fit(
+        model=model,
+        loaders={"train": make_loader(data, 4)},
+        incremental="batch",
+        outdir=tmp_path,
+        prefix="cache",
+    )
+    assert s1.ref_embeddings is not None
+
+    # Second fit: should load from file (emits UserWarning)
+    s2 = SimpleScore()
+    with pytest.warns(UserWarning, match="Loading pre-existing embeddings"):
+        s2.fit(
+            model=model,
+            loaders={"train": make_loader(data, 4)},
+            incremental="batch",
+            outdir=tmp_path,
+            prefix="cache",
+        )
+    assert s2.ref_embeddings is not None
+    approx(s1.ref_embeddings, s2.ref_embeddings)
+
+
+def test_full_mode_ref_equals_batch_mode_ref_from_file(tmp_path: Path) -> None:
+    """ref_embeddings from batch mode (single file) equal those from full mode."""
+    disable_progress()
+    torch.manual_seed(9)
+    data = torch.randn(15, 6).float()
+    model = IdentityModel()
 
     s_full = SimpleScore()
-    s_full.fit(X=X, incremental="full")
+    s_full.fit(
+        model=model, loaders={"train": make_loader(data, 5)}, incremental="full"
+    )
 
-    s_disk = SimpleScore()
-    s_disk.fit(
-        X=X,
+    s_batch = SimpleScore()
+    s_batch.fit(
+        model=model,
+        loaders={"train": make_loader(data, 5)},
         incremental="batch",
-        chunk_size=5,
-        batch_write=True,
         outdir=tmp_path,
-        prefix="cmp",
-        keep_batch_files=False,
+        prefix="verify",
     )
 
     assert s_full.ref_embeddings is not None
-    assert s_disk.ref_embeddings is not None
-    approx(s_full.ref_embeddings, s_disk.ref_embeddings)
-
-
-# ---------------------------------------------------------------------------
-# Edge cases
-# ---------------------------------------------------------------------------
-
-
-def test_finalize_without_partial_fit_raises() -> None:
-    """finalize() without prior partial_fit() must raise RuntimeError."""
-    s = SimpleScore()
-    with pytest.raises(RuntimeError, match="No data provided"):
-        s.finalize()
-
-
-def test_partial_fit_implicit_reset() -> None:
-    """partial_fit() called without reset_partial() should start session automatically."""
-    disable_progress()
-    torch.manual_seed(9)
-    X = torch.randn(10, 4).float()
-
-    s = SimpleScore()
-    # Call partial_fit without reset_partial first
-    s.partial_fit(X=X[:5])
-    s.partial_fit(X=X[5:])
-    s.finalize()
-
-    assert s.ref_embeddings is not None
-    approx(s.ref_embeddings, X)
-
-
-def test_partial_fit_with_model_and_batch() -> None:
-    """partial_fit() with model+batch should embed and accumulate."""
-    disable_progress()
-    torch.manual_seed(10)
-    data = torch.randn(8, 4).float()
-    model = IdentityModel()
-
-    s = SimpleScore()
-    s.partial_fit(model=model, batch=data[:4])
-    s.partial_fit(model=model, batch=data[4:])
-    s.finalize()
-
-    assert s.ref_embeddings is not None
-    assert s.ref_embeddings.shape == (8, 4)
-
-
-def test_partial_fit_raises_without_model_or_x() -> None:
-    """partial_fit() without X and without model+batch raises ValueError."""
-    s = SimpleScore()
-    with pytest.raises(ValueError, match="Provide X"):
-        s.partial_fit(X=None)
-
-
-def test_partial_fit_raises_without_batch() -> None:
-    """partial_fit() with model but without batch raises ValueError."""
-    s = SimpleScore()
-    model = IdentityModel()
-    with pytest.raises(ValueError, match="Provide X"):
-        s.partial_fit(model=model, batch=None)
-
-
-def test_reset_partial_clears_state() -> None:
-    """reset_partial() must clear all accumulators."""
-    disable_progress()
-    torch.manual_seed(11)
-    X = torch.randn(10, 4).float()
-
-    s = SimpleScore()
-    s.partial_fit(X=X)
-    assert s._n_ref_samples == 10
-    assert s._partial_active
-
-    s.reset_partial()
-    assert s._n_ref_samples == 0
-    assert s._batch_count == 0
-    assert not s._partial_active
-    assert s._ref_embs_batches == []
-    assert s._batch_paths == []
+    assert s_batch.ref_embeddings is not None
+    approx(s_full.ref_embeddings, s_batch.ref_embeddings)

@@ -4,7 +4,7 @@ import math
 import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import nmslib
 import torch
@@ -95,7 +95,10 @@ class KNNScore(EmbeddingScore, ABC):
         | None = None,
         outdir: Path | None = None,
         prefix: str | None = None,
+        incremental: Literal["auto", "full", "batch"] = "auto",
+        *,
         q: bool | float = False,
+        **kwargs: Any,
     ) -> None:
         """Train a confidence score based on sample embeddings.
 
@@ -140,9 +143,18 @@ class KNNScore(EmbeddingScore, ABC):
         q:
             A `float` or a `bool` indicating if the scores should be filtered to
             remove outliers from the training distribution. Defaults to `False`.
+        incremental:
+            Fitting mode for model+loaders extraction. See
+            :meth:`EmbeddingScore.fit` for details.
         """
         super().fit(
-            X=X, Y=Y, model=model, loaders=loaders, outdir=outdir, prefix=prefix
+            X=X,
+            Y=Y,
+            model=model,
+            loaders=loaders,
+            outdir=outdir,
+            prefix=prefix,
+            incremental=incremental,
         )
         self._fit_impl(q=q)
 
@@ -153,7 +165,10 @@ class KNNScore(EmbeddingScore, ABC):
             assert self.cal_embeddings is not None
 
         if self.pca is not None:
-            self._fit_pca()
+            # Fit PCA if not already fitted (e.g. when _fit_impl is called
+            # directly, bypassing EmbeddingScore.fit which normally handles it)
+            if self.pca.mu.numel() == 0:
+                self._fit_pca()
             self.ref_embeddings = self.pca.transform(self.ref_embeddings)
             if self.cal_embeddings is not None:
                 self.cal_embeddings = self.pca.transform(self.cal_embeddings)

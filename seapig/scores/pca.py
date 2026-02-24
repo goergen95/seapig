@@ -1,6 +1,7 @@
 """PCA based dimensionality reduction and confidence scoring."""
 
 from pathlib import Path
+from typing import Any, Literal
 
 import torch
 from torch.utils.data import DataLoader
@@ -45,7 +46,10 @@ class PCAScore(EmbeddingScore):
         | None = None,
         outdir: Path | None = None,
         prefix: str | None = None,
+        incremental: Literal["auto", "full", "batch"] = "auto",
+        *,
         q: bool | float = False,
+        **kwargs: Any,
     ) -> None:
         """Train a confidence score based on sample embeddings.
 
@@ -90,9 +94,18 @@ class PCAScore(EmbeddingScore):
         q:
             A `float` or a `bool` indicating if the scores should be filtered to
             remove outliers from the training distribution. Defaults to `False`.
+        incremental:
+            Fitting mode for model+loaders extraction. See
+            :meth:`EmbeddingScore.fit` for details.
         """
         super().fit(
-            X=X, Y=Y, model=model, loaders=loaders, outdir=outdir, prefix=prefix
+            X=X,
+            Y=Y,
+            model=model,
+            loaders=loaders,
+            outdir=outdir,
+            prefix=prefix,
+            incremental=incremental,
         )
         self._fit_impl(q=q)
 
@@ -102,16 +115,24 @@ class PCAScore(EmbeddingScore):
         if self.cal_required:
             assert self.cal_embeddings is not None
 
+        # Fit PCA if not already fitted (e.g. when _fit_impl is called directly,
+        # bypassing EmbeddingScore.fit which normally handles it)
+        if self.pca is not None and self.pca.mu.numel() == 0:
+            self._fit_pca()
+
         if q:
             assert (q >= 0.0) & (q <= 1.0)
             assert self.pca is not None
-            self._fit_pca()
+            # PCA already fitted by EmbeddingScore.fit(); use it to compute
+            # reconstruction errors for outlier filtering
             _, scores = self.pca.reconstruct(self.ref_embeddings)
             threshold = torch.quantile(scores.float(), q=q)
             index = scores < threshold
             self.ref_embeddings = self.ref_embeddings[index, :]
+            # Refit PCA on the filtered training set
+            self._fit_pca()
 
-        self._fit_pca()
+        # PCA is fitted (either by base class or by the q-filtering step above)
         self.set_trained()
         assert self.pca is not None
 
