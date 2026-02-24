@@ -98,6 +98,15 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
         self.gamma = gamma
         self.M = M
 
+        # running accumulators for partial_fit/finalize
+        self._n_samples: int = 0
+        self._sum_X: torch.Tensor | None = None
+        self._sum_outer: torch.Tensor | None = None
+        # persistent RFF params (registered as buffers when created)
+        # _rff_w : Tensor shape (M, D)
+        # _rff_u : Tensor shape (M,)
+        self._rff_initialized: bool = False
+
     @staticmethod
     def _l2_normalize(X: torch.Tensor) -> torch.Tensor:
         """L2 normalization of an input tensor.
@@ -122,10 +131,21 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
 
         device = X.device
         dtype = X.dtype
-        w = math.sqrt(2.0 * float(self.gamma)) * torch.normal(
-            mean=0.0, std=1.0, size=(self.M, D), device=device, dtype=dtype
-        )
-        u = 2.0 * math.pi * torch.rand(self.M, device=device, dtype=dtype)
+        # Prefer persistent RFF parameters if they exist (registered buffers)
+        w_buf = getattr(self, "_rff_w", None)
+        u_buf = getattr(self, "_rff_u", None)
+        if (
+            (w_buf is not None)
+            and (u_buf is not None)
+            and self._rff_initialized
+        ):
+            w = w_buf.to(device=device, dtype=dtype)
+            u = u_buf.to(device=device, dtype=dtype)
+        else:
+            w = math.sqrt(2.0 * float(self.gamma)) * torch.normal(
+                mean=0.0, std=1.0, size=(self.M, D), device=device, dtype=dtype
+            )
+            u = 2.0 * math.pi * torch.rand(self.M, device=device, dtype=dtype)
         X = math.sqrt(2.0 / float(self.M)) * torch.cos(X @ w.T + u.unsqueeze(0))
         return X.contiguous()
 
@@ -142,26 +162,113 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
         X = self._l2_normalize(X)
         if self.mode == "rff":
             X = self._rff(X)
+        # ensure consistent dtype with stored mean (may be float64)
+        if hasattr(self, "mu") and self.mu is not None:
+            X = X.to(self.mu.dtype)
         X = X - self.mu
+        return X.contiguous()
         return X.contiguous()
 
     def fit(self, X: torch.Tensor, Y: None = None) -> None:
-        """Fit PCA on input tensor X.
+        """Fit PCA on the input data X.
 
-        The behaviour depends on the selected mode: if ``rff`` the RFF
-        mapping is applied before computing the covariance; otherwise
-        standard PCA is performed on the normalized inputs.
+        This is a convenience method that runs a single-batch partial fit
+        followed by finalization. For large datasets or streaming data, use
+        the incremental partial_fit/finalize interface instead.
+        """
+        # Convenience: run a single-batch partial fit then finalize
+        self.reset_partial()
+        self.partial_fit(X)
+        self.finalize()
+
+    def reset_partial(self) -> None:
+        """Reset internal accumulators used for partial fitting."""
+        self._n_samples = 0
+        self._sum_X = None
+        self._sum_outer = None
+        # do not reset RFF params here; keep them if already initialized
+
+    def partial_fit(self, X: torch.Tensor) -> None:
+        """Process a single batch for incremental PCA.
+
+        This accumulates sufficient statistics (sum of samples and
+        sum of outer products) which are later finalised in
+        :meth:`finalize` to produce the PCA decomposition.
         """
         assert X is not None
+        # apply normalization and RFF (RFF params are persisted)
         X = self._l2_normalize(X)
-        if self.mode == "rff":
+        # Only initialize/apply RFF if both gamma and M are provided
+        if self.mode == "rff" and (
+            self.gamma is not None and self.M is not None
+        ):
+            # initialize RFF parameters on first call
+            if not self._rff_initialized:
+                _, D = X.shape
+                if self.M <= D:
+                    raise ValueError(
+                        "RFF dimension M must be greater than input dim D"
+                    )
+                device = X.device
+                dtype = X.dtype
+                w = math.sqrt(2.0 * float(self.gamma)) * torch.normal(
+                    mean=0.0,
+                    std=1.0,
+                    size=(self.M, D),
+                    device=device,
+                    dtype=dtype,
+                )
+                u = (
+                    2.0
+                    * math.pi
+                    * torch.rand(self.M, device=device, dtype=dtype)
+                )
+                # register as buffers so they move with the module
+                self.register_buffer("_rff_w", w)
+                self.register_buffer("_rff_u", u)
+                self._rff_initialized = True
             X = self._rff(X)
-        self.mu = X.mean(dim=0)
-        X = X - self.mu
 
-        K = X.T @ X
-        self.u, self.s, _ = torch.linalg.svd(K)
-        self.s_acc = torch.cumsum(self.s, 0) / (self.s.sum() + 1e-20)
+        m = X.shape[0]
+        # accumulate in double precision for numerical stability and to match
+        # scikit-learn's float64 behaviour
+        batch_sum = X.sum(dim=0).to(torch.float64)
+        batch_outer = (X.T @ X).to(torch.float64)
+
+        if self._n_samples == 0:
+            self._sum_X = batch_sum.clone()
+            self._sum_outer = batch_outer.clone()
+            self._n_samples = m
+        else:
+            assert self._sum_X is not None and self._sum_outer is not None
+            self._sum_X = self._sum_X + batch_sum
+            self._sum_outer = self._sum_outer + batch_outer
+            self._n_samples += m
+
+    def finalize(self) -> None:
+        """Finalize partial fit: compute covariance SVD and set PCA params.
+
+        This method computes the overall mean and centred covariance from
+        accumulated sums and performs SVD to extract principal components.
+        """
+        if self._n_samples == 0:
+            raise RuntimeError("No data provided to partial_fit/finalize")
+        assert self._sum_X is not None and self._sum_outer is not None
+
+        # perform computations in float64 then cast results back to module dtype
+        n = float(self._n_samples)
+        mu64 = self._sum_X / n
+        K64 = self._sum_outer - n * (mu64.unsqueeze(1) @ mu64.unsqueeze(0))
+
+        # SVD in float64 for numerical agreement with sklearn
+        u64, s64, _ = torch.linalg.svd(K64)
+        s_acc64 = torch.cumsum(s64, 0) / (s64.sum() + 1e-20)
+
+        # store in module attributes in float64 for numerical fidelity
+        self.mu = mu64
+        self.u = u64
+        self.s = s64
+        self.s_acc = s_acc64
 
         if self.n_comp is not None:
             q = int(self.n_comp)
@@ -176,8 +283,17 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
                 f"{explained:.4f}",
             )
         else:
-            q_idx = (self.s_acc >= self.exp_var).nonzero()[0][0]
-            self.q = max(1, int(q_idx.item()) + 1)
+            if self.exp_var is None:
+                raise ValueError(
+                    "Either n_comp or exp_var must be provided for PCA selection"
+                )
+            q_idx_tensor = (self.s_acc >= self.exp_var).nonzero()
+            if q_idx_tensor.numel() == 0:
+                # keep all components
+                self.q = int(self.s.numel())
+            else:
+                q_idx = q_idx_tensor[0][0]
+                self.q = max(1, int(q_idx.item()) + 1)
             explained = self.s_acc[self.q - 1].item()
             logger.info(
                 "Explained variance of %s reached at dimension %s.",
