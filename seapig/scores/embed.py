@@ -242,16 +242,6 @@ class EmbeddingScore(ConfidenceScore, ABC):
         return all_embs
 
     @classmethod
-    def _loadorembed(
-        cls,
-        path: Path | None,
-        model: torch.nn.Module,
-        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
-    ) -> torch.Tensor:
-        """Load embeddings from file or extract them from the DataLoader."""
-        return cls._extract_embeddings(model=model, loader=loader, path=path)
-
-    @classmethod
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def _embed(
         cls, X: torch.Tensor | dict[str, torch.Tensor], model: torch.nn.Module
@@ -274,51 +264,6 @@ class EmbeddingScore(ConfidenceScore, ABC):
                 f"Expected embed method to return tensor of shape (B,D) but got {z.shape}"
             )
         return z
-
-    @classmethod
-    def _embed_dl(
-        cls,
-        model: torch.nn.Module,
-        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
-    ) -> torch.Tensor:
-        """Extract embeddings by iterating over a DataLoader.
-
-        This method ensures the model is in eval mode during embedding extraction
-        to ensure consistent behavior regardless of the model's initial state.
-        The model's original training state is restored after embedding extraction.
-        """
-        assert callable(model.embed)
-        return cls._extract_embeddings(model=model, loader=loader)
-
-    @classmethod
-    def _embed_from_dict(
-        cls,
-        model: torch.nn.Module,
-        loaders: dict[str, DataLoader[torch.Tensor | dict[str, torch.Tensor]]],
-        key: Literal["train", "val"],
-        outdir: Path | None = None,
-        prefix: str | None = None,
-    ) -> torch.Tensor:
-        """Embed a loader from a specified key in a dictionary."""
-        assert isinstance(loaders, dict)
-        assert isinstance(model, torch.nn.Module)
-        if outdir is not None and prefix is None:
-            warnings.warn(
-                "'outdir' has been specified but 'prefix' is None.\n"
-                "Consider specifying 'prefix' as well to enable saving embeddings.",
-                UserWarning,
-            )
-        cls._check_model(model)
-        if key not in loaders.keys():
-            raise KeyError(f"Missing key `{key}` in loaders dictionary.")
-        loader = loaders[key]
-        assert isinstance(loader, DataLoader)
-        path = (
-            cls._setup_path(outdir, prefix + f"-embeddings-{key}")
-            if prefix is not None
-            else None
-        )
-        return cls._extract_embeddings(model=model, loader=loader, path=path)
 
     def _fit_pca(self) -> None:
         assert self.ref_embeddings is not None
