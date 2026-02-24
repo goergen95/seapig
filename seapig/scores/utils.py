@@ -134,16 +134,46 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
         self.u_q = self.u[:, : self.q]
         self.u_q_dot = self.u_q @ self.u_q.T
 
-    def predict(self, X: torch.Tensor) -> torch.Tensor:
-        """Reduce an input to its principal components."""
+    def fit_transform(self, X: torch.Tensor, Y: None = None) -> torch.Tensor:
+        """Fit PCA on X and return the transformed principal components.
+
+        This is equivalent to calling ``fit(X)`` followed by ``transform(X)``.
+        """
+        self.fit(X, Y)
+        return self.transform(X)
+
+    def transform(self, X: torch.Tensor) -> torch.Tensor:
+        """Project input samples onto the retained principal components.
+
+        Parameters
+        ----------
+        X:
+            Input tensor of shape (N, D). Returns projected components of
+            shape (N, q) where q is the number of retained components.
+        """
         assert isinstance(X, torch.Tensor)
         X = self._preprocess(X)
-        X = X @ self.u_q
-        return X
+        X_proj = X @ self.u_q
+        return X_proj
+
+    def inverse_transform(self, Z: torch.Tensor) -> torch.Tensor:
+        """Reconstruct samples from principal component scores.
+
+        Parameters
+        ----------
+        Z:
+            Component scores of shape (N, q). Returns reconstructed samples in
+            the preprocessed (centered + RFF + normalized) space with shape
+            (N, D'). This mirrors the reconstruction returned by
+            :meth:`reconstruct` (first element).
+        """
+        assert isinstance(Z, torch.Tensor)
+        X_rec = (self.u_q @ Z.T).T
+        return X_rec
 
     def reconstruct(self, X: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Reconstruct an input and return the error."""
-        X = self._preprocess(X)
-        X_rec = (self.u_q_dot @ X.T).T
-        error = torch.linalg.norm(X - X_rec, ord=2, dim=1)
+        X_p = self._preprocess(X)
+        X_rec = self.inverse_transform(self.transform(X))
+        error = torch.linalg.norm(X_p - X_rec, ord=2, dim=1)
         return X_rec, error
