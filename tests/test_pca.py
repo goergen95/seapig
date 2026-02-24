@@ -319,7 +319,7 @@ def test_constructor_warnings_and_validation() -> None:
 
 def test_rff_partial_fit_dimension_check() -> None:
     # mode 'rff' with M <= D should raise during partial_fit initialization
-    tpca = TensorPCA(mode="rff", gamma=1.0, M=2)
+    tpca = TensorPCA(exp_var=0.90, mode="rff", gamma=1.0, M=2)
     X = torch.randn(4, 3)
     with pytest.raises(
         ValueError, match="RFF dimension M must be greater than input dim D"
@@ -332,7 +332,7 @@ def test__rff_uses_registered_buffers_when_initialized() -> None:
     D = 3
     M = 8
     gamma = 1.0
-    tpca = TensorPCA(mode="rff", gamma=gamma, M=M)
+    tpca = TensorPCA(exp_var=0.90, mode="rff", gamma=gamma, M=M)
 
     dtype = torch.float32
 
@@ -354,7 +354,7 @@ def test__rff_uses_registered_buffers_when_initialized() -> None:
 
 
 def test_reset_partial_preserves_rff_and_resets_accumulators() -> None:
-    tpca = TensorPCA(gamma=1.0, M=16)
+    tpca = TensorPCA(exp_var=0.90, gamma=1.0, M=16)
     X = torch.randn(6, 3)
     tpca.partial_fit(X)  # initializes RFF parameters and accumulators
 
@@ -371,7 +371,7 @@ def test_reset_partial_preserves_rff_and_resets_accumulators() -> None:
 
 
 def test__rff_returns_input_when_not_in_rff_mode() -> None:
-    tpca = TensorPCA()  # default linear mode
+    tpca = TensorPCA(exp_var=0.90)  # default linear mode
     X = torch.randn(3, 4)
     out = tpca._rff(X)
     # should return (possibly) contiguous copy equal to input
@@ -386,7 +386,7 @@ def test_finalize_raises_if_no_data() -> None:
 
 
 def test__load_from_state_dict_registers_missing_buffers() -> None:
-    tpca = TensorPCA()
+    tpca = TensorPCA(exp_var=0.90)
     # remove one of the attributes to trigger the register_buffer path
     if hasattr(tpca, "mu"):
         delattr(tpca, "mu")
