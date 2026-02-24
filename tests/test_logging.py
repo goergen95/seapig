@@ -203,7 +203,7 @@ def test_no_print_on_tensor_pca_fit(capfd: pytest.CaptureFixture[str]) -> None:
 
     from seapig.scores.utils import TensorPCA
 
-    pca = TensorPCA(exp_var=0.9)
+    pca = TensorPCA(n_components=0.9)
     x = torch.randn(50, 16)
     pca.fit(x)
     captured = capfd.readouterr()

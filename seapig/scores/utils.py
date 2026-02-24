@@ -15,7 +15,7 @@ Saving / loading
 
       torch.save(tpca.state_dict(), "tpca.pt")
 
-      tpca2 = TensorPCA(exp_var=..., gamma=..., M=..., mode=...)
+      tpca2 = TensorPCA(n_components=..., gamma=..., M=..., mode=...)
       sd = torch.load("tpca.pt")
       tpca2.load_state_dict(sd)
 
@@ -29,7 +29,6 @@ Saving / loading
 """
 
 import math
-import warnings
 from typing import final
 
 import torch
@@ -78,8 +77,7 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
 
     def __init__(
         self,
-        exp_var: float | None = None,
-        n_comp: int | None = None,
+        n_components: int | float = 0.90,
         gamma: float | None = None,
         M: int | None = None,
         mode: str | None = None,
@@ -88,13 +86,11 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
 
         Parameters
         ----------
-        exp_var:
-            Fraction of explained variance to retain (0 < exp_var <= 1).
-            If ``None``, the number of components must be supplied via
-            ``n_comp``.
-        n_comp:
-            If provided, forces PCA to use this many components. If
-            specified, takes precedence over ``exp_var``.
+        n_components:
+            If an int, forces PCA to use this many components. If a float in
+            (0, 1], the fraction of explained variance to retain. Defaults to
+            ``0.90`` (retain components that explain 90% of variance) when
+            not specified.
         gamma, M:
             Parameters for the Random Fourier Feature mapping. If either
             is provided the RFF branch is enabled (unless ``mode`` is set
@@ -105,28 +101,30 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
             from the presence of ``gamma``/``M``.
         """
         super().__init__()
-        if (n_comp is not None) and (exp_var is not None):
-            warnings.warn(
-                "Both exp_var and n_comp are provided. n_comp will take precedence.",
-                UserWarning,
+
+        # Validate n_components: must be int>0 or float in (0,1]
+        if isinstance(n_components, bool):
+            # bool is subclass of int — disallow
+            raise ValueError(
+                "n_components must be an int>0 or a float in (0,1]"
             )
 
-        if (n_comp is None) and (exp_var is None):
-            warnings.warn(
-                "Neither exp_var nor n_comp provided. Defaulting to exp_var=0.90.",
-                UserWarning,
-            )
-            exp_var = 0.90
-
-        if exp_var is not None:
-            if not (exp_var > 0.0 and exp_var <= 1.0):
-                raise ValueError("exp_var must be in the interval (0, 1]")
-
-        if n_comp is not None:
-            if not (isinstance(n_comp, int) and n_comp > 0):
+        if isinstance(n_components, int):
+            if n_components <= 0:
                 raise ValueError(
-                    "n_comp must be a positive integer if provided"
+                    "n_components must be a positive integer if provided"
                 )
+            self.n_components: int | float = int(n_components)
+        elif isinstance(n_components, float):
+            if not (n_components > 0.0 and n_components <= 1.0):
+                raise ValueError(
+                    "n_components as float must be in the interval (0, 1]"
+                )
+            self.n_components: int | float = n_components  # type: ignore[no-redef]
+        else:
+            raise ValueError(
+                "n_components must be either an int>0 or a float in (0,1]"
+            )
 
         if mode is not None and mode not in ("linear", "rff"):
             raise ValueError("mode must be either 'linear' or 'rff'")
@@ -137,8 +135,6 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
         )
         self.mode = mode or inferred_mode
 
-        self.exp_var = exp_var
-        self.n_comp = n_comp
         self.gamma = gamma
         self.M = M
 
@@ -368,20 +364,23 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
         self.s = s64
         self.s_acc = s_acc64
 
-        if self.n_comp is not None:
-            q = int(self.n_comp)
+        # Decide number of components q based on the unified n_components
+        if isinstance(self.n_components, int):
+            q = self.n_components
             q = max(1, q)
             q = min(q, int(self.s.numel()))
             self.q = q
             explained = self.s_acc[self.q - 1].item()
             logger.info(
-                "Using user-specified n_comp=%s; explained variance at this "
-                "dimension is %s.",
+                "Using user-specified n_components=%s; explained variance at "
+                "this dimension is %s.",
                 self.q,
                 f"{explained:.4f}",
             )
         else:
-            q_idx_tensor = (self.s_acc >= self.exp_var).nonzero()
+            # n_components is a float interpreted as the explained-variance
+            exp_var = float(self.n_components)
+            q_idx_tensor = (self.s_acc >= exp_var).nonzero()
             if q_idx_tensor.numel() == 0:
                 # keep all components
                 self.q = int(self.s.numel())

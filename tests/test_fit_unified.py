@@ -177,7 +177,7 @@ def test_euclidean_score_fit_with_model() -> None:
 
 def test_pca_score_fit_with_embeddings() -> None:
     """Test PCAScore fit() with precomputed embeddings."""
-    score = PCAScore(pca=TensorPCA(exp_var=0.75))
+    score = PCAScore(pca=TensorPCA(n_components=0.75))
     ref_embs = torch.randn(20, 8)
     cal_embs = torch.randn(10, 8)
 
@@ -204,7 +204,7 @@ def test_pca_score_fit_with_model() -> None:
         collate_fn=lambda b: torch.stack([x[0] for x in b], 0),
     )
 
-    score = PCAScore(pca=TensorPCA(exp_var=0.75))
+    score = PCAScore(pca=TensorPCA(n_components=0.75))
     score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
 
     assert score.ref_embeddings is not None
