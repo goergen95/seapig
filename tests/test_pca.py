@@ -6,6 +6,7 @@ transformation handling, and PCAScore integration for scoring and
 calibration.
 """
 
+import pytest
 import torch
 
 from seapig.scores.pca import PCAScore
@@ -112,3 +113,63 @@ def test_n_comp_argument_limits_components() -> None:
     assert tpca.q == 3
     # reconstruction should use u_q with 3 columns
     assert tpca.u_q.shape[1] == 3
+
+
+def test_tensorpca_agrees_with_sklearn_mid_size() -> None:
+    """TensorPCA should produce reconstructions similar to scikit-learn PCA.
+
+    We create a mid-size dataset, L2-normalise rows (matching TensorPCA
+    preprocessing), fit both implementations with the same number of
+    components and compare the reconstruction in the centred, preprocessed
+    space. This comparison avoids component sign ambiguities.
+    """
+    pytest.importorskip("sklearn")
+    from sklearn.decomposition import PCA as SKPCA
+
+    torch.manual_seed(0)
+    n, D = 500, 50
+    X = torch.randn(n, D)
+
+    # match TensorPCA preprocessing: row-wise L2 normalisation
+    X_norm = TensorPCA._l2_normalize(X)
+    X_norm_np = X_norm.cpu().numpy()
+
+    n_comp = 10
+
+    # scikit-learn PCA on the normalised data
+    skp = SKPCA(n_components=n_comp, svd_solver="full")
+    skp.fit(X_norm_np)
+    X_proj_sk = skp.transform(X_norm_np)
+    X_rec_sk = skp.inverse_transform(
+        X_proj_sk
+    )  # reconstructed in original space
+    mu_np = X_norm_np.mean(axis=0)
+    X_rec_sk_centered = X_rec_sk - mu_np
+
+    # TensorPCA (no RFF) - fit on torch tensors
+    tpca = TensorPCA(n_comp=n_comp, gamma=None, M=None)
+    tpca.fit(X)
+    X_proj_tp = tpca.transform(X)
+    X_rec_tp = tpca.inverse_transform(X_proj_tp)
+
+    # compare reconstructions in centred preprocessed space
+    rec_sk_t = torch.from_numpy(X_rec_sk_centered).to(X_rec_tp.dtype)
+    # ensure same device and dtype
+    rec_sk_t = rec_sk_t.to(device=X_rec_tp.device)
+
+    # compute mean squared error between reconstructions
+    mse = torch.mean((rec_sk_t - X_rec_tp) ** 2).item()
+
+    # expect close agreement (numerical tolerance due to SVD differences)
+    assert mse < 1e-6, (
+        f"MSE between scikit-learn and TensorPCA too large: {mse}"
+    )
+
+    # compare projections
+    proj_sk_t = torch.from_numpy(X_proj_sk).to(
+        device=X_proj_tp.device, dtype=X_proj_tp.dtype
+    )
+    # compute mean squared error between absolute projections (signs can differ due to SVD ambiguities)
+    mse = torch.mean((proj_sk_t.abs() - X_proj_tp.abs()) ** 2).item()
+    # we expect close agreement in projection magnitudes
+    assert mse < 1e-6, "Projections differ between scikit-learn and TensorPCA"
