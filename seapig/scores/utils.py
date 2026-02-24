@@ -1,4 +1,32 @@
-"""Utilities accessed by several modules."""
+"""Utilities accessed by several modules.
+
+This module contains small helpers used by score implementations. The
+primary export is :class:`TensorPCA`, a torch-compatible PCA that
+supports both standard (linear) PCA on L2-normalized inputs and an
+optional Random Fourier Feature (RFF) mapping prior to PCA.
+
+Saving / loading
+-----------------
+- TensorPCA registers its learned state as persistent buffers (for
+  example: ``mu``, ``u``, ``s``, ``s_acc``, ``u_q``, ``u_q_dot``) and
+  RFF parameters (``_rff_w``, ``_rff_u``, ``_rff_initialized``). This
+  makes the module safe to persist with :func:`torch.save` and
+  :meth:`torch.load` via the standard state-dict API::
+
+      torch.save(tpca.state_dict(), "tpca.pt")
+
+      tpca2 = TensorPCA(exp_var=..., gamma=..., M=..., mode=...)
+      sd = torch.load("tpca.pt")
+      tpca2.load_state_dict(sd)
+
+- The class implements a custom ``_load_from_state_dict`` which accepts
+  incoming tensors of arbitrary shapes (including the empty placeholders
+  created at construction) and will set or register buffers to avoid
+  size-mismatch errors when loading into fresh instances.
+
+- Note: PCA internals are stored in ``float64`` for numerical fidelity;
+  during preprocessing inputs are cast to match the stored mean's dtype.
+"""
 
 import math
 import warnings
@@ -13,31 +41,27 @@ logger = get_logger(__name__)
 
 @final
 class TensorPCA(torch.nn.Module):  # type: ignore[misc]
-    """Tensor based PCA with L2 normalized inputs.
+    """Tensor-based PCA with L2-normalized inputs.
 
-    The implementation supports two operation modes:
-      - "linear": standard PCA on L2-normalized inputs
-      - "rff":    apply a Random Fourier Feature mapping before PCA
+    Operation modes
+    ---------------
+    - ``linear``: standard PCA on L2-normalized rows
+    - ``rff``: apply a Random Fourier Feature mapping before PCA
 
-    The user chooses the mode via the ``mode`` argument. If ``mode`` is
-    ``None`` the behaviour is inferred from whether ``gamma`` or ``M`` is
-    provided (those enable RFF).
+    Mode selection follows the constructor arguments: providing ``gamma``
+    or ``M`` enables the RFF branch unless ``mode`` is set explicitly.
+
+    Saving / loading
+    -----------------
+    Persist the module with the normal PyTorch state-dict API. The
+    module registers persistent buffers for PCA and RFF state, so
+    ``torch.save(instance.state_dict())`` and ``instance.load_state_dict(torch.load(path))``
+    are the recommended workflow. The custom ``_load_from_state_dict``
+    accepts placeholder or differently-shaped tensors and will set or
+    register buffers to avoid size-mismatch errors on fresh instances.
 
     See https://arxiv.org/pdf/2505.15284 for motivation.
     """
-
-    mu: torch.Tensor
-    u: torch.Tensor
-    s: torch.Tensor
-    s_acc: torch.Tensor
-    u_q: torch.Tensor
-    u_q_dot: torch.Tensor
-    q: int = 1
-    exp_var: float | None = None
-    n_comp: int | None = None
-    gamma: float | None = None
-    M: int | None = None
-    mode: str = "linear"
 
     def __init__(
         self,
@@ -98,14 +122,163 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
         self.gamma = gamma
         self.M = M
 
-        # running accumulators for partial_fit/finalize
+        # register persistent buffers so the module can be saved/loaded
+        self.register_buffer("mu", torch.tensor([], dtype=torch.float64))
+        self.register_buffer("u", torch.tensor([], dtype=torch.float64))
+        self.register_buffer("s", torch.tensor([], dtype=torch.float64))
+        self.register_buffer("s_acc", torch.tensor([], dtype=torch.float64))
+        self.register_buffer("u_q", torch.tensor([], dtype=torch.float64))
+        self.register_buffer("u_q_dot", torch.tensor([], dtype=torch.float64))
+
+        # RFF parameters (will be created during partial_fit when needed)
+        self.register_buffer("_rff_w", torch.tensor([], dtype=torch.float32))
+        self.register_buffer("_rff_u", torch.tensor([], dtype=torch.float32))
+        self.register_buffer(
+            "_rff_initialized", torch.tensor(False, dtype=torch.bool)
+        )
+
+        # running accumulators for partial_fit/finalize (float64)
+        self.register_buffer("_sum_X", torch.tensor([], dtype=torch.float64))
+        self.register_buffer(
+            "_sum_outer", torch.tensor([], dtype=torch.float64)
+        )
+
+        # keep this as a plain python int for control flow
         self._n_samples: int = 0
-        self._sum_X: torch.Tensor | None = None
-        self._sum_outer: torch.Tensor | None = None
-        # persistent RFF params (registered as buffers when created)
-        # _rff_w : Tensor shape (M, D)
-        # _rff_u : Tensor shape (M,)
-        self._rff_initialized: bool = False
+
+    def fit(self, X: torch.Tensor, Y: None = None) -> None:
+        """Fit PCA on the input data X.
+
+        This is a convenience method that runs a single-batch partial fit
+        followed by finalization. For large datasets or streaming data, use
+        the incremental partial_fit/finalize interface instead.
+        """
+        # Convenience: run a single-batch partial fit then finalize
+        self.reset_partial()
+        self.partial_fit(X)
+        self.finalize()
+
+    def fit_transform(self, X: torch.Tensor, Y: None = None) -> torch.Tensor:
+        """Fit PCA on X and return transformed principal components."""
+        self.fit(X, Y)
+        return self.transform(X)
+
+    def transform(self, X: torch.Tensor) -> torch.Tensor:
+        """Project input samples onto the retained principal components.
+
+        Returns projected components of shape (N, q).
+        """
+        assert isinstance(X, torch.Tensor)
+        X = self._preprocess(X)
+        X_proj = X @ self.u_q
+        return X_proj
+
+    def inverse_transform(self, Z: torch.Tensor) -> torch.Tensor:
+        """Reconstruct samples from principal component scores.
+
+        Returns reconstructed samples in the preprocessed space.
+        """
+        assert isinstance(Z, torch.Tensor)
+        X_rec = (self.u_q @ Z.T).T
+        return X_rec
+
+    def reconstruct(self, X: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Reconstruct an input and return the L2 reconstruction error."""
+        X_p = self._preprocess(X)
+        X_rec = self.inverse_transform(self.transform(X))
+        error = torch.linalg.norm(X_p - X_rec, ord=2, dim=1)
+        return X_rec, error
+
+    def _preprocess(self, X: torch.Tensor) -> torch.Tensor:
+        """Apply preprocessing pipeline according to the selected mode.
+
+        Steps:
+          - Move module to input device
+          - L2 normalize rows
+          - Optionally apply RFF
+          - Centre by the training mean
+        """
+        self.to(device=X.device)
+        X = self._l2_normalize(X)
+        if self.mode == "rff":
+            X = self._rff(X)
+        # ensure consistent dtype with stored mean (may be float64)
+        if hasattr(self, "mu") and self.mu is not None:
+            X = X.to(self.mu.dtype)
+        X = X - self.mu
+        return X.contiguous()
+
+    def reset_partial(self) -> None:
+        """Reset internal accumulators used for partial fitting."""
+        self._n_samples = 0
+        self._sum_X = None
+        self._sum_outer = None
+        # do not reset RFF params here; keep them if already initialized
+
+    def partial_fit(self, X: torch.Tensor) -> None:
+        """Process a single batch for incremental PCA.
+
+        This accumulates sufficient statistics (sum of samples and
+        sum of outer products) which are later finalised in
+        :meth:`finalize` to produce the PCA decomposition.
+        """
+        assert X is not None
+        # apply normalization and RFF (RFF params are persisted)
+        X = self._l2_normalize(X)
+        # Only initialize/apply RFF if both gamma and M are provided
+        if self.mode == "rff" and (
+            self.gamma is not None and self.M is not None
+        ):
+            # initialize RFF parameters on first call
+            if not bool(
+                getattr(
+                    self,
+                    "_rff_initialized",
+                    torch.tensor(False, dtype=torch.bool),
+                ).item()
+            ):
+                _, D = X.shape
+                if self.M <= D:
+                    raise ValueError(
+                        "RFF dimension M must be greater than input dim D"
+                    )
+                device = X.device
+                dtype = X.dtype
+                w = math.sqrt(2.0 * float(self.gamma)) * torch.normal(
+                    mean=0.0,
+                    std=1.0,
+                    size=(self.M, D),
+                    device=device,
+                    dtype=dtype,
+                )
+                u = (
+                    2.0
+                    * math.pi
+                    * torch.rand(self.M, device=device, dtype=dtype)
+                )
+                # register as buffers so they move with the module
+                self.register_buffer("_rff_w", w)
+                self.register_buffer("_rff_u", u)
+                # set the BoolTensor buffer in-place so the buffer identity
+                # is preserved (important for state_dict/save/load)
+                getattr(self, "_rff_initialized").fill_(True)
+            X = self._rff(X)
+
+        m = X.shape[0]
+        # accumulate in double precision for numerical stability and to match
+        # scikit-learn's float64 behaviour
+        batch_sum = X.sum(dim=0).to(torch.float64)
+        batch_outer = (X.T @ X).to(torch.float64)
+
+        if self._n_samples == 0:
+            self._sum_X = batch_sum.clone()
+            self._sum_outer = batch_outer.clone()
+            self._n_samples = m
+        else:
+            assert self._sum_X is not None and self._sum_outer is not None
+            self._sum_X = self._sum_X + batch_sum
+            self._sum_outer = self._sum_outer + batch_outer
+            self._n_samples += m
 
     @staticmethod
     def _l2_normalize(X: torch.Tensor) -> torch.Tensor:
@@ -137,7 +310,8 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
         if (
             (w_buf is not None)
             and (u_buf is not None)
-            and self._rff_initialized
+            and (getattr(self, "_rff_initialized", None) is not None)
+            and bool(getattr(self, "_rff_initialized").item())
         ):
             w = w_buf.to(device=device, dtype=dtype)
             u = u_buf.to(device=device, dtype=dtype)
@@ -148,102 +322,6 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
             u = 2.0 * math.pi * torch.rand(self.M, device=device, dtype=dtype)
         X = math.sqrt(2.0 / float(self.M)) * torch.cos(X @ w.T + u.unsqueeze(0))
         return X.contiguous()
-
-    def _preprocess(self, X: torch.Tensor) -> torch.Tensor:
-        """Apply preprocessing pipeline according to the selected mode.
-
-        Steps:
-          - Move module to input device
-          - L2 normalize rows
-          - Optionally apply RFF
-          - Centre by the training mean
-        """
-        self.to(device=X.device)
-        X = self._l2_normalize(X)
-        if self.mode == "rff":
-            X = self._rff(X)
-        # ensure consistent dtype with stored mean (may be float64)
-        if hasattr(self, "mu") and self.mu is not None:
-            X = X.to(self.mu.dtype)
-        X = X - self.mu
-        return X.contiguous()
-        return X.contiguous()
-
-    def fit(self, X: torch.Tensor, Y: None = None) -> None:
-        """Fit PCA on the input data X.
-
-        This is a convenience method that runs a single-batch partial fit
-        followed by finalization. For large datasets or streaming data, use
-        the incremental partial_fit/finalize interface instead.
-        """
-        # Convenience: run a single-batch partial fit then finalize
-        self.reset_partial()
-        self.partial_fit(X)
-        self.finalize()
-
-    def reset_partial(self) -> None:
-        """Reset internal accumulators used for partial fitting."""
-        self._n_samples = 0
-        self._sum_X = None
-        self._sum_outer = None
-        # do not reset RFF params here; keep them if already initialized
-
-    def partial_fit(self, X: torch.Tensor) -> None:
-        """Process a single batch for incremental PCA.
-
-        This accumulates sufficient statistics (sum of samples and
-        sum of outer products) which are later finalised in
-        :meth:`finalize` to produce the PCA decomposition.
-        """
-        assert X is not None
-        # apply normalization and RFF (RFF params are persisted)
-        X = self._l2_normalize(X)
-        # Only initialize/apply RFF if both gamma and M are provided
-        if self.mode == "rff" and (
-            self.gamma is not None and self.M is not None
-        ):
-            # initialize RFF parameters on first call
-            if not self._rff_initialized:
-                _, D = X.shape
-                if self.M <= D:
-                    raise ValueError(
-                        "RFF dimension M must be greater than input dim D"
-                    )
-                device = X.device
-                dtype = X.dtype
-                w = math.sqrt(2.0 * float(self.gamma)) * torch.normal(
-                    mean=0.0,
-                    std=1.0,
-                    size=(self.M, D),
-                    device=device,
-                    dtype=dtype,
-                )
-                u = (
-                    2.0
-                    * math.pi
-                    * torch.rand(self.M, device=device, dtype=dtype)
-                )
-                # register as buffers so they move with the module
-                self.register_buffer("_rff_w", w)
-                self.register_buffer("_rff_u", u)
-                self._rff_initialized = True
-            X = self._rff(X)
-
-        m = X.shape[0]
-        # accumulate in double precision for numerical stability and to match
-        # scikit-learn's float64 behaviour
-        batch_sum = X.sum(dim=0).to(torch.float64)
-        batch_outer = (X.T @ X).to(torch.float64)
-
-        if self._n_samples == 0:
-            self._sum_X = batch_sum.clone()
-            self._sum_outer = batch_outer.clone()
-            self._n_samples = m
-        else:
-            assert self._sum_X is not None and self._sum_outer is not None
-            self._sum_X = self._sum_X + batch_sum
-            self._sum_outer = self._sum_outer + batch_outer
-            self._n_samples += m
 
     def finalize(self) -> None:
         """Finalize partial fit: compute covariance SVD and set PCA params.
@@ -304,33 +382,50 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
         self.u_q = self.u[:, : self.q]
         self.u_q_dot = self.u_q @ self.u_q.T
 
-    def fit_transform(self, X: torch.Tensor, Y: None = None) -> torch.Tensor:
-        """Fit PCA on X and return transformed principal components."""
-        self.fit(X, Y)
-        return self.transform(X)
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ) -> None:
+        """Load state dict with custom logic for PCA parameters.
 
-    def transform(self, X: torch.Tensor) -> torch.Tensor:
-        """Project input samples onto the retained principal components.
+        Custom state loader that accepts tensors of arbitrary shape for
+        the registered PCA buffers. This replaces the default copying logic
+        which would raise size-mismatch errors when placeholder buffers
+        (empty tensors) exist on a fresh instance.
 
-        Returns projected components of shape (N, q).
+        We simply set the attribute / buffer to the incoming tensor so that
+        load_state_dict populates the module correctly.
         """
-        assert isinstance(X, torch.Tensor)
-        X = self._preprocess(X)
-        X_proj = X @ self.u_q
-        return X_proj
+        # list of persistent buffers we manage
+        buf_names = [
+            "mu",
+            "u",
+            "s",
+            "s_acc",
+            "u_q",
+            "u_q_dot",
+            "_rff_w",
+            "_rff_u",
+            "_rff_initialized",
+            "_sum_X",
+            "_sum_outer",
+        ]
 
-    def inverse_transform(self, Z: torch.Tensor) -> torch.Tensor:
-        """Reconstruct samples from principal component scores.
-
-        Returns reconstructed samples in the preprocessed space.
-        """
-        assert isinstance(Z, torch.Tensor)
-        X_rec = (self.u_q @ Z.T).T
-        return X_rec
-
-    def reconstruct(self, X: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """Reconstruct an input and return the L2 reconstruction error."""
-        X_p = self._preprocess(X)
-        X_rec = self.inverse_transform(self.transform(X))
-        error = torch.linalg.norm(X_p - X_rec, ord=2, dim=1)
-        return X_rec, error
+        for name in buf_names:
+            key = prefix + name
+            if key in state_dict:
+                val = state_dict[key]
+                if hasattr(self, name):
+                    try:
+                        setattr(self, name, val)
+                    except Exception:
+                        # fallback to register_buffer if direct set fails
+                        self.register_buffer(name, val)
+                else:
+                    self.register_buffer(name, val)
