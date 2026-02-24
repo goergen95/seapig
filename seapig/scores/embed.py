@@ -59,6 +59,14 @@ class EmbeddingScore(ConfidenceScore, ABC):
         self.pca = pca
         self.register_buffer("ref_embeddings", None)
         self.register_buffer("cal_embeddings", None, persistent=False)
+        # Incremental fitting state
+        self._partial_active: bool = False
+        self._ref_embs_batches: list[torch.Tensor] = []
+        self._cal_embs_batches: list[torch.Tensor] = []
+        self._batch_paths: list[Path] = []
+        self._cal_batch_paths: list[Path] = []
+        self._n_ref_samples: int = 0
+        self._batch_count: int = 0
 
     @staticmethod
     def _setup_path(
@@ -206,6 +214,222 @@ class EmbeddingScore(ConfidenceScore, ABC):
         assert isinstance(self.pca, TensorPCA)
         self.pca.fit(self.ref_embeddings)
 
+    # ------------------------------------------------------------------
+    # Incremental (batch-wise) fitting helpers and public API
+    # ------------------------------------------------------------------
+
+    def reset_partial(self) -> None:
+        """Reset all incremental accumulators and counters.
+
+        This should be called before starting a new incremental fitting
+        session. It is called automatically by ``partial_fit`` on its
+        first invocation when no session is active.
+        """
+        self._partial_active = False
+        self._ref_embs_batches = []
+        self._cal_embs_batches = []
+        self._batch_paths = []
+        self._cal_batch_paths = []
+        self._n_ref_samples = 0
+        self._batch_count = 0
+        if self.pca is not None:
+            self.pca.reset_partial()
+
+    def _accumulate_ref_embeddings(
+        self,
+        embs: torch.Tensor,
+        write_to_disk: bool = False,
+        outdir: Path | None = None,
+        prefix: str | None = None,
+        key: str = "train",
+    ) -> None:
+        """Accumulate a batch of embeddings in memory or write to disk.
+
+        Parameters
+        ----------
+        embs:
+            Embeddings tensor for the current batch.
+        write_to_disk:
+            If ``True`` and ``outdir`` is provided, write the batch to a
+            ``.pt`` file instead of keeping it in memory.
+        outdir:
+            Directory for batch files. Only used when ``write_to_disk=True``.
+        prefix:
+            Filename prefix for batch files. Defaults to ``"emb"`` when
+            ``outdir`` is given but ``prefix`` is ``None``.
+        key:
+            Either ``"train"`` or ``"val"``, selects the accumulator.
+        """
+        if write_to_disk and outdir is not None:
+            eff_prefix = prefix
+            if prefix is None:
+                warnings.warn(
+                    "'outdir' has been specified but 'prefix' is None."
+                    " Using default prefix 'emb'.",
+                    UserWarning,
+                )
+                eff_prefix = "emb"
+            batch_idx = (
+                self._batch_count
+                if key == "train"
+                else len(self._cal_batch_paths)
+            )
+            file_prefix = f"{eff_prefix}-embeddings-{key}-batch-{batch_idx:03d}"
+            path = self._setup_path(outdir, file_prefix)
+            assert path is not None
+            self._write_pt(embs, path)
+            if key == "train":
+                self._batch_paths.append(path)
+            else:
+                self._cal_batch_paths.append(path)
+        else:
+            if key == "train":
+                self._ref_embs_batches.append(embs)
+            else:
+                self._cal_embs_batches.append(embs)
+
+    def _finalize_ref_embeddings(self, keep_batch_files: bool = False) -> None:
+        """Concatenate accumulated batches into ``ref_embeddings`` / ``cal_embeddings``.
+
+        Parameters
+        ----------
+        keep_batch_files:
+            If ``False`` (default), per-batch files written during
+            batch-write mode are deleted after loading.
+        """
+        if self._batch_paths:
+            emb_list = [self._load_pt(p) for p in self._batch_paths]
+            self.ref_embeddings = torch.cat(emb_list, dim=0)
+            if not keep_batch_files:
+                for p in self._batch_paths:
+                    p.unlink(missing_ok=True)
+        elif self._ref_embs_batches:
+            self.ref_embeddings = torch.cat(self._ref_embs_batches, dim=0)
+
+        if self._cal_batch_paths:
+            emb_list = [self._load_pt(p) for p in self._cal_batch_paths]
+            self.cal_embeddings = torch.cat(emb_list, dim=0)
+            if not keep_batch_files:
+                for p in self._cal_batch_paths:
+                    p.unlink(missing_ok=True)
+        elif self._cal_embs_batches:
+            self.cal_embeddings = torch.cat(self._cal_embs_batches, dim=0)
+
+        # clear accumulators
+        self._ref_embs_batches = []
+        self._cal_embs_batches = []
+        self._batch_paths = []
+        self._cal_batch_paths = []
+
+    def partial_fit(
+        self,
+        X: torch.Tensor | None = None,
+        *,
+        model: torch.nn.Module | None = None,
+        batch: torch.Tensor | dict[str, torch.Tensor] | None = None,
+        outdir: Path | None = None,
+        prefix: str | None = None,
+        write_batch: bool | None = None,
+    ) -> None:
+        """Process a single training batch for incremental fitting.
+
+        This method accumulates embeddings batch by batch. Call
+        ``finalize()`` once all batches have been processed to set
+        ``ref_embeddings`` and complete the incremental fitting session.
+
+        If no session is active (i.e. ``reset_partial`` was not called
+        beforehand), one is started automatically on the first call.
+
+        Parameters
+        ----------
+        X:
+            Pre-computed embeddings for this batch. Mutually exclusive
+            with ``model`` + ``batch``.
+        model:
+            A ``torch.nn.Module`` with an ``.embed()`` method. Required
+            when ``X`` is not provided.
+        batch:
+            A raw input batch (tensor or dict with ``"image"`` key).
+            Required when ``X`` is not provided.
+        outdir:
+            Output directory for per-batch embedding files.
+            Only used when ``write_batch=True``.
+        prefix:
+            Filename prefix for per-batch embedding files.
+            Only used when ``write_batch=True``.
+        write_batch:
+            Whether to write this batch to disk instead of accumulating
+            in memory. Defaults to ``False``.
+        """
+        if not self._partial_active:
+            self.reset_partial()
+            self._partial_active = True
+
+        if X is not None:
+            embs = X
+        else:
+            if model is None or batch is None:
+                raise ValueError(
+                    "Provide X (embeddings) or both model and batch "
+                    "when using partial_fit."
+                )
+            embs = self._embed(X=batch, model=model)
+
+        write_batch_flag = (
+            bool(write_batch) if write_batch is not None else False
+        )
+
+        if self.pca is not None:
+            self.pca.partial_fit(embs)
+
+        self._accumulate_ref_embeddings(
+            embs,
+            write_to_disk=write_batch_flag,
+            outdir=outdir,
+            prefix=prefix,
+            key="train",
+        )
+        self._n_ref_samples += embs.shape[0]
+        self._batch_count += 1
+
+    def finalize(self, keep_batch_files: bool = False) -> None:
+        """Finalize incremental fitting and populate ``ref_embeddings``.
+
+        Concatenates all accumulated batch embeddings (or loads them from
+        disk) into ``ref_embeddings`` and, if validation batches were
+        accumulated, into ``cal_embeddings``. If a ``TensorPCA`` is
+        attached, ``pca.finalize()`` is also called.
+
+        Parameters
+        ----------
+        keep_batch_files:
+            Whether to keep per-batch ``.pt`` files written during
+            batch-write mode. Defaults to ``False`` (files are removed
+            after loading).
+
+        Raises
+        ------
+        RuntimeError
+            If called without any prior ``partial_fit`` calls.
+        """
+        if (
+            not self._partial_active
+            and not self._ref_embs_batches
+            and not self._batch_paths
+        ):
+            raise RuntimeError(
+                "No data provided to partial_fit before calling finalize()."
+            )
+
+        if self.pca is not None and self._n_ref_samples > 0:
+            self.pca.finalize()
+
+        self._finalize_ref_embeddings(keep_batch_files=keep_batch_files)
+
+        self._partial_active = False
+        self._n_ref_samples = 0
+        self._batch_count = 0
+
     @override
     def fit(
         self,
@@ -216,6 +440,11 @@ class EmbeddingScore(ConfidenceScore, ABC):
         | None = None,
         outdir: Path | None = None,
         prefix: str | None = None,
+        incremental: Literal["auto", "full", "batch"] = "auto",
+        batch_write: bool = False,
+        chunk_size: int | None = None,
+        incremental_val: bool | None = None,
+        keep_batch_files: bool = False,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -231,13 +460,16 @@ class EmbeddingScore(ConfidenceScore, ABC):
         You must use either embeddings (X/Y) OR model+loaders, but not both.
 
         ```python
-        # Mode 1: Precomputed embeddings
+        # Mode 1: Precomputed embeddings (full)
         my_score = EmbeddingScore(k=2)
         my_score.fit(X=train_embs, Y=val_embs)
 
-        # Mode 2: On-the-fly extraction
+        # Mode 2: On-the-fly extraction (auto → batch when >1 train batch)
         my_score = EmbeddingScore(k=2)
         my_score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
+
+        # Mode 3: Chunked precomputed embeddings (batch)
+        my_score.fit(X=big_X, incremental="batch", chunk_size=1024)
         ```
 
         Parameters
@@ -259,6 +491,32 @@ class EmbeddingScore(ConfidenceScore, ABC):
         prefix:
             A `str` used as filename prefix for saved embeddings.
             Only used with `model` and `loaders`.
+        incremental:
+            Fitting mode. One of ``"auto"`` (default), ``"full"``, or
+            ``"batch"``.
+
+            - ``"full"``: collect all embeddings first, then fit (existing
+              behaviour, unchanged).
+            - ``"batch"``: process training data incrementally using
+              ``partial_fit`` per batch, then call ``finalize()``.
+            - ``"auto"``: choose ``"batch"`` when using ``model`` + ``loaders``
+              with more than one training batch, or when ``chunk_size`` is set
+              for precomputed ``X``; otherwise choose ``"full"``.
+        batch_write:
+            If ``True``, write each batch of embeddings to a separate ``.pt``
+            file under ``outdir`` instead of accumulating in memory. Only used
+            when ``incremental`` resolves to ``"batch"``. Defaults to ``False``.
+        chunk_size:
+            Split precomputed ``X`` into chunks of this size for batch-mode
+            processing. Only used when ``incremental`` resolves to ``"batch"``
+            and ``X`` is provided. Defaults to ``None`` (no chunking).
+        incremental_val:
+            Whether to process the validation loader incrementally in batch
+            mode. Defaults to the same as the resolved ``incremental`` mode
+            (i.e. ``True`` when batch, ``False`` when full).
+        keep_batch_files:
+            If ``True``, per-batch ``.pt`` files written during batch-write
+            mode are kept on disk after ``finalize()``. Defaults to ``False``.
         """
         # Validate parameter combinations
         using_embeddings = X is not None
@@ -275,37 +533,193 @@ class EmbeddingScore(ConfidenceScore, ABC):
                 "Must specify either embeddings (X) or model+loaders for fitting."
             )
 
-        if using_embeddings:
-            # Mode 1: Use precomputed embeddings
-            self.ref_embeddings = X
-            self.cal_embeddings = Y
-        else:
-            # Mode 2: Extract embeddings on-the-fly
-            if model is None:
-                raise ValueError(
-                    "model is required when not using precomputed embeddings."
-                )
-            if loaders is None:
-                raise ValueError("loaders is required when using a model.")
+        # Resolve incremental mode
+        mode: Literal["full", "batch"] = "full"
+        if incremental == "full":
+            mode = "full"
+        elif incremental == "batch":
+            mode = "batch"
+        else:  # "auto"
+            if using_embeddings and chunk_size is not None:
+                mode = "batch"
+            elif using_model and loaders is not None and "train" in loaders:
+                try:
+                    train_len = len(loaders["train"])
+                    mode = "batch" if train_len > 1 else "full"
+                except TypeError:
+                    mode = "batch"
+            else:
+                mode = "full"
 
-            assert isinstance(loaders, dict)
-            assert isinstance(model, torch.nn.Module)
-            self._check_model(model)
-            self.ref_embeddings = self._embed_from_dict(
-                loaders=loaders,
-                model=model,
-                key="train",
-                outdir=outdir,
-                prefix=prefix,
-            )
-            if "val" in loaders.keys():
-                self.cal_embeddings = self._embed_from_dict(
+        if mode == "full":
+            # ---- existing full-mode behaviour ----
+            if using_embeddings:
+                self.ref_embeddings = X
+                self.cal_embeddings = Y
+            else:
+                if model is None:
+                    raise ValueError(
+                        "model is required when not using precomputed embeddings."
+                    )
+                if loaders is None:
+                    raise ValueError("loaders is required when using a model.")
+
+                assert isinstance(loaders, dict)
+                assert isinstance(model, torch.nn.Module)
+                self._check_model(model)
+                self.ref_embeddings = self._embed_from_dict(
                     loaders=loaders,
                     model=model,
-                    key="val",
+                    key="train",
                     outdir=outdir,
                     prefix=prefix,
                 )
+                if "val" in loaders.keys():
+                    self.cal_embeddings = self._embed_from_dict(
+                        loaders=loaders,
+                        model=model,
+                        key="val",
+                        outdir=outdir,
+                        prefix=prefix,
+                    )
+        else:
+            # ---- batch mode ----
+            if using_embeddings:
+                assert X is not None
+                self.reset_partial()
+                self._partial_active = True
+                if chunk_size is not None:
+                    n = X.shape[0]
+                    for start in range(0, n, chunk_size):
+                        chunk = X[start : start + chunk_size]
+                        if self.pca is not None:
+                            self.pca.partial_fit(chunk)
+                        self._accumulate_ref_embeddings(
+                            chunk,
+                            write_to_disk=batch_write,
+                            outdir=outdir,
+                            prefix=prefix,
+                            key="train",
+                        )
+                        self._n_ref_samples += chunk.shape[0]
+                        self._batch_count += 1
+                else:
+                    if self.pca is not None:
+                        self.pca.partial_fit(X)
+                    self._accumulate_ref_embeddings(
+                        X,
+                        write_to_disk=batch_write,
+                        outdir=outdir,
+                        prefix=prefix,
+                        key="train",
+                    )
+                    self._n_ref_samples = X.shape[0]
+                    self._batch_count = 1
+                if Y is not None:
+                    val_chunk_size = chunk_size
+                    if val_chunk_size is not None:
+                        for start in range(0, Y.shape[0], val_chunk_size):
+                            chunk = Y[start : start + val_chunk_size]
+                            self._accumulate_ref_embeddings(
+                                chunk,
+                                write_to_disk=batch_write,
+                                outdir=outdir,
+                                prefix=prefix,
+                                key="val",
+                            )
+                    else:
+                        self._accumulate_ref_embeddings(
+                            Y,
+                            write_to_disk=batch_write,
+                            outdir=outdir,
+                            prefix=prefix,
+                            key="val",
+                        )
+                self.finalize(keep_batch_files=keep_batch_files)
+            else:
+                # model + loaders in batch mode
+                if model is None:
+                    raise ValueError(
+                        "model is required when not using precomputed embeddings."
+                    )
+                if loaders is None:
+                    raise ValueError("loaders is required when using a model.")
+
+                assert isinstance(loaders, dict)
+                assert isinstance(model, torch.nn.Module)
+                self._check_model(model)
+
+                do_batch_val = (
+                    incremental_val if incremental_val is not None else True
+                )
+
+                self.reset_partial()
+                self._partial_active = True
+
+                # ---- train batches ----
+                was_training = model.training
+                model.eval()
+                train_loader = loaders["train"]
+                try:
+                    n_train: int | None = len(train_loader)
+                except TypeError:
+                    n_train = None
+                pbar_desc = f"Embedding {n_train if n_train is not None else '?'} train batches"
+                for train_batch in track(
+                    train_loader, total=n_train, desc=pbar_desc, unit="batches"
+                ):
+                    embs = self._embed(X=train_batch, model=model)
+                    if self.pca is not None:
+                        self.pca.partial_fit(embs)
+                    self._accumulate_ref_embeddings(
+                        embs,
+                        write_to_disk=batch_write,
+                        outdir=outdir,
+                        prefix=prefix,
+                        key="train",
+                    )
+                    self._n_ref_samples += embs.shape[0]
+                    self._batch_count += 1
+                if was_training:
+                    model.train()
+
+                # ---- val batches ----
+                if "val" in loaders:
+                    if do_batch_val:
+                        was_training_val = model.training
+                        model.eval()
+                        val_loader = loaders["val"]
+                        try:
+                            n_val: int | None = len(val_loader)
+                        except TypeError:
+                            n_val = None
+                        pbar_desc_val = f"Embedding {n_val if n_val is not None else '?'} val batches"
+                        for val_batch in track(
+                            val_loader,
+                            total=n_val,
+                            desc=pbar_desc_val,
+                            unit="batches",
+                        ):
+                            embs = self._embed(X=val_batch, model=model)
+                            self._accumulate_ref_embeddings(
+                                embs,
+                                write_to_disk=batch_write,
+                                outdir=outdir,
+                                prefix=prefix,
+                                key="val",
+                            )
+                        if was_training_val:
+                            model.train()
+                    else:
+                        self.cal_embeddings = self._embed_from_dict(
+                            loaders=loaders,
+                            model=model,
+                            key="val",
+                            outdir=outdir,
+                            prefix=prefix,
+                        )
+
+                self.finalize(keep_batch_files=keep_batch_files)
 
     @override
     def set_threshold(self, q: float = 0.99) -> None:
