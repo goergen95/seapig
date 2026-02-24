@@ -162,3 +162,57 @@ def test_tensorpca_agrees_with_sklearn_mid_size() -> None:
     mse = torch.mean((proj_sk_t.abs() - X_proj_tp.abs()) ** 2).item()
     # we expect close agreement in projection magnitudes
     assert mse < 1e-6, "Projections differ between scikit-learn and TensorPCA"
+
+
+def test_partial_fit_matches_incremental_pca() -> None:
+    """Compare TensorPCA.partial_fit/finalize with sklearn IncrementalPCA for linear mode."""
+    pytest.importorskip("sklearn")
+    from sklearn.decomposition import IncrementalPCA
+
+    torch.manual_seed(1)
+    n, D = 400, 30
+    X = torch.randn(n, D)
+
+    n_comp = 8
+    batch_size = 50
+
+    # preprocess for sklearn: row-wise L2 normalisation
+    X_norm = TensorPCA._l2_normalize(X)
+    X_norm_np = X_norm.cpu().numpy()
+
+    # sklearn incremental PCA
+    ipca = IncrementalPCA(n_components=n_comp)
+    for i in range(0, n, batch_size):
+        ipca.partial_fit(X_norm_np[i : i + batch_size])
+    X_proj_sk = ipca.transform(X_norm_np)
+    X_rec_sk = ipca.inverse_transform(X_proj_sk)
+    # use the mean estimated by IncrementalPCA (may differ slightly from
+    # direct numpy mean due to online updates)
+    mu_ipca = ipca.mean_
+    X_rec_sk_centered = X_rec_sk - mu_ipca
+
+    # TensorPCA partial fit path (linear)
+    tpca = TensorPCA(n_comp=n_comp, gamma=None, M=None)
+    for i in range(0, n, batch_size):
+        batch = X[i : i + batch_size]
+        tpca.partial_fit(batch)
+    tpca.finalize()
+
+    X_proj_tp = tpca.transform(X)
+    X_rec_tp = tpca.inverse_transform(X_proj_tp)
+
+    rec_sk_t = torch.from_numpy(X_rec_sk_centered).to(X_rec_tp.dtype)
+    rec_sk_t = rec_sk_t.to(device=X_rec_tp.device)
+
+    mse = torch.mean((rec_sk_t - X_rec_tp) ** 2).item()
+    assert mse < 1e-2, (
+        f"MSE between IncrementalPCA and TensorPCA partial path too large: {mse}"
+    )
+
+    proj_sk_t = torch.from_numpy(X_proj_sk).to(
+        device=X_proj_tp.device, dtype=X_proj_tp.dtype
+    )
+    mse = torch.mean((proj_sk_t.abs() - X_proj_tp.abs()) ** 2).item()
+    assert mse < 1e-1, (
+        "Projections differ between IncrementalPCA and TensorPCA partial path"
+    )
