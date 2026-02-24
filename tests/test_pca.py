@@ -216,3 +216,66 @@ def test_partial_fit_matches_incremental_pca() -> None:
     assert mse < 1e-1, (
         "Projections differ between IncrementalPCA and TensorPCA partial path"
     )
+
+
+def _assert_state_dicts_equal(sd1: dict, sd2: dict) -> None:
+    """Helper to compare two state_dict-like mappings of tensors.
+
+    Compares tensor contents on CPU. Accepts None entries.
+    """
+    assert set(sd1.keys()) == set(sd2.keys())
+    for k in sd1.keys():
+        v1 = sd1[k]
+        v2 = sd2[k]
+        if v1 is None and v2 is None:
+            continue
+        assert v1 is not None and v2 is not None, (
+            f"Mismatch at {k}: one is None"
+        )
+        t1 = v1.detach().cpu()
+        t2 = v2.detach().cpu()
+        if t1.dtype == torch.bool:
+            assert torch.equal(t1, t2), f"Bool tensor mismatch at {k}"
+        else:
+            assert torch.allclose(t1, t2, atol=1e-6, rtol=0), (
+                f"Tensor mismatch at {k}"
+            )
+
+
+def test_save_load_tensorpca_linear_and_rff(tmp_path) -> None:
+    """Saving and loading a fitted TensorPCA should preserve all buffers.
+
+    This test covers both linear and RFF modes. It saves state_dict to disk
+    and loads it into a new instance constructed with the same config,
+    then compares the resulting state dictionaries.
+    """
+    torch.manual_seed(42)
+    X = torch.randn(120, 10)
+
+    # Linear mode
+    tpca_lin = TensorPCA(exp_var=0.95)
+    tpca_lin.fit(X)
+    path_lin = tmp_path / "tpca_linear.pt"
+    torch.save(tpca_lin.state_dict(), path_lin)
+
+    tpca_lin_loaded = TensorPCA(exp_var=0.95)
+    sd = torch.load(path_lin)
+    tpca_lin_loaded.load_state_dict(sd)
+
+    _assert_state_dicts_equal(
+        tpca_lin.state_dict(), tpca_lin_loaded.state_dict()
+    )
+
+    # RFF mode (ensure RFF params are created during fit)
+    tpca_rff = TensorPCA(exp_var=0.95, gamma=1.0, M=32)
+    tpca_rff.fit(X)
+    path_rff = tmp_path / "tpca_rff.pt"
+    torch.save(tpca_rff.state_dict(), path_rff)
+
+    tpca_rff_loaded = TensorPCA(exp_var=0.95, gamma=1.0, M=32)
+    sd2 = torch.load(path_rff)
+    tpca_rff_loaded.load_state_dict(sd2)
+
+    _assert_state_dicts_equal(
+        tpca_rff.state_dict(), tpca_rff_loaded.state_dict()
+    )
