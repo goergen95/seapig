@@ -400,13 +400,13 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
 
     def _load_from_state_dict(
         self,
-        state_dict,
-        prefix,
-        local_metadata,
-        strict,
-        missing_keys,
-        unexpected_keys,
-        error_msgs,
+        state_dict: dict[str, torch.Tensor],
+        prefix: str,
+        local_metadata: dict[str, object],
+        strict: bool,
+        missing_keys: list[str],
+        unexpected_keys: list[str],
+        error_msgs: list[str],
     ) -> None:
         """Load state dict with custom logic for PCA parameters.
 
