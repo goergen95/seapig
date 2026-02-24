@@ -19,6 +19,7 @@ from typing import Any
 
 import torch
 
+from seapig.scores.utils import TensorPCA
 from seapig.utils.logging import get_logger
 
 _MODULE_LOGGER = get_logger(__name__)
@@ -37,6 +38,14 @@ class IndexManager:
     (``method="hnsw"``); a pure-PyTorch brute-force search is available as a
     fallback (``method="brute"``).
 
+    Both the PCA and the index support two population modes:
+
+    1. **Single-shot** — pass all reference embeddings to :meth:`fit` then
+       call :meth:`build_index`.  PCA is fitted on the full set in one pass.
+    2. **Batch-wise** — call :meth:`add_batch` repeatedly (PCA accumulates
+       partial statistics per batch via :meth:`TensorPCA.partial_fit`) then
+       call :meth:`build_index` which finalises PCA and constructs the index.
+
     Parameters
     ----------
     method : {"hnsw", "brute"}, optional
@@ -50,14 +59,10 @@ class IndexManager:
         Device on which returned tensors are placed.  When ``None`` the device
         of the first batch added via :meth:`fit` or :meth:`add_batch` is
         inferred automatically.
-    pca_components : int or None, optional
-        Number of PCA components to retain before indexing.  Mutually
-        exclusive with *pca_exp_var*.  Defaults to ``None`` (no PCA).
-    pca_exp_var : float or None, optional
-        Minimum cumulative explained-variance ratio for automatic PCA
-        component selection (passed directly to
-        :class:`sklearn.decomposition.PCA` as ``n_components``).  Mutually
-        exclusive with *pca_components*.  Defaults to ``None`` (no PCA).
+    pca : TensorPCA or None, optional
+        A fitted or unfitted :class:`TensorPCA` instance used for
+        dimensionality reduction before indexing.  When ``None`` (default),
+        no dimensionality reduction is applied.
     dtype : torch.dtype, optional
         Data type used for internal tensor storage and returned distances.
         Defaults to ``torch.float32``.
@@ -70,6 +75,8 @@ class IndexManager:
         Active backend (``"hnsw"`` or ``"brute"``).
     space : str
         Distance space (``"l2"`` or ``"cosinesimil"``).
+    pca : TensorPCA or None
+        The PCA preprocessing object (``None`` when no PCA is used).
 
     Notes
     -----
@@ -83,7 +90,7 @@ class IndexManager:
 
     Examples
     --------
-    Brute-force search:
+    Brute-force search (single-shot):
 
     >>> import torch
     >>> from seapig.scores.index_manager import IndexManager
@@ -96,12 +103,14 @@ class IndexManager:
     >>> indices.shape
     torch.Size([3, 2])
 
-    HNSW search with custom parameters:
+    Batch-wise population with PCA:
 
-    >>> mgr_hnsw = IndexManager(method="hnsw", space="l2")
-    >>> mgr_hnsw.fit(ref)
-    >>> mgr_hnsw.build_index(hnsw_params={"M": 16, "efConstruction": 200})
-    >>> indices, distances = mgr_hnsw.search(q, k=2)
+    >>> from seapig.scores.utils import TensorPCA
+    >>> mgr_pca = IndexManager(method="brute", pca=TensorPCA(n_components=4))
+    >>> for batch in [torch.randn(20, 8), torch.randn(20, 8)]:
+    ...     mgr_pca.add_batch(batch)
+    >>> mgr_pca.build_index()
+    >>> indices, distances = mgr_pca.search(torch.randn(3, 8), k=2)
     """
 
     def __init__(
@@ -109,8 +118,7 @@ class IndexManager:
         method: str = "hnsw",
         space: str = "l2",
         device: str | None = None,
-        pca_components: int | None = None,
-        pca_exp_var: float | None = None,
+        pca: TensorPCA | None = None,
         dtype: torch.dtype = torch.float32,
         log: logging.Logger | None = None,
     ) -> None:
@@ -122,17 +130,16 @@ class IndexManager:
             raise ValueError(
                 f"space must be 'l2' or 'cosinesimil', got {space!r}"
             )
-        if pca_components is not None and pca_exp_var is not None:
-            raise ValueError(
-                "Provide at most one of pca_components and pca_exp_var."
+        if pca is not None and not isinstance(pca, TensorPCA):
+            raise TypeError(
+                f"pca must be a TensorPCA instance or None, got {type(pca)!r}"
             )
 
         self.method: str = method
         self.space: str = space
         self._dtype: torch.dtype = dtype
         self._device: str | None = device
-        self._pca_components: int | None = pca_components
-        self._pca_exp_var: float | None = pca_exp_var
+        self.pca: TensorPCA | None = pca
         self._logger: logging.Logger = (
             log if log is not None else _MODULE_LOGGER
         )
@@ -141,8 +148,9 @@ class IndexManager:
         self._ref_embeddings: torch.Tensor | None = None
         self._cal_embeddings: torch.Tensor | None = None
         self._index: Any | None = None  # nmslib index or torch.Tensor (brute)
-        self._pca: Any | None = None  # sklearn PCA instance or None
         self._index_params: dict[str, Any] = {}
+        # Tracks whether add_batch() has accumulated partial PCA statistics
+        self._pca_partial_batches: bool = False
 
     # ------------------------------------------------------------------
     # Public API
@@ -249,6 +257,11 @@ class IndexManager:
                 [self._ref_embeddings, embeddings], dim=0
             )
 
+        # Accumulate partial PCA statistics for batch-wise fitting
+        if self.pca is not None:
+            self.pca.partial_fit(embeddings)
+            self._pca_partial_batches = True
+
         self._logger.debug(
             "add_batch: added %d vectors; total=%d",
             embeddings.shape[0],
@@ -298,7 +311,16 @@ class IndexManager:
                 "Call fit() or add_batch() first."
             )
 
-        embs = self._prepare_embs(self._ref_embeddings, fit_pca=True)
+        # Fit or finalise PCA depending on which population mode was used
+        if self.pca is not None:
+            if self._pca_partial_batches:
+                # Batch-wise: partial_fit was called via add_batch() — finalise
+                self.pca.finalize()
+            else:
+                # Single-shot: fit from all stored reference embeddings at once
+                self.pca.fit(self._ref_embeddings)
+
+        embs = self._prepare_embs(self._ref_embeddings)
 
         if self.method == "hnsw":
             self._build_hnsw(embs, hnsw_params=hnsw_params, **nmslib_options)
@@ -360,9 +382,9 @@ class IndexManager:
 
         queries = queries.to(dtype=self._dtype)
 
-        # Apply PCA transform if fitted
-        if self._pca is not None:
-            queries = self._transform_pca(queries)
+        # Apply PCA transform if a PCA model is set
+        if self.pca is not None:
+            queries = self.pca.transform(queries).to(dtype=self._dtype)
 
         device = torch.device(self._device) if self._device else queries.device
 
@@ -414,7 +436,8 @@ class IndexManager:
         * ``<path>_index.bin`` — nmslib HNSW index (``method="hnsw"``).
         * ``<path>_brute.pt`` — brute-force reference tensor
           (``method="brute"``).
-        * ``<path>_pca.pkl``  — scikit-learn PCA object (when PCA is used).
+        * ``<path>_pca.pt``  — :class:`TensorPCA` state dict (when PCA is
+          used).
         * ``<path>_meta.json`` — JSON metadata.
 
         Parameters
@@ -452,21 +475,32 @@ class IndexManager:
                 torch.save(self._index.cpu(), brute_path)
                 saved["brute"] = brute_path
 
-        if self._pca is not None:
-            import pickle
-
-            pca_path = f"{path}_pca.pkl"
-            with open(pca_path, "wb") as fh:
-                pickle.dump(self._pca, fh)
+        if self.pca is not None:
+            pca_path = f"{path}_pca.pt"
+            torch.save(self.pca.state_dict(), pca_path)
             saved["pca"] = pca_path
 
+        pca_meta: dict[str, Any] = (
+            {
+                "pca_n_components": self.pca.n_components,
+                "pca_gamma": self.pca.gamma,
+                "pca_M": self.pca.M,
+                "pca_mode": self.pca.mode,
+            }
+            if self.pca is not None
+            else {
+                "pca_n_components": None,
+                "pca_gamma": None,
+                "pca_M": None,
+                "pca_mode": None,
+            }
+        )
         meta: dict[str, Any] = {
             "method": self.method,
             "space": self.space,
             "dtype": str(self._dtype),
             "device": self._device,
-            "pca_components": self._pca_components,
-            "pca_exp_var": self._pca_exp_var,
+            **pca_meta,
             "index_params": self._index_params,
             "paths": saved,
         }
@@ -503,8 +537,6 @@ class IndexManager:
         self.method = meta["method"]
         self.space = meta["space"]
         self._device = meta.get("device")
-        self._pca_components = meta.get("pca_components")
-        self._pca_exp_var = meta.get("pca_exp_var")
         self._index_params = meta.get("index_params", {})
         paths: dict[str, str] = meta.get("paths", {})
 
@@ -515,10 +547,17 @@ class IndexManager:
             self._cal_embeddings = torch.load(paths["cal"], weights_only=True)
 
         if "pca" in paths and Path(paths["pca"]).exists():
-            import pickle
-
-            with open(paths["pca"], "rb") as fh:
-                self._pca = pickle.load(fh)  # noqa: S301
+            pca_n_components = meta.get("pca_n_components")
+            if pca_n_components is not None:
+                pca = TensorPCA(
+                    n_components=pca_n_components,
+                    gamma=meta.get("pca_gamma"),
+                    M=meta.get("pca_M"),
+                    mode=meta.get("pca_mode"),
+                )
+                sd = torch.load(paths["pca"], weights_only=True)
+                pca.load_state_dict(sd)
+                self.pca = pca
 
         if self.method == "hnsw" and "index" in paths:
             try:
@@ -529,7 +568,7 @@ class IndexManager:
                     "Install it with `pip install nmslib`."
                 )
             embs = (
-                self._prepare_embs(self._ref_embeddings, fit_pca=False)
+                self._prepare_embs(self._ref_embeddings)
                 if self._ref_embeddings is not None
                 else None
             )
@@ -548,69 +587,33 @@ class IndexManager:
     def reset(self) -> None:
         """Reset all internal state.
 
-        Clears stored embeddings, the index, PCA model, and index
+        Clears stored embeddings, the index, PCA accumulators, and index
         parameters.  The construction-time hyper-parameters (*method*,
-        *space*, *dtype*, *device*, *pca_components*, *pca_exp_var*) are
-        preserved.
+        *space*, *dtype*, *device*, *pca*) are preserved; if a
+        :class:`TensorPCA` instance was supplied, its partial-fit accumulators
+        are reset so it can be re-fitted on new data.
         """
         self._ref_embeddings = None
         self._cal_embeddings = None
         self._index = None
-        self._pca = None
         self._index_params = {}
+        self._pca_partial_batches = False
+        if self.pca is not None:
+            self.pca.reset_partial()
         self._logger.debug("reset: all state cleared")
 
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _fit_pca(self, embs: torch.Tensor) -> torch.Tensor:
-        """Fit a scikit-learn PCA on *embs* and return transformed embeddings."""
-        from sklearn.decomposition import PCA as SklearnPCA
+    def _prepare_embs(self, embs: torch.Tensor) -> torch.Tensor:
+        """Optionally apply the fitted PCA transform to *embs*.
 
-        if self._pca_components is not None:
-            n_components: int | float = min(
-                self._pca_components, embs.shape[0], embs.shape[1]
-            )
-        else:
-            assert self._pca_exp_var is not None
-            n_components = self._pca_exp_var
-
-        pca = SklearnPCA(n_components=n_components, svd_solver="full")
-        embs_np = embs.cpu().float().numpy()
-        transformed = pca.fit_transform(embs_np)
-        self._pca = pca
-
-        explained = float(sum(pca.explained_variance_ratio_))
-        self._logger.info(
-            "PCA: %d -> %d dimensions (%.4f explained variance)",
-            embs.shape[1],
-            pca.n_components_,
-            explained,
-        )
-        return torch.from_numpy(transformed).to(dtype=self._dtype)
-
-    def _transform_pca(self, embs: torch.Tensor) -> torch.Tensor:
-        """Apply the fitted PCA transform to *embs*."""
-        assert self._pca is not None, "PCA has not been fitted"
-        import numpy as np
-
-        transformed = self._pca.transform(embs.cpu().float().numpy())
-        return torch.from_numpy(np.asarray(transformed, dtype=np.float32)).to(
-            dtype=self._dtype
-        )
-
-    def _prepare_embs(
-        self, embs: torch.Tensor, fit_pca: bool = False
-    ) -> torch.Tensor:
-        """Optionally apply (or fit-and-apply) PCA to *embs*."""
-        uses_pca = (
-            self._pca_components is not None or self._pca_exp_var is not None
-        )
-        if uses_pca:
-            if fit_pca:
-                return self._fit_pca(embs)
-            return self._transform_pca(embs)
+        When :attr:`pca` is set the embeddings are projected onto the
+        retained principal components and cast to :attr:`_dtype`.
+        """
+        if self.pca is not None:
+            return self.pca.transform(embs).to(dtype=self._dtype)
         return embs
 
     def _build_hnsw(

@@ -22,6 +22,7 @@ import pytest
 import torch
 
 from seapig.scores.index_manager import IndexManager
+from seapig.scores.utils import TensorPCA
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -54,9 +55,9 @@ class TestInputValidation:
         with pytest.raises(ValueError, match="space must be"):
             IndexManager(space="dotproduct")
 
-    def test_both_pca_params_raises(self) -> None:
-        with pytest.raises(ValueError, match="at most one"):
-            IndexManager(pca_components=4, pca_exp_var=0.9)
+    def test_invalid_pca_type_raises(self) -> None:
+        with pytest.raises(TypeError, match="pca must be a TensorPCA instance"):
+            IndexManager(pca="not_a_pca")  # type: ignore[arg-type]
 
     def test_fit_1d_tensor_raises(self) -> None:
         mgr = IndexManager(method="brute")
@@ -421,29 +422,33 @@ class TestPCA:
         refs = base @ direction + 0.01 * torch.randn(n, D)
         q = torch.randn(3, D)
 
-        mgr = IndexManager(method="brute", space="l2", pca_exp_var=0.90)
+        mgr = IndexManager(
+            method="brute", space="l2", pca=TensorPCA(n_components=0.90)
+        )
         mgr.fit(refs)
         mgr.build_index()
         indices, distances = mgr.search(q, k=2)
 
         assert indices.shape == (3, 2)
         # PCA should have been fitted
-        assert mgr._pca is not None
-        assert mgr._pca.n_components_ < D
+        assert mgr.pca is not None
+        assert mgr.pca.q < D
 
     def test_pca_components_fixed_count(self) -> None:
-        """PCA with pca_components should yield exactly that many components."""
+        """PCA with n_components int should yield exactly that many components."""
         torch.manual_seed(11)
         refs = torch.randn(40, 12)
         q = torch.randn(5, 12)
 
-        mgr = IndexManager(method="brute", space="l2", pca_components=4)
+        mgr = IndexManager(
+            method="brute", space="l2", pca=TensorPCA(n_components=4)
+        )
         mgr.fit(refs)
         mgr.build_index()
         indices, distances = mgr.search(q, k=2)
 
-        assert mgr._pca is not None
-        assert mgr._pca.n_components_ == 4
+        assert mgr.pca is not None
+        assert mgr.pca.q == 4
         assert indices.shape == (5, 2)
 
     def test_pca_consistent_with_manual_transform(self) -> None:
@@ -454,21 +459,17 @@ class TestPCA:
         q = torch.randn(4, D)
 
         # IndexManager with PCA
-        mgr = IndexManager(method="brute", space="l2", pca_exp_var=0.95)
+        mgr = IndexManager(
+            method="brute", space="l2", pca=TensorPCA(n_components=0.95)
+        )
         mgr.fit(refs)
         mgr.build_index()
         idx_pca, dist_pca = mgr.search(q, k=2)
 
-        # Manual: project refs and query, then build plain brute
-        assert mgr._pca is not None
-        import numpy as np
-
-        refs_proj = torch.from_numpy(
-            np.asarray(mgr._pca.transform(refs.numpy()), dtype=np.float32)
-        )
-        q_proj = torch.from_numpy(
-            np.asarray(mgr._pca.transform(q.numpy()), dtype=np.float32)
-        )
+        # Manual: project refs and query with the fitted TensorPCA
+        assert mgr.pca is not None
+        refs_proj = mgr.pca.transform(refs).to(torch.float32)
+        q_proj = mgr.pca.transform(q).to(torch.float32)
 
         manual = IndexManager(method="brute", space="l2")
         manual.fit(refs_proj)
@@ -484,7 +485,9 @@ class TestPCA:
         refs = torch.randn(40, 8)
         q = torch.randn(5, 8)
 
-        mgr = IndexManager(method="brute", space="l2", pca_exp_var=0.90)
+        mgr = IndexManager(
+            method="brute", space="l2", pca=TensorPCA(n_components=0.90)
+        )
         mgr.fit(refs)
         mgr.build_index()
         idx_orig, dist_orig = mgr.search(q, k=2)
@@ -498,6 +501,36 @@ class TestPCA:
 
         assert (idx_orig == idx_loaded).all()
         approx(dist_orig, dist_loaded)
+
+    def test_pca_batch_wise_matches_single_shot(self) -> None:
+        """Batch-wise PCA fitting produces the same index as single-shot."""
+        torch.manual_seed(42)
+        D = 12
+        batch1 = torch.randn(30, D)
+        batch2 = torch.randn(30, D)
+        q = torch.randn(5, D)
+        all_refs = torch.cat([batch1, batch2], dim=0)
+
+        # Single-shot
+        single = IndexManager(
+            method="brute", space="l2", pca=TensorPCA(n_components=4)
+        )
+        single.fit(all_refs)
+        single.build_index()
+        idx_single, dist_single = single.search(q, k=2)
+
+        # Batch-wise: partial_fit accumulates, finalize called in build_index
+        batched = IndexManager(
+            method="brute", space="l2", pca=TensorPCA(n_components=4)
+        )
+        batched.add_batch(batch1)
+        batched.add_batch(batch2)
+        batched.build_index()
+        idx_batch, dist_batch = batched.search(q, k=2)
+
+        # Both modes should produce the same nearest-neighbour results
+        assert (idx_single == idx_batch).all()
+        approx(dist_single, dist_batch)
 
 
 # ---------------------------------------------------------------------------
@@ -538,13 +571,12 @@ class TestGettersAndReset:
         mgr.reset()
         assert mgr.get_ref_embeddings() is None
         assert mgr._index is None
-        assert mgr._pca is None
+        assert mgr.pca is None
         assert mgr._index_params == {}
 
     def test_reset_preserves_construction_params(self) -> None:
-        mgr = IndexManager(
-            method="brute", space="cosinesimil", pca_components=3
-        )
+        pca = TensorPCA(n_components=3)
+        mgr = IndexManager(method="brute", space="cosinesimil", pca=pca)
         mgr.fit(torch.randn(10, 6))
         mgr.build_index()
         mgr.reset()
@@ -552,7 +584,8 @@ class TestGettersAndReset:
         # Construction-time params untouched
         assert mgr.method == "brute"
         assert mgr.space == "cosinesimil"
-        assert mgr._pca_components == 3
+        assert mgr.pca is pca
+        assert mgr.pca.n_components == 3
 
 
 # ---------------------------------------------------------------------------
