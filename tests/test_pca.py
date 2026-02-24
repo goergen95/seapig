@@ -22,7 +22,7 @@ def approx(t1: torch.Tensor, t2: torch.Tensor, tol: float = 1e-6) -> None:
 def test_l2_normalize_preserves_shape_and_scales() -> None:
     """_l2_normalize should keep shape and normalize rows to unit norm."""
     x = torch.tensor([[3.0, 4.0], [0.0, 0.0]])
-    tpca = TensorPCA()
+    tpca = TensorPCA(exp_var=0.9)
     out = tpca._l2_normalize(x)
     assert out.shape == x.shape
     # first row has norm 5 -> normalized to [0.6, 0.8]
@@ -294,20 +294,27 @@ def test_save_load_tensorpca_linear_and_rff(tmp_path) -> None:
 
 def test_constructor_warnings_and_validation() -> None:
     # both exp_var and n_comp provided should warn but not raise
-    with pytest.warns(UserWarning):
+    with pytest.warns(
+        UserWarning, match="Both exp_var and n_comp are provided"
+    ):
         TensorPCA(exp_var=0.5, n_comp=3)
 
     # invalid exp_var values raise
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="exp_var must be in the interval"):
         TensorPCA(exp_var=0.0)
 
+    with pytest.warns(UserWarning, match="Defaulting to exp_var=0.90"):
+        TensorPCA()
+
     # invalid n_comp values raise
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="n_comp must be a positive integer"):
         TensorPCA(n_comp=0)
 
     # invalid mode string
-    with pytest.raises(ValueError):
-        TensorPCA(mode="not-a-mode")
+    with pytest.raises(
+        ValueError, match="mode must be either 'linear' or 'rff'"
+    ):
+        TensorPCA(exp_var=0.5, mode="not-a-mode")
 
 
 def test_rff_partial_fit_dimension_check() -> None:
