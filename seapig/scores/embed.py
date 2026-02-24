@@ -3,6 +3,8 @@
 import inspect
 import warnings
 from abc import ABC
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal
 
@@ -95,31 +97,164 @@ class EmbeddingScore(ConfidenceScore, ABC):
         v: torch.Tensor = torch.load(path)
         return v
 
+    @staticmethod
+    def _validate_inputs(
+        using_embeddings: bool, using_model: bool, context: str
+    ) -> None:
+        """Validate that exactly one input mode (embeddings or model) is specified.
+
+        Parameters
+        ----------
+        using_embeddings:
+            ``True`` when precomputed embeddings were supplied.
+        using_model:
+            ``True`` when a model (and loader/loaders) were supplied.
+        context:
+            Name of the calling method, used in error messages.
+        """
+        if using_embeddings and using_model:
+            raise ValueError(
+                f"Cannot specify both embeddings (X) and model+loader(s) in "
+                f"{context}. Use either precomputed embeddings OR on-the-fly "
+                f"extraction."
+            )
+        if not using_embeddings and not using_model:
+            raise ValueError(
+                f"Must specify either embeddings (X) or model+loader(s) in "
+                f"{context}."
+            )
+
+    @staticmethod
+    def _resolve_incremental_mode(
+        incremental: Literal["auto", "full", "batch"],
+        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
+    ) -> Literal["full", "batch"]:
+        """Resolve ``"auto"`` to ``"full"`` or ``"batch"`` based on loader length.
+
+        Parameters
+        ----------
+        incremental:
+            The requested incremental mode.
+        loader:
+            The training DataLoader; its length is used when mode is ``"auto"``.
+        """
+        if incremental == "batch":
+            return "batch"
+        if incremental == "full":
+            return "full"
+        # "auto": choose batch when there is more than one training batch
+        try:
+            return "batch" if len(loader) > 1 else "full"
+        except TypeError:
+            return "batch"
+
+    @staticmethod
+    @contextmanager
+    def _model_eval_context(
+        model: torch.nn.Module,
+    ) -> Generator[None, None, None]:
+        """Context manager that temporarily sets a model to eval mode.
+
+        Restores the original training state on exit, even if an exception
+        is raised.
+        """
+        was_training = model.training
+        model.eval()
+        try:
+            yield
+        finally:
+            model.train(was_training)
+
     @classmethod
-    def _loadorembed(
-        self,
-        path: Path | None,
+    def _extract_embeddings(
+        cls,
         model: torch.nn.Module,
         loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
+        pca: TensorPCA | None = None,
+        path: Path | None = None,
+        pca_chunk_size: int = 1000,
     ) -> torch.Tensor:
-        """Load from file or iterate over dataloader to extract embeddings."""
+        """Extract or load embeddings, fitting PCA incrementally when provided.
+
+        If ``path`` points to an existing file the embeddings are loaded from
+        disk and, when ``pca`` is provided, it is fitted from the cached tensor
+        in chunks of ``pca_chunk_size``.  Otherwise the model is iterated
+        over the loader, PCA (if given) is fitted incrementally per batch, and
+        the full embedding tensor is written to ``path`` when provided.
+
+        Parameters
+        ----------
+        model:
+            Model with an ``.embed()`` method.  Also used for device resolution
+            when loading from disk.
+        loader:
+            DataLoader over input batches.
+        pca:
+            Optional ``TensorPCA`` to fit.  When ``None`` no PCA fitting is
+            performed.
+        path:
+            Optional path to save (or load) the full embedding tensor.
+        pca_chunk_size:
+            Chunk size used when iterating over a cached file to fit PCA.
+            Defaults to ``1000``.
+        """
         if path is not None and path.is_file():
             warnings.warn(
                 f"Loading pre-existing embeddings from {path}.", UserWarning
             )
-            v = self._load_pt(path)
-            device = next(model.parameters()).device
-            v = v.to(device)
-        else:
-            v = self._embed_dl(model=model, loader=loader)
-            if path is not None:
-                self._write_pt(v, path)
-        return v
+            try:
+                device = next(model.parameters()).device
+            except StopIteration:
+                device = torch.device("cpu")
+            all_embs = cls._load_pt(path).to(device)
+            if pca is not None:
+                pca.reset_partial()
+                n = all_embs.shape[0]
+                for start in range(0, n, pca_chunk_size):
+                    pca.partial_fit(all_embs[start : start + pca_chunk_size])
+                pca.finalize()
+            return all_embs
+
+        # Extract embeddings from the model
+        if pca is not None:
+            pca.reset_partial()
+        try:
+            n_batches: int | None = len(loader)
+        except TypeError:
+            n_batches = None
+        pbar_desc = (
+            f"Embedding {n_batches if n_batches is not None else '?'} batches"
+        )
+        embs_list: list[torch.Tensor] = []
+        with cls._model_eval_context(model):
+            for batch in track(
+                loader, total=n_batches, desc=pbar_desc, unit="batches"
+            ):
+                embs = cls._embed(X=batch, model=model)
+                embs_list.append(embs)
+                if pca is not None:
+                    pca.partial_fit(embs)
+        if pca is not None:
+            pca.finalize()
+        all_embs = torch.cat(embs_list, dim=0)
+        if path is not None:
+            cls._write_pt(all_embs, path)
+        return all_embs
+
+    @classmethod
+    def _loadorembed(
+        cls,
+        path: Path | None,
+        model: torch.nn.Module,
+        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
+    ) -> torch.Tensor:
+        """Load embeddings from file or extract them from the DataLoader."""
+        return cls._extract_embeddings(model=model, loader=loader, path=path)
 
     @classmethod
     @torch.inference_mode()  # type: ignore[untyped-decorator]
     def _embed(
-        self, X: torch.Tensor | dict[str, torch.Tensor], model: torch.nn.Module
+        cls, X: torch.Tensor | dict[str, torch.Tensor], model: torch.nn.Module
     ) -> torch.Tensor:
         """Embed a batch based on a models embed method."""
         assert callable(model.embed)
@@ -142,7 +277,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
     @classmethod
     def _embed_dl(
-        self,
+        cls,
         model: torch.nn.Module,
         loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
     ) -> torch.Tensor:
@@ -153,28 +288,11 @@ class EmbeddingScore(ConfidenceScore, ABC):
         The model's original training state is restored after embedding extraction.
         """
         assert callable(model.embed)
-        # Save the current training state and set model to eval mode
-        was_training = model.training
-        model.eval()
-
-        pbar_desc = f"Embedding {len(loader)} batches"
-        embs_ls = list()
-        for batch in track(
-            loader, total=len(loader), desc=pbar_desc, unit="batches"
-        ):
-            z = self._embed(X=batch, model=model)
-            embs_ls.append(z)
-        embs = torch.cat(embs_ls, dim=0)
-
-        # Restore the original training state
-        if was_training:
-            model.train()
-
-        return embs
+        return cls._extract_embeddings(model=model, loader=loader)
 
     @classmethod
     def _embed_from_dict(
-        self,
+        cls,
         model: torch.nn.Module,
         loaders: dict[str, DataLoader[torch.Tensor | dict[str, torch.Tensor]]],
         key: Literal["train", "val"],
@@ -182,7 +300,6 @@ class EmbeddingScore(ConfidenceScore, ABC):
         prefix: str | None = None,
     ) -> torch.Tensor:
         """Embed a loader from a specified key in a dictionary."""
-        path = None
         assert isinstance(loaders, dict)
         assert isinstance(model, torch.nn.Module)
         if outdir is not None and prefix is None:
@@ -191,95 +308,22 @@ class EmbeddingScore(ConfidenceScore, ABC):
                 "Consider specifying 'prefix' as well to enable saving embeddings.",
                 UserWarning,
             )
-        self._check_model(model)
+        cls._check_model(model)
         if key not in loaders.keys():
             raise KeyError(f"Missing key `{key}` in loaders dictionary.")
         loader = loaders[key]
         assert isinstance(loader, DataLoader)
-        if prefix is not None:
-            path = self._setup_path(outdir, prefix + f"-embeddings-{key}")
-        embs = self._loadorembed(path, model, loader)
-        return embs
+        path = (
+            cls._setup_path(outdir, prefix + f"-embeddings-{key}")
+            if prefix is not None
+            else None
+        )
+        return cls._extract_embeddings(model=model, loader=loader, path=path)
 
     def _fit_pca(self) -> None:
         assert self.ref_embeddings is not None
         assert isinstance(self.pca, TensorPCA)
         self.pca.fit(self.ref_embeddings)
-
-    @classmethod
-    def _embed_dl_batch(
-        cls,
-        model: torch.nn.Module,
-        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
-        pca: TensorPCA | None = None,
-        path: Path | None = None,
-        batch_size: int = 1000,
-    ) -> torch.Tensor:
-        """Extract embeddings batch-by-batch with optional incremental PCA.
-
-        If ``path`` points to an existing file, embeddings are loaded from
-        disk and PCA (when provided) is fitted in chunks — re-embedding is
-        skipped. Otherwise embeddings are extracted from the model, PCA is
-        fitted incrementally during extraction, and the full tensor is written
-        to ``path`` when provided.
-
-        Parameters
-        ----------
-        model:
-            Model providing an ``.embed()`` method. Also used for device
-            resolution when loading from disk.
-        loader:
-            DataLoader over training batches.
-        pca:
-            Optional ``TensorPCA`` to fit incrementally. When ``None``, no
-            PCA fitting is performed.
-        path:
-            Optional path to save/load the full embedding tensor.
-        batch_size:
-            Chunk size used when iterating over a pre-existing file for PCA
-            fitting. Defaults to ``1000``.
-        """
-        if path is not None and path.is_file():
-            warnings.warn(
-                f"Loading pre-existing embeddings from {path}.", UserWarning
-            )
-            try:
-                device = next(model.parameters()).device
-            except StopIteration:
-                device = torch.device("cpu")
-            all_embs = cls._load_pt(path).to(device)
-            if pca is not None:
-                pca.reset_partial()
-                n = all_embs.shape[0]
-                for start in range(0, n, batch_size):
-                    pca.partial_fit(all_embs[start : start + batch_size])
-                pca.finalize()
-        else:
-            was_training = model.training
-            model.eval()
-            if pca is not None:
-                pca.reset_partial()
-            try:
-                n_batches: int | None = len(loader)
-            except TypeError:
-                n_batches = None
-            pbar_desc = f"Embedding {n_batches if n_batches is not None else '?'} batches"
-            embs_list: list[torch.Tensor] = []
-            for batch in track(
-                loader, total=n_batches, desc=pbar_desc, unit="batches"
-            ):
-                embs = cls._embed(X=batch, model=model)
-                embs_list.append(embs)
-                if pca is not None:
-                    pca.partial_fit(embs)
-            if was_training:
-                model.train()
-            if pca is not None:
-                pca.finalize()
-            all_embs = torch.cat(embs_list, dim=0)
-            if path is not None:
-                cls._write_pt(all_embs, path)
-        return all_embs
 
     @override
     def fit(
@@ -362,20 +406,9 @@ class EmbeddingScore(ConfidenceScore, ABC):
             This parameter is ignored when precomputed embeddings (``X``) are
             used; those are always assigned directly.
         """
-        # Validate parameter combinations
         using_embeddings = X is not None
         using_model = model is not None or loaders is not None
-
-        if using_embeddings and using_model:
-            raise ValueError(
-                "Cannot specify both embeddings (X/Y) and model+loaders. "
-                "Use either precomputed embeddings OR on-the-fly extraction."
-            )
-
-        if not using_embeddings and not using_model:
-            raise ValueError(
-                "Must specify either embeddings (X) or model+loaders for fitting."
-            )
+        self._validate_inputs(using_embeddings, using_model, "fit()")
 
         if using_embeddings:
             # Mode 1: Pre-computed embeddings — assign directly
@@ -383,72 +416,60 @@ class EmbeddingScore(ConfidenceScore, ABC):
             self.cal_embeddings = Y
             if self.pca is not None:
                 self._fit_pca()
+            return
+
+        # Mode 2/3: Extract embeddings on-the-fly
+        if model is None:
+            raise ValueError(
+                "model is required when not using precomputed embeddings."
+            )
+        if loaders is None:
+            raise ValueError("loaders is required when using a model.")
+
+        assert isinstance(loaders, dict)
+        assert isinstance(model, torch.nn.Module)
+        self._check_model(model)
+
+        if outdir is not None and prefix is None:
+            warnings.warn(
+                "'outdir' has been specified but 'prefix' is None.\n"
+                "Consider specifying 'prefix' as well to enable saving embeddings.",
+                UserWarning,
+            )
+
+        mode = self._resolve_incremental_mode(incremental, loaders["train"])
+
+        train_path = (
+            self._setup_path(outdir, prefix + "-embeddings-train")
+            if prefix is not None
+            else None
+        )
+
+        if mode == "full":
+            # Full mode: extract all train embeddings, then fit PCA post-hoc
+            self.ref_embeddings = self._extract_embeddings(
+                model=model, loader=loaders["train"], path=train_path
+            )
+            if self.pca is not None:
+                self._fit_pca()
         else:
-            # Mode 2/3: Extract embeddings on-the-fly
-            if model is None:
-                raise ValueError(
-                    "model is required when not using precomputed embeddings."
-                )
-            if loaders is None:
-                raise ValueError("loaders is required when using a model.")
+            # Batch mode: extract with incremental PCA during extraction
+            self.ref_embeddings = self._extract_embeddings(
+                model=model,
+                loader=loaders["train"],
+                pca=self.pca,
+                path=train_path,
+            )
 
-            assert isinstance(loaders, dict)
-            assert isinstance(model, torch.nn.Module)
-            self._check_model(model)
-
-            # Resolve incremental mode
-            mode: Literal["full", "batch"] = "full"
-            if incremental == "full":
-                mode = "full"
-            elif incremental == "batch":
-                mode = "batch"
-            else:  # "auto"
-                try:
-                    train_len = len(loaders["train"])
-                    mode = "batch" if train_len > 1 else "full"
-                except TypeError:
-                    mode = "batch"
-
-            if mode == "full":
-                self.ref_embeddings = self._embed_from_dict(
-                    loaders=loaders,
-                    model=model,
-                    key="train",
-                    outdir=outdir,
-                    prefix=prefix,
-                )
-                if "val" in loaders.keys():
-                    self.cal_embeddings = self._embed_from_dict(
-                        loaders=loaders,
-                        model=model,
-                        key="val",
-                        outdir=outdir,
-                        prefix=prefix,
-                    )
-                if self.pca is not None:
-                    self._fit_pca()
-            else:
-                # Batch mode: extract train embeddings incrementally
-                train_path = None
-                if prefix is not None:
-                    train_path = self._setup_path(
-                        outdir, prefix + "-embeddings-train"
-                    )
-                self.ref_embeddings = self._embed_dl_batch(
-                    model=model,
-                    loader=loaders["train"],
-                    pca=self.pca,
-                    path=train_path,
-                )
-                # Val embeddings: use existing facility (no PCA needed for val)
-                if "val" in loaders.keys():
-                    self.cal_embeddings = self._embed_from_dict(
-                        loaders=loaders,
-                        model=model,
-                        key="val",
-                        outdir=outdir,
-                        prefix=prefix,
-                    )
+        if "val" in loaders:
+            val_path = (
+                self._setup_path(outdir, prefix + "-embeddings-val")
+                if prefix is not None
+                else None
+            )
+            self.cal_embeddings = self._extract_embeddings(
+                model=model, loader=loaders["val"], path=val_path
+            )
 
     @override
     def set_threshold(self, q: float = 0.99) -> None:
@@ -529,41 +550,22 @@ class EmbeddingScore(ConfidenceScore, ABC):
             A `str`ing used as filename prefix to save embeddings, by default
             `None`. Only used with `model` and `loader`.
         """
-        # Validate parameter combinations
         using_embeddings = X is not None
         using_model = model is not None or loader is not None
-
-        if using_embeddings and using_model:
-            raise ValueError(
-                "Cannot specify both embeddings (X) and model+loader. "
-                "Use either precomputed embeddings OR on-the-fly extraction."
-            )
-
-        if not using_embeddings and not using_model:
-            raise ValueError(
-                "Must specify either embeddings (X) or model+loader for scoring."
-            )
+        self._validate_inputs(using_embeddings, using_model, "score()")
 
         if using_embeddings:
-            # Mode 1: Use precomputed embeddings - call subclass implementation
-            assert X is not None, (
-                "X is required when using precomputed embeddings."
-            )
+            assert X is not None
             return self._score_embeddings(X)
-        else:
-            # Mode 2: Extract embeddings on-the-fly
-            if model is None:
-                raise ValueError(
-                    "model is required when not using precomputed embeddings."
-                )
-            if loader is None:
-                raise ValueError("loader is required when using a model.")
 
-            path = None
-            if prefix is not None:
-                path = self._setup_path(outdir, prefix)
-            embeddings = self._loadorembed(path, model, loader)
-            return self._score_embeddings(embeddings)
+        assert model is not None
+        if loader is None:
+            raise ValueError("loader is required when using a model.")
+        path = self._setup_path(outdir, prefix) if prefix is not None else None
+        embeddings = self._extract_embeddings(
+            model=model, loader=loader, path=path
+        )
+        return self._score_embeddings(embeddings)
 
     def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
         """Compute confidence scores based on query embeddings.
