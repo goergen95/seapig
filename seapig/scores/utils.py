@@ -105,13 +105,18 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
             from the presence of ``gamma``/``M``.
         """
         super().__init__()
-        # Validate mutual exclusivity: only one of exp_var or n_comp may be set
         if (n_comp is not None) and (exp_var is not None):
-            # emit a warning (do not raise an exception)
             warnings.warn(
                 "Both exp_var and n_comp are provided. n_comp will take precedence.",
                 UserWarning,
             )
+
+        if (n_comp is None) and (exp_var is None):
+            warnings.warn(
+                "Neither exp_var nor n_comp provided. Defaulting to exp_var=0.90.",
+                UserWarning,
+            )
+            exp_var = 0.90
 
         if exp_var is not None:
             if not (exp_var > 0.0 and exp_var <= 1.0):
@@ -376,10 +381,6 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
                 f"{explained:.4f}",
             )
         else:
-            if self.exp_var is None:
-                raise ValueError(
-                    "Either n_comp or exp_var must be provided for PCA selection"
-                )
             q_idx_tensor = (self.s_acc >= self.exp_var).nonzero()
             if q_idx_tensor.numel() == 0:
                 # keep all components
@@ -439,7 +440,7 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
                 if hasattr(self, name):
                     try:
                         setattr(self, name, val)
-                    except Exception:
+                    except Exception:  # pragma: no cover
                         # fallback to register_buffer if direct set fails
                         self.register_buffer(name, val)
                 else:
