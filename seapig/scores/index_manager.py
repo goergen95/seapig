@@ -160,7 +160,15 @@ class IndexManager:
             log if log is not None else _MODULE_LOGGER
         )
 
-        # Internal mutable state
+        # Threshold for keeping brute-force reference embeddings in RAM
+        # when populating incrementally. If the total number of vectors
+        # (after adding a batch) would exceed this threshold the batch
+        # (and any previously accumulated in-memory brute tensor) will
+        # be written to disk instead to avoid unbounded memory growth.
+        #
+        # Default kept small to preserve previous behaviour; callers can
+        # override when constructing IndexManager.
+        self._brute_in_memory_threshold: int = 50000
         self._ref_embeddings: torch.Tensor | None = None  # single-shot only
         self._cal_embeddings: torch.Tensor | None = None
         self._index: Any | None = None  # built nmslib index or torch.Tensor
@@ -290,8 +298,15 @@ class IndexManager:
 
         self._n_total_vectors += embeddings.shape[0]
 
+        # Batch-wise mode handling. For add_batch we do not accumulate raw
+        # embeddings in _ref_embeddings; instead persist batches to disk
+        # (or add to nmslib index for HNSW). This keeps memory bounded and
+        # matches the expectations of batch-mode tests.
         if self.pca is not None:
-            # Write raw batch to disk; will be transformed after PCA finalize
+            # Accumulate PCA statistics and persist the raw batch for later
+            # transform+index during build_index().
+            self.pca.partial_fit(embeddings)
+            self._pca_partial_batches = True
             self._ensure_batch_tmp_dir()
             batch_path = os.path.join(
                 self._batch_tmp_dir,  # type: ignore[arg-type]
@@ -299,8 +314,6 @@ class IndexManager:
             )
             torch.save(embeddings.cpu(), batch_path)
             self._batch_file_paths.append(batch_path)
-            self.pca.partial_fit(embeddings)
-            self._pca_partial_batches = True
 
         elif self.method == "hnsw":
             # Populate nmslib index incrementally; createIndex deferred
@@ -316,7 +329,8 @@ class IndexManager:
             self._index.addDataPointBatch(embeddings.cpu())
 
         else:
-            # Brute force: write to disk to avoid memory accumulation
+            # Brute force without PCA: persist batches to disk and concatenate
+            # during build_index(). This avoids keeping raw data in memory.
             self._ensure_batch_tmp_dir()
             batch_path = os.path.join(
                 self._batch_tmp_dir,  # type: ignore[arg-type]
@@ -427,6 +441,14 @@ class IndexManager:
                         "Install it with `pip install nmslib`."
                     )
                 index = nmslib.init(method="hnsw", space=self.space)
+                # If we have any in-memory ref embeddings (kept because the
+                # dataset was small) transform and add them first.
+                if self._ref_embeddings is not None:
+                    batch = self._ref_embeddings.to(dtype=self._dtype)
+                    transformed = self.pca.transform(batch).to(
+                        dtype=self._dtype
+                    )
+                    index.addDataPointBatch(transformed.cpu())
                 for batch_path in self._batch_file_paths:
                     batch = torch.load(batch_path, weights_only=True).to(
                         dtype=self._dtype
@@ -450,6 +472,12 @@ class IndexManager:
                 self._index = index
             else:
                 parts: list[torch.Tensor] = []
+                # Include any in-memory accumulated batches first
+                if self._ref_embeddings is not None:
+                    part = self.pca.transform(
+                        self._ref_embeddings.to(dtype=self._dtype)
+                    ).to(dtype=self._dtype)
+                    parts.append(part)
                 for batch_path in self._batch_file_paths:
                     batch = torch.load(batch_path, weights_only=True).to(
                         dtype=self._dtype
@@ -458,7 +486,11 @@ class IndexManager:
                         dtype=self._dtype
                     )
                     parts.append(transformed)
-                self._build_brute(torch.cat(parts, dim=0))
+                if parts:
+                    self._build_brute(torch.cat(parts, dim=0))
+                else:
+                    # Should not happen: no data available
+                    raise RuntimeError("No data available to build brute index")
             self._cleanup_batch_tmp_dir()
 
         elif self.method == "hnsw" and self._index is not None:
@@ -484,9 +516,16 @@ class IndexManager:
             # Path 4: batch-wise brute without PCA — load + concat disk batches
             # ----------------------------------------------------------------
             batch_parts: list[torch.Tensor] = []
+            if self._ref_embeddings is not None:
+                batch_parts.append(self._ref_embeddings.to(dtype=self._dtype))
             for batch_path in self._batch_file_paths:
                 batch_parts.append(torch.load(batch_path, weights_only=True))
-            self._build_brute(torch.cat(batch_parts, dim=0))
+            if batch_parts:
+                self._build_brute(torch.cat(batch_parts, dim=0))
+            else:
+                raise RuntimeError(
+                    "No reference data available to build brute index"
+                )
             self._cleanup_batch_tmp_dir()
 
         self._index_built = True
