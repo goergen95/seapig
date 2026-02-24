@@ -29,17 +29,6 @@ def test_l2_normalize_preserves_shape_and_scales() -> None:
     assert torch.allclose(out[1], torch.tensor([0.0, 0.0]), atol=1e-6)
 
 
-def test_rff_returns_original_when_gamma_or_M_none() -> None:
-    x = torch.randn(10, 4)
-    out1 = TensorPCA._rff(x, gamma=None, M=None)
-    out2 = TensorPCA._rff(x, gamma=3, M=None)
-    out3 = TensorPCA._rff(x, gamma=None, M=16)
-    # when either param is None, rff should return the original tensor
-    assert torch.allclose(out1, x)
-    assert torch.allclose(out2, x)
-    assert torch.allclose(out3, x)
-
-
 def test_fit_reconstruct_low_dim() -> None:
     """Fitting and reconstruction should yield low reconstruction error for low-rank data."""
     # create data of rank 1 in 3-d space
@@ -69,7 +58,7 @@ def test_pca_with_rff_changes_dimension() -> None:
     X = torch.randn(20, 3)
     tpca = TensorPCA(exp_var=0.90, gamma=1.0, M=128)
     # ensure rff increases dimensionality
-    X_rff = tpca._rff(X, gamma=tpca.gamma, M=tpca.M)
+    X_rff = tpca._rff(X)
     assert X_rff.shape[1] == 128
 
 
