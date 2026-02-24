@@ -127,7 +127,7 @@ def test_pca_predict_is_applied_before_detector_fit() -> None:
     ref_embeddings with the PCA.predict result before fitting the detector."""
     refs = torch.randn(100, 64)
     det = _MockDetectorBasic()
-    score = PyODScore(detector=det, pca=TensorPCA(exp_var=0.90))
+    score = PyODScore(detector=det, pca=TensorPCA(n_components=0.90))
     score.cal_required = False
     score.ref_embeddings = refs.clone()
     score._fit_impl(q=None)

@@ -22,7 +22,7 @@ def approx(t1: torch.Tensor, t2: torch.Tensor, tol: float = 1e-6) -> None:
 def test_l2_normalize_preserves_shape_and_scales() -> None:
     """_l2_normalize should keep shape and normalize rows to unit norm."""
     x = torch.tensor([[3.0, 4.0], [0.0, 0.0]])
-    tpca = TensorPCA(exp_var=0.9)
+    tpca = TensorPCA(n_components=0.9)
     out = tpca._l2_normalize(x)
     assert out.shape == x.shape
     # first row has norm 5 -> normalized to [0.6, 0.8]
@@ -37,7 +37,7 @@ def test_fit_reconstruct_low_dim() -> None:
     n = 50
     v = torch.tensor([1.0, 2.0, 3.0])
     X = (torch.randn(n, 1) @ v.unsqueeze(0)).float()
-    tpca = TensorPCA(exp_var=0.99)
+    tpca = TensorPCA(n_components=0.99)
     tpca.fit(X)
     X_rec, err = tpca.reconstruct(X)
     # reconstruction error should be near zero (numerical tolerance)
@@ -47,7 +47,7 @@ def test_fit_reconstruct_low_dim() -> None:
 def test_fit_transform_returns_lower_dim() -> None:
     """transform should return data with q components, where q < D."""
     X = torch.randn(40, 10)
-    tpca = TensorPCA(exp_var=0.90)
+    tpca = TensorPCA(n_components=0.90)
     X_proj = tpca.fit_transform(X)
     assert X_proj.shape[1] == tpca.q
     assert tpca.q < X.shape[1]
@@ -56,7 +56,7 @@ def test_fit_transform_returns_lower_dim() -> None:
 def test_transform_matches_inverse_projection() -> None:
     """transform should return projection onto principal components consistent with inverse_transform."""
     X = torch.randn(30, 5)
-    tpca = TensorPCA(exp_var=0.90)
+    tpca = TensorPCA(n_components=0.90)
     tpca.fit(X)
     X_proj = tpca.transform(X)
     X_rec = tpca.inverse_transform(X_proj)
@@ -67,7 +67,7 @@ def test_transform_matches_inverse_projection() -> None:
 def test_pca_with_rff_changes_dimension() -> None:
     """When RFF is active the intermediate space should have dimension M > D."""
     X = torch.randn(20, 3)
-    tpca = TensorPCA(exp_var=0.90, gamma=1.0, M=128)
+    tpca = TensorPCA(n_components=0.90, gamma=1.0, M=128)
     # ensure rff increases dimensionality
     X_rff = tpca._rff(X)
     assert X_rff.shape[1] == 128
@@ -82,7 +82,7 @@ def test_pca_score_fit_and_score_basic() -> None:
     cal = torch.randn(n_cal, dim)
     qs = torch.randn(5, dim)
 
-    score = PCAScore(pca=TensorPCA(exp_var=0.90, M=16))
+    score = PCAScore(pca=TensorPCA(n_components=0.90, M=16))
     # supply embeddings directly
     score.fit(train, cal)
     # check trained & calibrated flags
@@ -96,7 +96,7 @@ def test_pca_score_fit_and_score_basic() -> None:
 def test_q_trimming_in_pca_score_reduces_references() -> None:
     n = 200
     refs = torch.randn(n, 6)
-    score = PCAScore(pca=TensorPCA(exp_var=0.90, gamma=1.0, M=32))
+    score = PCAScore(pca=TensorPCA(n_components=0.90, gamma=1.0, M=32))
     score.cal_required = False
     score.ref_embeddings = refs
     original = score.ref_embeddings.shape[0]
@@ -108,7 +108,7 @@ def test_n_comp_argument_limits_components() -> None:
     """When n_comp is provided it should limit the number of components used."""
     X = torch.randn(50, 10)
     # request exactly 3 components
-    tpca = TensorPCA(n_comp=3)
+    tpca = TensorPCA(n_components=3)
     tpca.fit(X)
     assert tpca.q == 3
     # reconstruction should use u_q with 3 columns
@@ -147,7 +147,7 @@ def test_tensorpca_agrees_with_sklearn_mid_size() -> None:
     X_rec_sk_centered = X_rec_sk - mu_np
 
     # TensorPCA (no RFF) - fit on torch tensors
-    tpca = TensorPCA(n_comp=n_comp, gamma=None, M=None)
+    tpca = TensorPCA(n_components=n_comp, gamma=None, M=None)
     tpca.fit(X)
     X_proj_tp = tpca.transform(X)
     X_rec_tp = tpca.inverse_transform(X_proj_tp)
@@ -203,7 +203,7 @@ def test_partial_fit_matches_incremental_pca() -> None:
     X_rec_sk_centered = X_rec_sk - mu_ipca
 
     # TensorPCA partial fit path (linear)
-    tpca = TensorPCA(n_comp=n_comp, gamma=None, M=None)
+    tpca = TensorPCA(n_components=n_comp, gamma=None, M=None)
     for i in range(0, n, batch_size):
         batch = X[i : i + batch_size]
         tpca.partial_fit(batch)
@@ -264,12 +264,12 @@ def test_save_load_tensorpca_linear_and_rff(tmp_path) -> None:
     X = torch.randn(120, 10)
 
     # Linear mode
-    tpca_lin = TensorPCA(exp_var=0.95)
+    tpca_lin = TensorPCA(n_components=0.95)
     tpca_lin.fit(X)
     path_lin = tmp_path / "tpca_linear.pt"
     torch.save(tpca_lin.state_dict(), path_lin)
 
-    tpca_lin_loaded = TensorPCA(exp_var=0.95)
+    tpca_lin_loaded = TensorPCA(n_components=0.95)
     sd = torch.load(path_lin)
     tpca_lin_loaded.load_state_dict(sd)
 
@@ -278,12 +278,12 @@ def test_save_load_tensorpca_linear_and_rff(tmp_path) -> None:
     )
 
     # RFF mode (ensure RFF params are created during fit)
-    tpca_rff = TensorPCA(exp_var=0.95, gamma=1.0, M=32)
+    tpca_rff = TensorPCA(n_components=0.95, gamma=1.0, M=32)
     tpca_rff.fit(X)
     path_rff = tmp_path / "tpca_rff.pt"
     torch.save(tpca_rff.state_dict(), path_rff)
 
-    tpca_rff_loaded = TensorPCA(exp_var=0.95, gamma=1.0, M=32)
+    tpca_rff_loaded = TensorPCA(n_components=0.95, gamma=1.0, M=32)
     sd2 = torch.load(path_rff)
     tpca_rff_loaded.load_state_dict(sd2)
 
@@ -293,33 +293,33 @@ def test_save_load_tensorpca_linear_and_rff(tmp_path) -> None:
 
 
 def test_constructor_warnings_and_validation() -> None:
-    # both exp_var and n_comp provided should warn but not raise
-    with pytest.warns(
-        UserWarning, match="Both exp_var and n_comp are provided"
+    # invalid n_components values raise when provided
+    with pytest.raises(
+        ValueError, match="n_components as float must be in the interval"
     ):
-        TensorPCA(exp_var=0.5, n_comp=3)
+        TensorPCA(n_components=0.0)
 
-    # invalid exp_var values raise
-    with pytest.raises(ValueError, match="exp_var must be in the interval"):
-        TensorPCA(exp_var=0.0)
+    # default uses a float explained-variance threshold (0.90)
+    tpca_default = TensorPCA()
+    assert isinstance(tpca_default.n_components, float)
+    assert 0.0 < tpca_default.n_components <= 1.0
 
-    with pytest.warns(UserWarning, match="Defaulting to exp_var=0.90"):
-        TensorPCA()
-
-    # invalid n_comp values raise
-    with pytest.raises(ValueError, match="n_comp must be a positive integer"):
-        TensorPCA(n_comp=0)
+    # invalid integer n_components
+    with pytest.raises(
+        ValueError, match="n_components must be a positive integer"
+    ):
+        TensorPCA(n_components=0)
 
     # invalid mode string
     with pytest.raises(
         ValueError, match="mode must be either 'linear' or 'rff'"
     ):
-        TensorPCA(exp_var=0.5, mode="not-a-mode")
+        TensorPCA(n_components=0.5, mode="not-a-mode")
 
 
 def test_rff_partial_fit_dimension_check() -> None:
     # mode 'rff' with M <= D should raise during partial_fit initialization
-    tpca = TensorPCA(exp_var=0.90, mode="rff", gamma=1.0, M=2)
+    tpca = TensorPCA(n_components=0.90, mode="rff", gamma=1.0, M=2)
     X = torch.randn(4, 3)
     with pytest.raises(
         ValueError, match="RFF dimension M must be greater than input dim D"
@@ -332,7 +332,7 @@ def test__rff_uses_registered_buffers_when_initialized() -> None:
     D = 3
     M = 8
     gamma = 1.0
-    tpca = TensorPCA(exp_var=0.90, mode="rff", gamma=gamma, M=M)
+    tpca = TensorPCA(n_components=0.90, mode="rff", gamma=gamma, M=M)
 
     dtype = torch.float32
 
@@ -354,7 +354,7 @@ def test__rff_uses_registered_buffers_when_initialized() -> None:
 
 
 def test_reset_partial_preserves_rff_and_resets_accumulators() -> None:
-    tpca = TensorPCA(exp_var=0.90, gamma=1.0, M=16)
+    tpca = TensorPCA(n_components=0.90, gamma=1.0, M=16)
     X = torch.randn(6, 3)
     tpca.partial_fit(X)  # initializes RFF parameters and accumulators
 
@@ -371,7 +371,7 @@ def test_reset_partial_preserves_rff_and_resets_accumulators() -> None:
 
 
 def test__rff_returns_input_when_not_in_rff_mode() -> None:
-    tpca = TensorPCA(exp_var=0.90)  # default linear mode
+    tpca = TensorPCA(n_components=0.90)  # default linear mode
     X = torch.randn(3, 4)
     out = tpca._rff(X)
     # should return (possibly) contiguous copy equal to input
@@ -380,13 +380,13 @@ def test__rff_returns_input_when_not_in_rff_mode() -> None:
 
 
 def test_finalize_raises_if_no_data() -> None:
-    tpca = TensorPCA(exp_var=0.9)
+    tpca = TensorPCA(n_components=0.9)
     with pytest.raises(RuntimeError, match="No data provided"):
         tpca.finalize()
 
 
 def test__load_from_state_dict_registers_missing_buffers() -> None:
-    tpca = TensorPCA(exp_var=0.90)
+    tpca = TensorPCA(n_components=0.90)
     # remove one of the attributes to trigger the register_buffer path
     if hasattr(tpca, "mu"):
         delattr(tpca, "mu")

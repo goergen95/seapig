@@ -20,7 +20,7 @@ Developer and Coding Agent Guide for seapig
 3. **PyOD integration**: Outlier detection scores via the PyOD library
 4. **DataLoader support**: Fit, score, and select from PyTorch DataLoaders with automatic embedding extraction
 5. **Embedding persistence**: Save/load embeddings to disk for efficient reuse
-6. **Dimensionality reduction**: Optional PCA preprocessing via `exp_var` parameter to speed up nearest-neighbor search
+6. **Dimensionality reduction**: Optional PCA preprocessing via `n_components` parameter to speed up nearest-neighbor search
 
 ### Target Use Cases
 
@@ -49,7 +49,7 @@ seapig/
 │       ├── knn.py             # KNN-based scores (Euclidean, Cosine, Mahalanobis)
 │       ├── pca.py            # PCAScore implementation
 │       ├── pyod.py            # PyODScore wrapper for PyOD detectors
-│       └── utils.py           # Utility functions (load_embeddings, save_embeddings)
+│       └── utils.py           # TensorPCA for projecting embeddings
 ├── tests/                     # Unit tests
 │   ├── test_embed.py          # Tests for embedding extraction
 │   ├── test_knn.py           # Tests for KNN-based scores

@@ -46,7 +46,7 @@ def test_pca_correctly_initialized() -> None:
     e = DummyEmbedding(pca=None)
     assert e.pca is None
 
-    e = DummyEmbedding(TensorPCA(exp_var=0.5))
+    e = DummyEmbedding(TensorPCA(n_components=0.5))
     assert isinstance(e.pca, TensorPCA)
 
 
@@ -163,7 +163,7 @@ def test_embed_from_dict_errors_and_saves(tmp_path) -> None:
 
 
 def test_fit_pca_sets_pca_and_device() -> None:
-    e = DummyEmbedding(pca=TensorPCA(exp_var=0.5))
+    e = DummyEmbedding(pca=TensorPCA(n_components=0.5))
     e.ref_embeddings = torch.randn(10, 5)
     e._fit_pca()
     assert isinstance(e.pca, TensorPCA)
@@ -278,7 +278,7 @@ def test_visualize_embeddings():
     cal_embeddings = torch.randn(10, 64)
     query_embeddings = torch.randn(10, 64)
 
-    pca = TensorPCA(exp_var=0.75)
+    pca = TensorPCA(n_components=0.75)
 
     score = DummyEmbedding(pca=pca)
     score.ref_embeddings = ref_embeddings

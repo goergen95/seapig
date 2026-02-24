@@ -31,7 +31,7 @@ class PCAScore(EmbeddingScore):
     ident = "pca"
 
     def __init__(
-        self, pca: TensorPCA = TensorPCA(exp_var=0.50, gamma=3.0, M=4096)
+        self, pca: TensorPCA = TensorPCA(n_components=0.50, gamma=3.0, M=4096)
     ) -> None:
         super().__init__(pca=pca)
 
@@ -60,11 +60,11 @@ class PCAScore(EmbeddingScore):
 
         ```python
         # Mode 1: Precomputed embeddings
-        my_score = PCAScore(exp_var = 0.90)
+        my_score = PCAScore(n_components = 0.90)
         my_score.fit(X=train_embs, Y=val_embs)
 
         # Mode 2: On-the-fly extraction
-        my_score = PCAScore(exp_var = 0.90)
+        my_score = PCAScore(n_components = 0.90)
         my_score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
         ```
 

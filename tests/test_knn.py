@@ -177,7 +177,7 @@ def test_pca_reduces_dimension_and_preserves_euclidean() -> None:
 
     q = torch.randn(1, D)
 
-    s_pca = EuclideanScore(k=1, pca=TensorPCA(exp_var=0.90))
+    s_pca = EuclideanScore(k=1, pca=TensorPCA(n_components=0.90))
     s_pca.cal_required = False
     s_pca.ref_embeddings = refs.float()
     s_pca._fit_impl(q=None)
@@ -210,7 +210,7 @@ def test_pca_preserves_cosine_similarity() -> None:
 
     q = torch.randn(1, D)
 
-    s_pca = CosineScore(k=2, pca=TensorPCA(exp_var=0.99))
+    s_pca = CosineScore(k=2, pca=TensorPCA(n_components=0.99))
     s_pca.cal_required = False
     s_pca.ref_embeddings = refs.float()
     s_pca._fit_impl(q=None)
