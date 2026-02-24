@@ -1,5 +1,6 @@
 """Utilities accessed by several modules."""
 
+import math
 import warnings
 from typing import final
 
@@ -14,10 +15,17 @@ logger = get_logger(__name__)
 class TensorPCA(torch.nn.Module):  # type: ignore[misc]
     """Tensor based PCA with L2 normalized inputs.
 
-    See https://arxiv.org/pdf/2505.15284.
+    The implementation supports two operation modes:
+      - "linear": standard PCA on L2-normalized inputs
+      - "rff":    apply a Random Fourier Feature mapping before PCA
+
+    The user chooses the mode via the ``mode`` argument. If ``mode`` is
+    ``None`` the behaviour is inferred from whether ``gamma`` or ``M`` is
+    provided (those enable RFF).
+
+    See https://arxiv.org/pdf/2505.15284 for motivation.
     """
 
-    # based on https://github.com/fanghenshaometeor/ood-kernel-pca/blob/main/CoP_CoRP_ImgNet.py
     mu: torch.Tensor
     u: torch.Tensor
     s: torch.Tensor
@@ -27,6 +35,9 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
     q: int = 1
     exp_var: float | None = None
     n_comp: int | None = None
+    gamma: float | None = None
+    M: int | None = None
+    mode: str = "linear"
 
     def __init__(
         self,
@@ -34,17 +45,27 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
         n_comp: int | None = None,
         gamma: float | None = None,
         M: int | None = None,
-    ):
+        mode: str | None = None,
+    ) -> None:
         """Initialise TensorPCA.
 
         Parameters
         ----------
         exp_var:
-            Fraction of explained variance to retain (0<exp_var<=1).
-            If ``None``, the number of components must be supplied via ``n_comp``.
+            Fraction of explained variance to retain (0 < exp_var <= 1).
+            If ``None``, the number of components must be supplied via
+            ``n_comp``.
         n_comp:
-            If provided, forces PCA to use this many components. If specified,
-            takes precedence over ``exp_var``.
+            If provided, forces PCA to use this many components. If
+            specified, takes precedence over ``exp_var``.
+        gamma, M:
+            Parameters for the Random Fourier Feature mapping. If either
+            is provided the RFF branch is enabled (unless ``mode`` is set
+            explicitly). If both are ``None`` the linear PCA branch is
+            used.
+        mode:
+            One of "linear" or "rff". If ``None`` the mode is inferred
+            from the presence of ``gamma``/``M``.
         """
         super().__init__()
         # Validate mutual exclusivity: only one of exp_var or n_comp may be set
@@ -63,6 +84,15 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
                     "n_comp must be a positive integer if provided"
                 )
 
+        if mode is not None and mode not in ("linear", "rff"):
+            raise ValueError("mode must be either 'linear' or 'rff'")
+
+        # Infer mode when not explicitly provided
+        inferred_mode = (
+            "rff" if (gamma is not None or M is not None) else "linear"
+        )
+        self.mode = mode or inferred_mode
+
         self.exp_var = exp_var
         self.n_comp = n_comp
         self.gamma = gamma
@@ -70,41 +100,65 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
 
     @staticmethod
     def _l2_normalize(X: torch.Tensor) -> torch.Tensor:
-        """L2 normalization of an input tensor."""
-        X = X / (torch.linalg.norm(X, ord=2, dim=-1, keepdims=True) + 1e-10)
+        """L2 normalization of an input tensor.
+
+        Normalises rows to unit L2 norm; zero vectors remain zero.
+        """
+        denom = torch.linalg.norm(X, ord=2, dim=-1, keepdims=True)
+        denom = denom + 1e-10
+        X = X / denom
         return X.contiguous()
 
-    @staticmethod
-    def _rff(
-        X: torch.Tensor, gamma: float | None = 3, M: int | None = 4096
-    ) -> torch.Tensor:
-        if gamma is None or M is None:
+    def _rff(self, X: torch.Tensor) -> torch.Tensor:
+        """Apply Random Fourier Features mapping to X.
+
+        This is a helper that respects the module's mode, device and dtype.
+        """
+        if self.mode != "rff" or self.gamma is None or self.M is None:
             return X
         _, D = X.shape
-        assert M > D
-        w = torch.sqrt(torch.tensor([2 * gamma])) * torch.normal(
-            mean=0, std=torch.ones(size=(M, D))
+        if self.M <= D:
+            raise ValueError("RFF dimension M must be greater than input dim D")
+
+        device = X.device
+        dtype = X.dtype
+        w = math.sqrt(2.0 * float(self.gamma)) * torch.normal(
+            mean=0.0, std=1.0, size=(self.M, D), device=device, dtype=dtype
         )
-        u = 2 * torch.pi * torch.rand(M)
-        X = torch.sqrt(torch.tensor([2 / M])) * torch.cos(
-            X @ w.T + u[torch.newaxis, :]
-        )
+        u = 2.0 * math.pi * torch.rand(self.M, device=device, dtype=dtype)
+        X = math.sqrt(2.0 / float(self.M)) * torch.cos(X @ w.T + u.unsqueeze(0))
         return X.contiguous()
 
     def _preprocess(self, X: torch.Tensor) -> torch.Tensor:
+        """Apply preprocessing pipeline according to the selected mode.
+
+        Steps:
+          - Move module to input device
+          - L2 normalize rows
+          - Optionally apply RFF
+          - Centre by the training mean
+        """
         self.to(device=X.device)
         X = self._l2_normalize(X)
-        X = self._rff(X, gamma=self.gamma, M=self.M)
+        if self.mode == "rff":
+            X = self._rff(X)
         X = X - self.mu
         return X.contiguous()
 
     def fit(self, X: torch.Tensor, Y: None = None) -> None:
-        """Fitting the PCA based on an input tensor."""
+        """Fit PCA on input tensor X.
+
+        The behaviour depends on the selected mode: if ``rff`` the RFF
+        mapping is applied before computing the covariance; otherwise
+        standard PCA is performed on the normalized inputs.
+        """
         assert X is not None
         X = self._l2_normalize(X)
-        X = self._rff(X, gamma=self.gamma, M=self.M)
+        if self.mode == "rff":
+            X = self._rff(X)
         self.mu = X.mean(dim=0)
         X = X - self.mu
+
         K = X.T @ X
         self.u, self.s, _ = torch.linalg.svd(K)
         self.s_acc = torch.cumsum(self.s, 0) / (self.s.sum() + 1e-20)
@@ -135,21 +189,14 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
         self.u_q_dot = self.u_q @ self.u_q.T
 
     def fit_transform(self, X: torch.Tensor, Y: None = None) -> torch.Tensor:
-        """Fit PCA on X and return the transformed principal components.
-
-        This is equivalent to calling ``fit(X)`` followed by ``transform(X)``.
-        """
+        """Fit PCA on X and return transformed principal components."""
         self.fit(X, Y)
         return self.transform(X)
 
     def transform(self, X: torch.Tensor) -> torch.Tensor:
         """Project input samples onto the retained principal components.
 
-        Parameters
-        ----------
-        X:
-            Input tensor of shape (N, D). Returns projected components of
-            shape (N, q) where q is the number of retained components.
+        Returns projected components of shape (N, q).
         """
         assert isinstance(X, torch.Tensor)
         X = self._preprocess(X)
@@ -159,20 +206,14 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
     def inverse_transform(self, Z: torch.Tensor) -> torch.Tensor:
         """Reconstruct samples from principal component scores.
 
-        Parameters
-        ----------
-        Z:
-            Component scores of shape (N, q). Returns reconstructed samples in
-            the preprocessed (centered + RFF + normalized) space with shape
-            (N, D'). This mirrors the reconstruction returned by
-            :meth:`reconstruct` (first element).
+        Returns reconstructed samples in the preprocessed space.
         """
         assert isinstance(Z, torch.Tensor)
         X_rec = (self.u_q @ Z.T).T
         return X_rec
 
     def reconstruct(self, X: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """Reconstruct an input and return the error."""
+        """Reconstruct an input and return the L2 reconstruction error."""
         X_p = self._preprocess(X)
         X_rec = self.inverse_transform(self.transform(X))
         error = torch.linalg.norm(X_p - X_rec, ord=2, dim=1)
