@@ -52,13 +52,13 @@ def test_fit_reconstruct_low_dim() -> None:
     assert err.mean() < 1e-5
 
 
-def test_predict_matches_reconstruct_projection() -> None:
-    """predict should return projection onto principal components consistent with reconstruct."""
+def test_transform_matches_inverse_projection() -> None:
+    """transform should return projection onto principal components consistent with inverse_transform."""
     X = torch.randn(30, 5)
     tpca = TensorPCA(exp_var=0.90)
     tpca.fit(X)
-    X_proj = tpca.predict(X)
-    X_rec, _ = tpca.reconstruct(X)
+    X_proj = tpca.transform(X)
+    X_rec = tpca.inverse_transform(X_proj)
     # projection multiplied back by u_q should approximate reconstruction
     approx((tpca.u_q @ X_proj.T).T, X_rec)
 

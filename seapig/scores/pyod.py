@@ -130,9 +130,9 @@ class PyODScore(EmbeddingScore):
 
         if self.pca is not None:
             self._fit_pca()
-            self.ref_embeddings = self.pca.predict(self.ref_embeddings)
+            self.ref_embeddings = self.pca.transform(self.ref_embeddings)
             if self.cal_embeddings is not None:
-                self.cal_embeddings = self.pca.predict(self.cal_embeddings)
+                self.cal_embeddings = self.pca.transform(self.cal_embeddings)
 
         if q:
             assert (q >= 0.0) & (q <= 1.0)
@@ -180,6 +180,6 @@ class PyODScore(EmbeddingScore):
         """
         assert self.detector is not None
         if self.pca is not None:
-            X = self.pca.predict(X)
+            X = self.pca.transform(X)
         score = torch.Tensor(self.detector.decision_function(X.cpu().numpy()))
         return score
