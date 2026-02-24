@@ -6,6 +6,8 @@ transformation handling, and PCAScore integration for scoring and
 calibration.
 """
 
+import math
+
 import pytest
 import torch
 
@@ -40,6 +42,15 @@ def test_fit_reconstruct_low_dim() -> None:
     X_rec, err = tpca.reconstruct(X)
     # reconstruction error should be near zero (numerical tolerance)
     assert err.mean() < 1e-5
+
+
+def test_fit_transform_returns_lower_dim() -> None:
+    """transform should return data with q components, where q < D."""
+    X = torch.randn(40, 10)
+    tpca = TensorPCA(exp_var=0.90)
+    X_proj = tpca.fit_transform(X)
+    assert X_proj.shape[1] == tpca.q
+    assert tpca.q < X.shape[1]
 
 
 def test_transform_matches_inverse_projection() -> None:
@@ -278,4 +289,118 @@ def test_save_load_tensorpca_linear_and_rff(tmp_path) -> None:
 
     _assert_state_dicts_equal(
         tpca_rff.state_dict(), tpca_rff_loaded.state_dict()
+    )
+
+
+def test_constructor_warnings_and_validation() -> None:
+    # both exp_var and n_comp provided should warn but not raise
+    with pytest.warns(UserWarning):
+        TensorPCA(exp_var=0.5, n_comp=3)
+
+    # invalid exp_var values raise
+    with pytest.raises(ValueError):
+        TensorPCA(exp_var=0.0)
+
+    # invalid n_comp values raise
+    with pytest.raises(ValueError):
+        TensorPCA(n_comp=0)
+
+    # invalid mode string
+    with pytest.raises(ValueError):
+        TensorPCA(mode="not-a-mode")
+
+
+def test_rff_partial_fit_dimension_check() -> None:
+    # mode 'rff' with M <= D should raise during partial_fit initialization
+    tpca = TensorPCA(mode="rff", gamma=1.0, M=2)
+    X = torch.randn(4, 3)
+    with pytest.raises(
+        ValueError, match="RFF dimension M must be greater than input dim D"
+    ):
+        tpca.partial_fit(X)
+
+
+def test__rff_uses_registered_buffers_when_initialized() -> None:
+    # construct deterministic buffers and ensure _rff uses them
+    D = 3
+    M = 8
+    gamma = 1.0
+    tpca = TensorPCA(mode="rff", gamma=gamma, M=M)
+
+    dtype = torch.float32
+
+    # create explicit buffers (match expected shapes)
+    w = math.sqrt(2.0 * float(gamma)) * torch.randn(M, D, dtype=dtype)
+    u = 2.0 * math.pi * torch.rand(M, dtype=dtype)
+
+    tpca.register_buffer("_rff_w", w)
+    tpca.register_buffer("_rff_u", u)
+    # mark initialized
+    getattr(tpca, "_rff_initialized").fill_(True)
+
+    X = torch.randn(5, D, dtype=dtype)
+    out = tpca._rff(X)
+
+    expected = math.sqrt(2.0 / float(M)) * torch.cos(X @ w.T + u.unsqueeze(0))
+    assert out.shape == expected.shape
+    assert torch.allclose(out, expected, atol=1e-6)
+
+
+def test_reset_partial_preserves_rff_and_resets_accumulators() -> None:
+    tpca = TensorPCA(gamma=1.0, M=16)
+    X = torch.randn(6, 3)
+    tpca.partial_fit(X)  # initializes RFF parameters and accumulators
+
+    # rff parameters should be present
+    assert getattr(tpca, "_rff_initialized").item() is True
+    assert getattr(tpca, "_rff_w").numel() > 0
+
+    # reset partial should clear accumulators but keep RFF params
+    tpca.reset_partial()
+    assert tpca._n_samples == 0
+    assert tpca._sum_X is None and tpca._sum_outer is None
+    assert getattr(tpca, "_rff_initialized").item() is True
+    assert getattr(tpca, "_rff_w").numel() > 0
+
+
+def test__rff_returns_input_when_not_in_rff_mode() -> None:
+    tpca = TensorPCA()  # default linear mode
+    X = torch.randn(3, 4)
+    out = tpca._rff(X)
+    # should return (possibly) contiguous copy equal to input
+    assert out.shape == X.shape
+    assert torch.allclose(out, X, atol=0)
+
+
+def test_finalize_raises_if_no_data() -> None:
+    tpca = TensorPCA(exp_var=0.9)
+    with pytest.raises(RuntimeError, match="No data provided"):
+        tpca.finalize()
+
+
+def test__load_from_state_dict_registers_missing_buffers() -> None:
+    tpca = TensorPCA()
+    # remove one of the attributes to trigger the register_buffer path
+    if hasattr(tpca, "mu"):
+        delattr(tpca, "mu")
+
+    assert not hasattr(tpca, "mu")
+
+    sd = {"mu": torch.tensor([1.0, 2.0], dtype=torch.float64)}
+
+    # call the custom loader — it should register the missing buffer
+    tpca._load_from_state_dict(
+        sd,
+        prefix="",
+        local_metadata={},
+        strict=True,
+        missing_keys=[],
+        unexpected_keys=[],
+        error_msgs=[],
+    )
+
+    # mu should now be registered as a buffer and match the value
+    assert hasattr(tpca, "mu")
+    assert torch.allclose(
+        getattr(tpca, "mu"), torch.tensor([1.0, 2.0], dtype=torch.float64)
     )
