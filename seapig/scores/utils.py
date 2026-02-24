@@ -1,5 +1,6 @@
 """Utilities accessed by several modules."""
 
+import warnings
 from typing import final
 
 import torch
@@ -24,25 +25,48 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
     u_q: torch.Tensor
     u_q_dot: torch.Tensor
     q: int = 1
+    exp_var: float | None = None
+    n_comp: int | None = None
 
     def __init__(
         self,
-        exp_var: float = 0.90,
+        exp_var: float | None = None,
+        n_comp: int | None = None,
         gamma: float | None = None,
         M: int | None = None,
     ):
+        """Initialise TensorPCA.
+
+        Parameters
+        ----------
+        exp_var:
+            Fraction of explained variance to retain (0<exp_var<=1).
+            If ``None``, the number of components must be supplied via ``n_comp``.
+        n_comp:
+            If provided, forces PCA to use this many components. If specified,
+            takes precedence over ``exp_var``.
+        """
         super().__init__()
-        assert exp_var > 0.0 and exp_var <= 1.0
-        self.exp_var: float = exp_var
+        # Validate mutual exclusivity: only one of exp_var or n_comp may be set
+        if (n_comp is not None) and (exp_var is not None):
+            raise warnings.warn(
+                "Both exp_var and n_comp are provided. n_comp will take precedence."
+            )
+
+        if exp_var is not None:
+            if not (exp_var > 0.0 and exp_var <= 1.0):
+                raise ValueError("exp_var must be in the interval (0, 1]")
+
+        if n_comp is not None:
+            if not (isinstance(n_comp, int) and n_comp > 0):
+                raise ValueError(
+                    "n_comp must be a positive integer if provided"
+                )
+
+        self.exp_var = exp_var
+        self.n_comp = n_comp
         self.gamma = gamma
         self.M = M
-
-        self.register_buffer("mu", None)
-        self.register_buffer("u", None)
-        self.register_buffer("s", None)
-        self.register_buffer("s_acc", None)
-        self.register_buffer("u_q", None)
-        self.register_buffer("u_q_dot", None)
 
     @staticmethod
     def _l2_normalize(X: torch.Tensor) -> torch.Tensor:
@@ -84,14 +108,29 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
         K = X.T @ X
         self.u, self.s, _ = torch.linalg.svd(K)
         self.s_acc = torch.cumsum(self.s, 0) / (self.s.sum() + 1e-20)
-        q_idx = (self.s_acc >= self.exp_var).nonzero()[0][0]
-        self.q = max(1, int(q_idx.item()) + 1)
-        explained = self.s_acc[self.q - 1].item()
-        logger.info(
-            "Explained variance of %s reached at dimension %s.",
-            f"{explained:.4f}",
-            self.q,
-        )
+
+        if self.n_comp is not None:
+            q = int(self.n_comp)
+            q = max(1, q)
+            q = min(q, int(self.s.numel()))
+            self.q = q
+            explained = self.s_acc[self.q - 1].item()
+            logger.info(
+                "Using user-specified n_comp=%s; explained variance at this "
+                "dimension is %s.",
+                self.q,
+                f"{explained:.4f}",
+            )
+        else:
+            q_idx = (self.s_acc >= self.exp_var).nonzero()[0][0]
+            self.q = max(1, int(q_idx.item()) + 1)
+            explained = self.s_acc[self.q - 1].item()
+            logger.info(
+                "Explained variance of %s reached at dimension %s.",
+                f"{explained:.4f}",
+                self.q,
+            )
+
         self.u_q = self.u[:, : self.q]
         self.u_q_dot = self.u_q @ self.u_q.T
 

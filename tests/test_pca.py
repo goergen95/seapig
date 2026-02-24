@@ -101,3 +101,14 @@ def test_q_trimming_in_pca_score_reduces_references() -> None:
     original = score.ref_embeddings.shape[0]
     score._fit_impl(q=0.5)
     assert score.ref_embeddings.shape[0] < original
+
+
+def test_n_comp_argument_limits_components() -> None:
+    """When n_comp is provided it should limit the number of components used."""
+    X = torch.randn(50, 10)
+    # request exactly 3 components
+    tpca = TensorPCA(n_comp=3)
+    tpca.fit(X)
+    assert tpca.q == 3
+    # reconstruction should use u_q with 3 columns
+    assert tpca.u_q.shape[1] == 3
