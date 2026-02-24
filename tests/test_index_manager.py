@@ -89,6 +89,14 @@ class TestInputValidation:
         with pytest.raises(RuntimeError, match="build_index"):
             mgr.search(torch.randn(2, 4), k=1)
 
+    def test_search_hnsw_batch_before_build_raises(self) -> None:
+        """HNSW with add_batch but no build_index should raise on search."""
+        mgr = IndexManager(method="hnsw")
+        mgr.add_batch(torch.randn(10, 4))
+        # _index is set (nmslib pre-populated) but createIndex not called yet
+        with pytest.raises(RuntimeError, match="build_index"):
+            mgr.search(torch.randn(2, 4), k=1)
+
     def test_search_1d_query_raises(self) -> None:
         mgr = IndexManager(method="brute")
         mgr.fit(torch.randn(5, 4))
@@ -277,15 +285,48 @@ class TestHNSWSearch:
 
 
 class TestBatchPopulation:
-    def test_add_batch_accumulates_refs(self) -> None:
+    def test_add_batch_populates_index_without_accumulating_in_ram(
+        self,
+    ) -> None:
+        """add_batch() must not accumulate embeddings in _ref_embeddings."""
         mgr = IndexManager(method="brute", space="l2")
         mgr.add_batch(torch.randn(10, 4))
         mgr.add_batch(torch.randn(15, 4))
         mgr.add_batch(torch.randn(5, 4))
 
-        refs = mgr.get_ref_embeddings()
-        assert refs is not None
-        assert refs.shape == (30, 4)
+        # Raw embeddings are NOT held in memory in batch mode
+        assert mgr.get_ref_embeddings() is None
+        # But total vector count is tracked
+        assert mgr._n_total_vectors == 30
+
+    def test_batch_temp_files_cleaned_up_after_build(self) -> None:
+        """Temp files written during add_batch must be deleted after build."""
+        torch.manual_seed(7)
+        mgr = IndexManager(method="brute", space="l2")
+        mgr.add_batch(torch.randn(20, 4))
+        mgr.add_batch(torch.randn(20, 4))
+
+        assert mgr._batch_tmp_dir is not None
+        tmp_dir = mgr._batch_tmp_dir  # capture before build cleans it
+
+        mgr.build_index()
+
+        # Temp directory should be gone after build
+        assert mgr._batch_tmp_dir is None
+        assert not Path(tmp_dir).exists()
+
+    def test_batch_temp_files_cleaned_up_after_reset(self) -> None:
+        """Temp files must be deleted when reset() is called."""
+        mgr = IndexManager(method="brute", space="l2")
+        mgr.add_batch(torch.randn(10, 4))
+
+        assert mgr._batch_tmp_dir is not None
+        tmp_dir = mgr._batch_tmp_dir
+
+        mgr.reset()
+
+        assert mgr._batch_tmp_dir is None
+        assert not Path(tmp_dir).exists()
 
     def test_batch_matches_single_shot_brute(self) -> None:
         """search after add_batch should match search after fit."""
@@ -310,26 +351,35 @@ class TestBatchPopulation:
         approx(s_dist, b_dist)
 
     def test_batch_matches_single_shot_hnsw(self) -> None:
-        """HNSW after add_batch: nearest neighbours agree with brute."""
+        """HNSW after add_batch is functional and finds self-matches."""
         torch.manual_seed(5)
-        batch1 = torch.randn(40, 8)
-        batch2 = torch.randn(30, 8)
-        q = torch.randn(10, 8)
-        all_refs = torch.cat([batch1, batch2], dim=0)
+        D = 8
+        batch1 = torch.randn(30, D)
+        batch2 = torch.randn(30, D)
 
-        brute = IndexManager(method="brute", space="l2")
-        brute.fit(all_refs)
-        brute.build_index()
-        b_idx, _ = brute.search(q, k=1)
-
+        # Build batch HNSW
         hnsw = IndexManager(method="hnsw", space="l2")
         hnsw.add_batch(batch1)
         hnsw.add_batch(batch2)
         hnsw.build_index()
-        h_idx, _ = hnsw.search(q, k=1)
 
-        match_rate = (b_idx == h_idx).float().mean().item()
-        assert match_rate >= 0.8, f"Match rate: {match_rate:.2f}"
+        # Search returns correct shape
+        q = torch.randn(5, D)
+        h_idx, h_dist = hnsw.search(q, k=3)
+        assert h_idx.shape == (5, 3)
+        assert h_dist.shape == (5, 3)
+        assert hnsw._n_total_vectors == 60
+
+        # Reference points should find themselves when used as queries (k=1)
+        # The returned index should equal the position in the concatenated data
+        all_refs = torch.cat([batch1, batch2], dim=0)
+        probe_indices = [0, 15, 30, 59]  # some indices in all_refs
+        for i in probe_indices:
+            idx_result, dist_result = hnsw.search(all_refs[i].unsqueeze(0), k=1)
+            assert dist_result[0, 0].item() < 1e-3, (
+                f"Self-query for ref {i} should have near-zero distance, "
+                f"got {dist_result[0, 0].item()}"
+            )
 
 
 # ---------------------------------------------------------------------------

@@ -13,6 +13,9 @@ This class is **not** thread-safe.
 import json
 import logging
 import math
+import os
+import shutil
+import tempfile
 import warnings
 from pathlib import Path
 from typing import Any
@@ -42,9 +45,22 @@ class IndexManager:
 
     1. **Single-shot** — pass all reference embeddings to :meth:`fit` then
        call :meth:`build_index`.  PCA is fitted on the full set in one pass.
-    2. **Batch-wise** — call :meth:`add_batch` repeatedly (PCA accumulates
-       partial statistics per batch via :meth:`TensorPCA.partial_fit`) then
-       call :meth:`build_index` which finalises PCA and constructs the index.
+    2. **Batch-wise** (memory-efficient) — call :meth:`add_batch` repeatedly:
+
+       * **With PCA**: each batch is written to a temporary directory on disk
+         and :meth:`TensorPCA.partial_fit` is called.  :meth:`build_index`
+         then finalises PCA and processes every on-disk batch in order
+         (transform → add to index), keeping only one batch in memory at a
+         time.  Temp files are deleted after the index is built.
+       * **Without PCA, HNSW**: batches are added directly to an nmslib
+         index in-memory (``addDataPointBatch``); :meth:`build_index` calls
+         ``createIndex`` once.  Raw embeddings are never accumulated.
+       * **Without PCA, brute**: batches are written to a temp directory;
+         :meth:`build_index` loads and concatenates them once to form the
+         brute-force index.  Temp files are deleted after build.
+
+    In all batch-wise modes :meth:`get_ref_embeddings` returns ``None`` (raw
+    embeddings are not held in RAM after `build_index` completes).
 
     Parameters
     ----------
@@ -103,7 +119,7 @@ class IndexManager:
     >>> indices.shape
     torch.Size([3, 2])
 
-    Batch-wise population with PCA:
+    Memory-efficient batch-wise population with PCA:
 
     >>> from seapig.scores.utils import TensorPCA
     >>> mgr_pca = IndexManager(method="brute", pca=TensorPCA(n_components=4))
@@ -145,12 +161,17 @@ class IndexManager:
         )
 
         # Internal mutable state
-        self._ref_embeddings: torch.Tensor | None = None
+        self._ref_embeddings: torch.Tensor | None = None  # single-shot only
         self._cal_embeddings: torch.Tensor | None = None
-        self._index: Any | None = None  # nmslib index or torch.Tensor (brute)
+        self._index: Any | None = None  # built nmslib index or torch.Tensor
+        self._index_built: bool = False  # True after build_index() completes
         self._index_params: dict[str, Any] = {}
-        # Tracks whether add_batch() has accumulated partial PCA statistics
+        # Batch-mode tracking (populated via add_batch)
+        self._embedding_dim: int | None = None
+        self._n_total_vectors: int = 0
         self._pca_partial_batches: bool = False
+        self._batch_tmp_dir: str | None = None
+        self._batch_file_paths: list[str] = []
 
     # ------------------------------------------------------------------
     # Public API
@@ -190,6 +211,7 @@ class IndexManager:
             if self._device is None:
                 self._device = str(ref_embeddings.device)
             self._ref_embeddings = ref_embeddings
+            self._embedding_dim = ref_embeddings.shape[1]
 
         if cal_embeddings is not None:
             if cal_embeddings.dim() != 2:
@@ -218,11 +240,23 @@ class IndexManager:
     def add_batch(
         self, embeddings: torch.Tensor, ids: torch.Tensor | None = None
     ) -> None:
-        """Append a batch of reference vectors to the internal store.
+        """Add a batch of reference vectors without accumulating in RAM.
 
-        Vectors are concatenated with any existing reference embeddings.
+        In batch-wise mode the raw embeddings are **never** kept in
+        ``_ref_embeddings``; instead they are routed as follows:
+
+        * **With PCA** — the batch is written to a temporary directory on
+          disk and :meth:`TensorPCA.partial_fit` is called.
+          :meth:`build_index` will later finalize PCA and re-read each
+          on-disk batch to transform and index it.
+        * **Without PCA, HNSW** — ``addDataPointBatch`` is called on a
+          pre-initialized nmslib index directly; no disk I/O.
+        * **Without PCA, brute** — the batch is written to a temporary
+          directory on disk; :meth:`build_index` will load and concatenate
+          all batches once to build the brute-force index.
+
         Call :meth:`build_index` after all batches have been added to
-        construct the nearest-neighbour index.
+        construct and finalize the nearest-neighbour index.
 
         Parameters
         ----------
@@ -243,29 +277,58 @@ class IndexManager:
             raise ValueError("embeddings must be 2-D (B, D)")
         embeddings = embeddings.to(dtype=self._dtype)
 
-        if self._ref_embeddings is None:
-            self._ref_embeddings = embeddings
+        # Track dimension and device on first call
+        if self._embedding_dim is None:
+            self._embedding_dim = embeddings.shape[1]
             if self._device is None:
                 self._device = str(embeddings.device)
-        else:
-            if embeddings.shape[1] != self._ref_embeddings.shape[1]:
-                raise ValueError(
-                    f"Embedding dimension mismatch: expected "
-                    f"{self._ref_embeddings.shape[1]}, got {embeddings.shape[1]}"
-                )
-            self._ref_embeddings = torch.cat(
-                [self._ref_embeddings, embeddings], dim=0
+        elif embeddings.shape[1] != self._embedding_dim:
+            raise ValueError(
+                f"Embedding dimension mismatch: expected "
+                f"{self._embedding_dim}, got {embeddings.shape[1]}"
             )
 
-        # Accumulate partial PCA statistics for batch-wise fitting
+        self._n_total_vectors += embeddings.shape[0]
+
         if self.pca is not None:
+            # Write raw batch to disk; will be transformed after PCA finalize
+            self._ensure_batch_tmp_dir()
+            batch_path = os.path.join(
+                self._batch_tmp_dir,  # type: ignore[arg-type]
+                f"batch_{len(self._batch_file_paths):06d}.pt",
+            )
+            torch.save(embeddings.cpu(), batch_path)
+            self._batch_file_paths.append(batch_path)
             self.pca.partial_fit(embeddings)
             self._pca_partial_batches = True
+
+        elif self.method == "hnsw":
+            # Populate nmslib index incrementally; createIndex deferred
+            if self._index is None:
+                try:
+                    import nmslib
+                except ImportError:
+                    raise ImportError(
+                        "nmslib is required for method='hnsw'. "
+                        "Install it with `pip install nmslib`."
+                    )
+                self._index = nmslib.init(method="hnsw", space=self.space)
+            self._index.addDataPointBatch(embeddings.cpu())
+
+        else:
+            # Brute force: write to disk to avoid memory accumulation
+            self._ensure_batch_tmp_dir()
+            batch_path = os.path.join(
+                self._batch_tmp_dir,  # type: ignore[arg-type]
+                f"batch_{len(self._batch_file_paths):06d}.pt",
+            )
+            torch.save(embeddings.cpu(), batch_path)
+            self._batch_file_paths.append(batch_path)
 
         self._logger.debug(
             "add_batch: added %d vectors; total=%d",
             embeddings.shape[0],
-            self._ref_embeddings.shape[0],
+            self._n_total_vectors,
         )
 
     def build_index(
@@ -275,6 +338,22 @@ class IndexManager:
         **nmslib_options: Any,
     ) -> None:
         """Build or rebuild the underlying nearest-neighbour index.
+
+        Dispatches to one of four internal build paths depending on how data
+        was provided:
+
+        1. **Single-shot** (via :meth:`fit`): PCA is fitted on the full
+           reference set, then the index is built from the transformed
+           embeddings in a single pass.
+        2. **Batch-wise with PCA**: PCA is finalised from accumulated partial
+           statistics, then each on-disk batch is loaded, transformed, and
+           added to the index one at a time.  Temp files are removed on
+           completion.
+        3. **Batch-wise HNSW without PCA**: ``createIndex`` is called on the
+           pre-populated nmslib index.
+        4. **Batch-wise brute without PCA**: on-disk batches are loaded and
+           concatenated to form the in-memory brute-force index.  Temp files
+           are removed on completion.
 
         Parameters
         ----------
@@ -305,34 +384,122 @@ class IndexManager:
         ImportError
             If ``method="hnsw"`` and ``nmslib`` is not installed.
         """
-        if self._ref_embeddings is None:
+        has_single_shot = self._ref_embeddings is not None
+        has_batch = self._n_total_vectors > 0 or (
+            self.method == "hnsw" and self._index is not None
+        )
+
+        if not has_single_shot and not has_batch:
             raise RuntimeError(
                 "No reference embeddings available. "
                 "Call fit() or add_batch() first."
             )
 
-        # Fit or finalise PCA depending on which population mode was used
-        if self.pca is not None:
-            if self._pca_partial_batches:
-                # Batch-wise: partial_fit was called via add_batch() — finalise
-                self.pca.finalize()
-            else:
-                # Single-shot: fit from all stored reference embeddings at once
+        if has_single_shot:
+            # ----------------------------------------------------------------
+            # Path 1: single-shot — all data passed to fit()
+            # ----------------------------------------------------------------
+            if self.pca is not None:
                 self.pca.fit(self._ref_embeddings)
+            embs = self._prepare_embs(self._ref_embeddings)  # type: ignore[arg-type]
+            if self.method == "hnsw":
+                self._build_hnsw(
+                    embs, hnsw_params=hnsw_params, **nmslib_options
+                )
+            else:
+                self._build_brute(embs)
 
-        embs = self._prepare_embs(self._ref_embeddings)
+        elif self._pca_partial_batches:
+            # ----------------------------------------------------------------
+            # Path 2: batch-wise with PCA — finalize then re-read disk batches
+            # ----------------------------------------------------------------
+            assert self.pca is not None
+            self.pca.finalize()
+            # Derive reduced dimension from finalized PCA
+            reduced_dim = int(self.pca.q)
 
-        if self.method == "hnsw":
-            self._build_hnsw(embs, hnsw_params=hnsw_params, **nmslib_options)
+            if self.method == "hnsw":
+                try:
+                    import nmslib
+                except ImportError:
+                    raise ImportError(
+                        "nmslib is required for method='hnsw'. "
+                        "Install it with `pip install nmslib`."
+                    )
+                index = nmslib.init(method="hnsw", space=self.space)
+                for batch_path in self._batch_file_paths:
+                    batch = torch.load(batch_path, weights_only=True).to(
+                        dtype=self._dtype
+                    )
+                    transformed = self.pca.transform(batch).to(
+                        dtype=self._dtype
+                    )
+                    index.addDataPointBatch(transformed.cpu())
+                params = self._suggest_hnsw_params_from_dims(
+                    N=self._n_total_vectors, D=reduced_dim, k=10
+                )
+                if hnsw_params:
+                    params["build_defaults"].update(hnsw_params)
+                self._index_params = params
+                index.createIndex(
+                    index_params=params["build_defaults"],
+                    print_progress=bool(
+                        nmslib_options.get("print_progress", False)
+                    ),
+                )
+                self._index = index
+            else:
+                parts: list[torch.Tensor] = []
+                for batch_path in self._batch_file_paths:
+                    batch = torch.load(batch_path, weights_only=True).to(
+                        dtype=self._dtype
+                    )
+                    transformed = self.pca.transform(batch).to(
+                        dtype=self._dtype
+                    )
+                    parts.append(transformed)
+                self._build_brute(torch.cat(parts, dim=0))
+            self._cleanup_batch_tmp_dir()
+
+        elif self.method == "hnsw" and self._index is not None:
+            # ----------------------------------------------------------------
+            # Path 3: batch-wise HNSW without PCA — createIndex on pre-pop index
+            # ----------------------------------------------------------------
+            assert self._embedding_dim is not None
+            params = self._suggest_hnsw_params_from_dims(
+                N=self._n_total_vectors, D=self._embedding_dim, k=10
+            )
+            if hnsw_params:
+                params["build_defaults"].update(hnsw_params)
+            self._index_params = params
+            self._index.createIndex(
+                index_params=params["build_defaults"],
+                print_progress=bool(
+                    nmslib_options.get("print_progress", False)
+                ),
+            )
+
         else:
-            self._build_brute(embs)
+            # ----------------------------------------------------------------
+            # Path 4: batch-wise brute without PCA — load + concat disk batches
+            # ----------------------------------------------------------------
+            batch_parts: list[torch.Tensor] = []
+            for batch_path in self._batch_file_paths:
+                batch_parts.append(torch.load(batch_path, weights_only=True))
+            self._build_brute(torch.cat(batch_parts, dim=0))
+            self._cleanup_batch_tmp_dir()
 
+        self._index_built = True
         self._logger.info(
-            "build_index: method=%s space=%s N=%d D=%d",
+            "build_index: method=%s space=%s N=%d",
             self.method,
             self.space,
-            embs.shape[0],
-            embs.shape[1],
+            self._n_total_vectors
+            or (
+                self._ref_embeddings.shape[0]
+                if self._ref_embeddings is not None
+                else 0
+            ),
         )
 
     def search(
@@ -373,7 +540,7 @@ class IndexManager:
         ValueError
             If *queries* is not 2-D.
         """
-        if self._index is None:
+        if not self._index_built:
             raise RuntimeError(
                 "Index has not been built. Call build_index() first."
             )
@@ -407,11 +574,14 @@ class IndexManager:
     def get_ref_embeddings(self) -> torch.Tensor | None:
         """Return the stored reference embeddings (before PCA).
 
+        Only available in single-shot mode (data passed to :meth:`fit`).
+        In batch-wise mode (data added via :meth:`add_batch`) this always
+        returns ``None`` because raw embeddings are not accumulated in RAM.
+
         Returns
         -------
         torch.Tensor or None
-            Reference embeddings of shape ``(N, D)`` or ``None`` when no
-            embeddings have been provided.
+            Reference embeddings of shape ``(N, D)`` or ``None``.
         """
         return self._ref_embeddings
 
@@ -467,7 +637,7 @@ class IndexManager:
         if self._index is not None:
             if self.method == "hnsw":
                 index_path = f"{path}_index.bin"
-                self._index.saveIndex(index_path, save_data=False)
+                self._index.saveIndex(index_path, save_data=True)
                 saved["index"] = index_path
             else:
                 brute_path = f"{path}_brute.pt"
@@ -567,37 +737,37 @@ class IndexManager:
                     "nmslib is required to load an HNSW index. "
                     "Install it with `pip install nmslib`."
                 )
-            embs = (
-                self._prepare_embs(self._ref_embeddings)
-                if self._ref_embeddings is not None
-                else None
-            )
             index = nmslib.init(method="hnsw", space=self.space)
-            if embs is not None:
-                index.addDataPointBatch(embs.cpu())
-            index.loadIndex(paths["index"], load_data=False)
+            index.loadIndex(paths["index"], load_data=True)
             self._index = index
+            self._index_built = True
 
         elif self.method == "brute" and "brute" in paths:
             if Path(paths["brute"]).exists():
                 self._index = torch.load(paths["brute"], weights_only=True)
+                self._index_built = True
 
         self._logger.info("load: restored from prefix '%s'", path)
 
     def reset(self) -> None:
         """Reset all internal state.
 
-        Clears stored embeddings, the index, PCA accumulators, and index
-        parameters.  The construction-time hyper-parameters (*method*,
-        *space*, *dtype*, *device*, *pca*) are preserved; if a
-        :class:`TensorPCA` instance was supplied, its partial-fit accumulators
-        are reset so it can be re-fitted on new data.
+        Clears stored embeddings, the index, PCA accumulators, batch tracking
+        state, and index parameters.  Any temporary on-disk files created
+        during batch-wise population are deleted.  The construction-time
+        hyper-parameters (*method*, *space*, *dtype*, *device*, *pca*) are
+        preserved; if a :class:`TensorPCA` instance was supplied, its
+        partial-fit accumulators are reset so it can be re-fitted on new data.
         """
         self._ref_embeddings = None
         self._cal_embeddings = None
         self._index = None
+        self._index_built = False
         self._index_params = {}
         self._pca_partial_batches = False
+        self._embedding_dim = None
+        self._n_total_vectors = 0
+        self._cleanup_batch_tmp_dir()
         if self.pca is not None:
             self.pca.reset_partial()
         self._logger.debug("reset: all state cleared")
@@ -605,6 +775,25 @@ class IndexManager:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    def _ensure_batch_tmp_dir(self) -> None:
+        """Create a temporary directory for batch files if not already done."""
+        if self._batch_tmp_dir is None:
+            self._batch_tmp_dir = tempfile.mkdtemp(prefix="seapig_index_")
+
+    def _cleanup_batch_tmp_dir(self) -> None:
+        """Delete the temporary batch directory and reset tracking lists."""
+        if self._batch_tmp_dir is not None:
+            try:
+                shutil.rmtree(self._batch_tmp_dir)
+            except OSError as exc:
+                self._logger.warning(
+                    "Failed to remove temporary batch directory %r: %s",
+                    self._batch_tmp_dir,
+                    exc,
+                )
+            self._batch_tmp_dir = None
+        self._batch_file_paths = []
 
     def _prepare_embs(self, embs: torch.Tensor) -> torch.Tensor:
         """Optionally apply the fitted PCA transform to *embs*.
@@ -764,7 +953,32 @@ class IndexManager:
         if embs.dim() != 2:
             raise ValueError("ref_embeddings must be 2-D (N, D)")
         N, D = map(int, embs.shape)
+        return IndexManager._suggest_hnsw_params_from_dims(N=N, D=D, k=k)
 
+    @staticmethod
+    def _suggest_hnsw_params_from_dims(
+        N: int, D: int, k: int = 10
+    ) -> dict[str, Any]:
+        """Suggest conservative HNSW parameters from dataset dimensions.
+
+        This variant accepts integer ``(N, D)`` directly and is used in
+        batch-wise mode where a single tensor containing all embeddings is
+        not available.
+
+        Parameters
+        ----------
+        N : int
+            Total number of reference vectors.
+        D : int
+            Embedding dimension (after PCA, if applicable).
+        k : int, optional
+            Number of neighbours used to derive ``efSearch``.
+
+        Returns
+        -------
+        dict[str, Any]
+            Dict with keys ``"build_defaults"`` and ``"query_defaults"``.
+        """
         if N < 10:
             return {
                 "build_defaults": {"post": 0},

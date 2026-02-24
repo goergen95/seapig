@@ -236,16 +236,16 @@ class KNNScore(EmbeddingScore, ABC):
             mgr._index_params = params
             if index_path:
                 assert mgr._index is not None
-                mgr._index.saveIndex(index_path.as_posix(), save_data=False)
+                mgr._index.saveIndex(index_path.as_posix(), save_data=True)
         else:
             warnings.warn(
                 f"Index file {index_path} already exists. Loading existing index from disk.",
                 UserWarning,
             )
             nmslib_index = nmslib.init(method="hnsw", space=space)
-            nmslib_index.addDataPointBatch(embs.cpu())
-            nmslib_index.loadIndex(index_path.as_posix(), load_data=False)
+            nmslib_index.loadIndex(index_path.as_posix(), load_data=True)
             mgr._index = nmslib_index
+            mgr._index_built = True
             mgr._index_params = params
 
         self._index_manager = mgr
