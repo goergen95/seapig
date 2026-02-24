@@ -6,10 +6,12 @@ _site
 .quarto
 .ruff_cache
 build
-env
+dist
+.venv
 plans
 README_files
 *egg-info*
 objects.json
 coverage.xml
 README.html
+*egg-info*
