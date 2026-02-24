@@ -1,30 +1,26 @@
 # Dockerfile
 FROM python:3.12-slim
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PIP_NO_CACHE_DIR=1
 WORKDIR /workspace
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-     build-essential git ca-certificates \
+     build-essential git wget ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-RUN useradd --create-home --home-dir /workspace/vscode vscode \
-  && chown -R vscode:vscode /workspace/vscode
+RUN useradd --create-home --home-dir /workspace/seapig seapig \
+  && chown -R seapig:seapig /workspace/seapig
 
-RUN python -m pip install --upgrade pip setuptools wheel build
+COPY . /workspace/seapig
+WORKDIR /workspace/seapig
+ENV HOME=/workspace/seapig
 
-COPY . /workspace/vscode
-WORKDIR /workspace/vscode
-
-RUN pip install --no-cache-dir -r requirements/required.txt
-RUN pip install --no-cache-dir -r requirements/suggested.txt
-RUN pip install --no-cache-dir -r requirements/dev.txt
-RUN pip install --no-cache-dir -r requirements/docs.txt
-RUN pip install .
+RUN uv venv && . ./.venv/bin/activate
+RUN uv pip install .[all]
 RUN quarto add machow/quartodoc --no-prompt
 
-USER vscode
-ENV HOME=/workspace/vscode
+RUN uv cache clean
+
+USER seapig
 CMD ["bash"]

@@ -1,11 +1,10 @@
 {
   "name": "seapig dev",
   "image": "ghcr.io/goergen95/seapig:latest",
-  "workspaceFolder": "/workspace/vscode",
-  "features": {
-    "ghcr.io/devcontainers/features/git:1": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {}
-  },
+  "workspaceFolder": "/workspace/seapig",
+  "remoteUser": "seapig",
+  "updateRemoteUserUID": true,
+  "forwardPorts": [4200, 8888, 8000],
   "hostRequirements": {
     "gpu": "optional"
   },
@@ -36,11 +35,8 @@
         "editor.codeActionsOnSave": {
           "source.organizeImports": "explicit",
           "source.fixAll.ruff": "explicit"
-        }
-      }
-    }
+        },
+      },
+    },
   },
-  "remoteUser": "vscode",
-  "updateRemoteUserUID": true,
-  "forwardPorts": [4200, 8888, 8000]
 }
