@@ -1,11 +1,10 @@
 repos:
   - repo: local
     hooks:
-      - id: mypy
-        name: mypy
-        entry: mypy
+      - id: ty
+        name: ty
+        entry: ty check --output-format=github
         language: system
-        args: ["--config-file", "pyproject.toml", "."]
         types_or: [python]
         verbose: true
         pass_filenames: false

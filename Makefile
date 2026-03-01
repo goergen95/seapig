@@ -3,26 +3,26 @@ SHELL := bash
 .PHONY: env req sug dev doc install all ruff mypy cov checks docs build clean
 
 env:
-	virtualenv ./env; . env/bin/activate;
+	uv venv; source .venv/bin/activate;
 req:
-	pip install .
+	uv run pip install .
 sug:
-	pip install .[suggested]
+	uv run pip install .[suggested]
 dev: 
-	pip install .[dev]
+	uv run pip install .[dev]
 doc:
-	pip install .[doc]; quarto add machow/quartodoc --no-prompt 
+	uv run pip install .[doc]; quarto add machow/quartodoc --no-prompt
 
 all:
-	pip install .[all]
+	uv run pip install .[all]
 
 ruff:
 	ruff format; ruff check
-mypy:
-	mypy .
+ty:
+	ty check
 cov:
 	pytest --cov=seapig
-checks: ruff mypy cov
+checks: ruff ty cov
 
 docs: 
 	quarto render README.qmd; python -m quartodoc build --verbose; python -m quartodoc interlinks; quarto render

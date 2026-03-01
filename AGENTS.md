@@ -292,7 +292,7 @@ Dev tools (from `dev.txt`):
 - **pytest**: Testing framework
 - **pytest-cov**: Coverage reporting
 - **ruff**: Fast Python linter and formatter
-- **mypy**: Static type checker
+- **ty**: Static type checker
 - **types-tqdm**: Type stubs for tqdm
 - **build**: Python package builder
 - **nbmake**: Jupyter notebook testing
@@ -326,7 +326,7 @@ make all      # Complete setup
 
 ---
 
-## Formatting with Ruff and Mypy
+## Formatting with Ruff
 
 ### Ruff Configuration
 
@@ -372,35 +372,6 @@ ruff check      # Check for issues
 ruff check --fix # Fix issues automatically
 ```
 
-### Mypy Configuration
-
-**Mypy** enforces strict type checking, configured in `pyproject.toml`:
-
-```toml
-[tool.mypy]
-ignore_missing_imports = true
-exclude = "(build|data|dist|tests|docs|env|...)/"
-
-# Strict typing
-disallow_any_unimported = true
-disallow_any_decorated = true
-disallow_any_generics = true
-disallow_subclassing_any = true
-disallow_untyped_calls = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-disallow_untyped_decorators = true
-
-# Warnings
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-warn_return_any = true
-
-strict_equality = true
-strict = true
-```
-
 #### Key Requirements
 
 - **All functions must have type annotations**: Parameters and return types
@@ -408,14 +379,14 @@ strict = true
 - **No `Any` types**: Except from untyped imports (which are ignored)
 - **Strict equality**: Proper type checking in comparisons
 
-#### Running Mypy
+#### Running ty
 
 ```bash
 # Via Makefile
-make mypy
+make ty
 
 # Or directly
-mypy .
+ty check
 ```
 
 ### Pre-commit Hooks
@@ -423,14 +394,20 @@ mypy .
 Both tools run automatically via pre-commit (`.pre-commit-config.yaml`):
 
 ```yaml
-repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    hooks:
-        - id: ruff
-        - id: ruff-format
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    hooks:
-      - id: mypy
+- id: ty
+  name: ty
+  entry: ty check --output-format=github
+  language: system
+  types_or: [python]
+  verbose: true
+  pass_filenames: false
+  stages: ["pre-push"]
+- id: ruff-check
+  name: ruff-check
+  entry: ruff check --force-exclude
+  language: system
+  types_or: [python]
+  stages: ["pre-commit"]
 ```
 
 Install pre-commit hooks:
@@ -492,7 +469,7 @@ Three workflows run on push and pull requests to `main`:
 
 #### 2. Style Checks (`style.yaml`)
 
-**Purpose**: Enforce code quality with ruff and mypy
+**Purpose**: Enforce code quality with ruff and ty
 
 **Trigger**: Push/PR to main
 **Python Version**: 3.12
@@ -502,9 +479,9 @@ Three workflows run on push and pull requests to `main`:
   - Install dev extras or standalone ruff
   - Run `ruff check .`
   
-- **mypy**: Static type checking
-  - Install dev extras or standalone mypy
-  - Run `mypy .`
+- **ty**: Static type checking
+  - Install dev extras or standalone ty
+  - Run `ty check`
 
 Both jobs run in parallel for faster feedback.
 
@@ -525,9 +502,9 @@ Both jobs run in parallel for faster feedback.
 Common development tasks:
 
 ```bash
-make checks     # Run ruff + mypy + coverage tests
+make checks     # Run ruff + ty + coverage tests
 make ruff       # Format and lint
-make mypy       # Type check
+make ty         # Type check
 make cov        # Run tests with coverage
 make docs       # Build documentation
 make build      # Build Python package
@@ -539,7 +516,7 @@ make clean      # Remove build artifacts
 Pull requests must pass:
 1. ✅ All pytest tests
 2. ✅ Ruff formatting and linting
-3. ✅ Mypy type checking
+3. ✅ ty type checking
 4. ✅ Coverage threshold (reported to codecov)
 
 ### Secrets and Tokens
@@ -569,7 +546,7 @@ Required repository secrets:
 
 4. **Run checks locally**
    ```bash
-   make checks  # ruff + mypy + coverage
+   make checks  # ruff + ty + coverage
    ```
 
 5. **Update documentation**
@@ -745,9 +722,9 @@ make all                          # Complete environment setup
 
 # Development
 make ruff                         # Format and lint
-make mypy                         # Type check
+make ty                           # Type check
 make cov                          # Test with coverage
-make checks                       # All checks (ruff + mypy + cov)
+make checks                       # All checks (ruff + ty + cov)
 
 # Testing
 pytest                            # Run all tests
