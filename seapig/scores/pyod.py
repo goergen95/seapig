@@ -1,6 +1,7 @@
 """Confidence score based on an arbitrary PyOD model."""
 
 from pathlib import Path
+from typing import Any
 
 import torch
 from torch.utils.data import DataLoader
@@ -70,6 +71,7 @@ class PyODScore(EmbeddingScore):
         outdir: Path | None = None,
         prefix: str | None = None,
         q: bool | float = False,
+        **kwargs: Any,
     ) -> None:
         """Train a confidence score based on samples from a `torch.utils.data.DataLoader`.
 
@@ -155,7 +157,7 @@ class PyODScore(EmbeddingScore):
             self.set_calibrated()
 
     @override
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
+    @torch.inference_mode()
     def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
         """Compute a confidence score based on sample embeddings.
 

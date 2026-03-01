@@ -39,7 +39,7 @@ logger = get_logger(__name__)
 
 
 @final
-class TensorPCA(torch.nn.Module):  # type: ignore[misc]
+class TensorPCA(torch.nn.Module):
     """Tensor-based PCA with L2-normalized inputs.
 
     Operation modes
@@ -120,7 +120,7 @@ class TensorPCA(torch.nn.Module):  # type: ignore[misc]
                 raise ValueError(
                     "n_components as float must be in the interval (0, 1]"
                 )
-            self.n_components: int | float = n_components  # type: ignore[no-redef]
+            self.n_components: int | float = n_components
         else:
             raise ValueError(
                 "n_components must be either an int>0 or a float in (0,1]"

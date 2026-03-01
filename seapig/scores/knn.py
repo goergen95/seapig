@@ -96,6 +96,7 @@ class KNNScore(EmbeddingScore, ABC):
         outdir: Path | None = None,
         prefix: str | None = None,
         q: bool | float = False,
+        **kwargs: Any,
     ) -> None:
         """Train a confidence score based on sample embeddings.
 
@@ -386,7 +387,7 @@ class EuclideanScore(KNNScore):
         self._build_index(self.ref_embeddings, space="l2")
 
     @override
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
+    @torch.inference_mode()
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         """Calculate the KNN distance of a query against a populated index."""
         return torch.sqrt(self._query_index(query, kpn))
@@ -447,7 +448,7 @@ class CosineScore(KNNScore):
         self._build_index(normalized, space="cosinesimil")
 
     @override
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
+    @torch.inference_mode()
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
         normalized = torch.nn.functional.normalize(query)
@@ -512,7 +513,7 @@ class MahalanobisScore(KNNScore):
         self._build_index(transformed, space="l2")
 
     @override
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
+    @torch.inference_mode()
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
         transformed = query.float() @ self.vi_zero.T

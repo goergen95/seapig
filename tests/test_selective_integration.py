@@ -39,21 +39,18 @@ class FlagScore(ConfidenceScore):
 
     def fit(
         self,
-        ref_embeddings: torch.Tensor,
-        val_embeddings: torch.Tensor | None = None,
+        X: torch.Tensor | None = None,
+        Y: torch.Tensor | None = None,
+        **kwargs: Any,
     ) -> None:
         # no-op: store reference embeddings for completeness
-        self.ref_embeddings = ref_embeddings  # pragma: no cover
+        self.ref_embeddings = X  # pragma: no cover
 
-    def score(self, embeddings: torch.Tensor) -> torch.Tensor:
+    def score(self, X: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         # return a dummy score vector (lower is better). Not used by select().
-        return torch.zeros(
-            embeddings.shape[0], dtype=torch.float32
-        )  # pragma: no cover
+        return torch.zeros(X.shape[0], dtype=torch.float32)  # pragma: no cover
 
-    def select(
-        self, X: torch.Tensor, *args, **kwargs
-    ) -> dict[str, torch.Tensor]:
+    def select(self, X: torch.Tensor, **kwargs: Any) -> dict[str, torch.Tensor]:
         # boolean selection
         selected = X[:, 0].to(torch.bool)
         # numeric score (lower is better) — include in outputs for RiskCoverageMetric

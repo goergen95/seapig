@@ -45,4 +45,4 @@ jobs:
       - name: Install dependencies
         run: uv pip install -r requirements/dev.txt
       - name: Run ty checks
-        run: ty check --output-format=github
+        run: ty check --output-format=github --exclude "dev/**"

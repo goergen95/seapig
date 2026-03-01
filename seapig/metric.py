@@ -9,7 +9,7 @@ from torchmetrics import Metric, MetricCollection
 from seapig.risk_coverage import RiskCoverage, risk_coverage
 
 
-class SelectiveMetric(Metric):  # type: ignore[misc]
+class SelectiveMetric(Metric):
     """Wrap a torchmetrics metric for selective evaluation.
 
     This wrapper keeps three independent instances of an underlying
@@ -165,7 +165,7 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
 
 
 @final
-class RiskCoverageMetric(Metric):  # type: ignore[misc]
+class RiskCoverageMetric(Metric):
     """Accumulate scores and residuals, compute a risk‑coverage curve.
 
     Parameters

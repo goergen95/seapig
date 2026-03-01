@@ -291,7 +291,7 @@ def test_visualize_embeddings():
     with pytest.raises(ValueError):
         score.plot_embs(
             query_embeddings=query_embeddings,
-            method="invalid_method",
+            method="invalid_method",  # type: ignore[arg-type]
             method_args=tsne_args,
         )
 

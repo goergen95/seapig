@@ -22,7 +22,7 @@ class DummyTaskTensor(LightningModule):
 
     test_metrics: MetricCollection = MetricCollection(Accuracy(task="binary"))
 
-    def predict(self, x: torch.Tensor) -> torch.Tensor:  # type: ignore[override]
+    def predict(self, x: torch.Tensor) -> torch.Tensor:
         return 2 * x
 
     def embed(self, x: torch.Tensor) -> torch.Tensor:
@@ -37,7 +37,7 @@ class DummyTaskDict(LightningModule):
 
     test_metrics: MetricCollection = MetricCollection(Accuracy(task="binary"))
 
-    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:  # type: ignore[override]
+    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         return {"predictions": 3 * x, "extra": x.sum(dim=1)}  # pragma: no cover
 
 
