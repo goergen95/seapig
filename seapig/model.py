@@ -63,10 +63,10 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
 
     def __init__(
         self,
-        task: LightningModule,
+        task: Any,
         score: ConfidenceScore,
-        input_key: INPUT_KEYS = "image",
-        target_key: TARGET_KEYS = "label",
+        input_key: str = "image",
+        target_key: str = "label",
         rc_metric: RiskCoverageMetric | None = None,
         acc_test_outputs: bool = False,
     ) -> None:
