@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 import torch
 from lightning import LightningDataModule, LightningModule, Trainer
@@ -49,11 +51,13 @@ class FlagScore(ConfidenceScore):
             embeddings.shape[0], dtype=torch.float32
         )  # pragma: no cover
 
-    def select(self, embeddings: torch.Tensor) -> dict[str, torch.Tensor]:
+    def select(
+        self, X: torch.Tensor, *args, **kwargs
+    ) -> dict[str, torch.Tensor]:
         # boolean selection
-        selected = embeddings[:, 0].to(torch.bool)
+        selected = X[:, 0].to(torch.bool)
         # numeric score (lower is better) — include in outputs for RiskCoverageMetric
-        score = (1.0 - embeddings[:, 0].to(torch.float32)).reshape(-1)
+        score = (1.0 - X[:, 0].to(torch.float32)).reshape(-1)
         return {"selected": selected, "score": score}
 
 
@@ -71,8 +75,8 @@ class SmallDataset(Dataset):
     def __len__(self):
         return len(self.samples)
 
-    def __getitem__(self, idx):
-        x, y = self.samples[idx]
+    def __getitem__(self, index: int) -> Any:
+        x, y = self.samples[index]
         return {
             "image": torch.tensor(x, dtype=torch.float32),
             "label": torch.tensor(y, dtype=torch.long),
@@ -85,7 +89,7 @@ class DM(LightningDataModule):
         return DataLoader(SmallDataset(), batch_size=3, shuffle=False)
 
 
-def _find_metric(results: dict, suffix: str):
+def _find_metric(results: Any, suffix: str):
     for k, v in results.items():
         if k.endswith(suffix):
             return float(v)
