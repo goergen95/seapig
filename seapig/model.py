@@ -59,6 +59,8 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         which can be accessed after testing is complete.
     """
 
+    test_metrics: SelectiveMetric | None
+    rc_metric: RiskCoverageMetric | None
     test_outputs: list[dict[str, Any]] | None = None
 
     def __init__(
