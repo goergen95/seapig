@@ -11,6 +11,7 @@ from __future__ import annotations
 import abc
 import inspect
 from pathlib import Path
+from typing import Any
 
 import torch
 import torch.nn.functional as F
@@ -100,8 +101,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
         loader: DataLoader[object] | None = None,
         outdir: Path | str | None = None,
         prefix: str | None = None,
-        *args: object,
-        **kwargs: object,
+        **kwargs: Any,
     ) -> None:
         """
         Fit the score on reference logits.
@@ -194,7 +194,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
             self.scores = self.score(self.logits)
 
     @abc.abstractmethod
-    def score(self, query_logits: torch.Tensor) -> torch.Tensor:
+    def score(self, X: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """
         Compute confidence scores for query logits.
 
@@ -531,7 +531,7 @@ class SoftmaxScore(LogitScore):
         super().__init__(temperature=temperature, task=task)
 
     @override
-    def score(self, query_logits: torch.Tensor) -> torch.Tensor:
+    def score(self, X: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Compute task-aware softmax-based confidence score.
 
         For multiclass: -max softmax probability.
@@ -546,7 +546,7 @@ class SoftmaxScore(LogitScore):
         """
         T = 1.0 if self.temperature is None else float(self.temperature)
         task = self.task
-        logits = query_logits
+        logits = X
         if task == "multiclass":
             probs = F.softmax(logits / T, dim=1)
             return -probs.amax(dim=1)
@@ -594,7 +594,7 @@ class EnergyScore(LogitScore):
         super().__init__(temperature=temperature, task=task)
 
     @override
-    def score(self, query_logits: torch.Tensor) -> torch.Tensor:
+    def score(self, X: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Compute energy for query logits (task-aware).
 
         Returns a 1-D tensor of shape (M,) where lower values are more
@@ -602,7 +602,7 @@ class EnergyScore(LogitScore):
         """
         T = 1.0 if self.temperature is None else float(self.temperature)
         task = self.task
-        logits = query_logits
+        logits = X
         if task == "multiclass":
             # -T * logsumexp(logits / T)
             return -(logits / T).logsumexp(dim=1) * T
@@ -652,7 +652,7 @@ class MarginScore(LogitScore):
         super().__init__(temperature=temperature, task=task)
 
     @override
-    def score(self, query_logits: torch.Tensor) -> torch.Tensor:
+    def score(self, X: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Compute task-aware margin-based confidence score.
 
         For multiclass: negative top-two margin.
@@ -667,7 +667,7 @@ class MarginScore(LogitScore):
         """
         T = 1.0 if self.temperature is None else float(self.temperature)
         task = self.task
-        logits = query_logits
+        logits = X
         scaled = logits / T
         if task == "multiclass":
             top2 = scaled.topk(k=2, dim=1).values
@@ -716,7 +716,7 @@ class EntropyScore(LogitScore):
         super().__init__(temperature=temperature, task=task)
 
     @override
-    def score(self, query_logits: torch.Tensor) -> torch.Tensor:
+    def score(self, X: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Compute predictive entropy for each sample (task-aware).
 
         Returns
@@ -726,7 +726,7 @@ class EntropyScore(LogitScore):
         """
         T = 1.0 if self.temperature is None else float(self.temperature)
         task = self.task
-        logits = query_logits
+        logits = X
         EPS = 1e-12
         if task == "multiclass":
             probs = F.softmax(logits / T, dim=1)

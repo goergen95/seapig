@@ -98,3 +98,6 @@ split-on-trailing-comma = false
 
 [tool.ty.rules]
 unresolved-import = "ignore"
+
+[tool.ty.src]
+include = ["seapig", "tests"]

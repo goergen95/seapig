@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import pytest
 import torch
@@ -100,13 +101,14 @@ class SimpleL2Score(EmbeddingScore):
         | None = None,
         outdir: Path | None = None,
         prefix: str | None = None,
+        **kwargs: Any,
     ) -> None:
         super().fit(
             X=X, Y=Y, model=model, loaders=loaders, outdir=outdir, prefix=prefix
         )
         self._fit_impl()
 
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
+    @torch.inference_mode()
     def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
         assert self.ref_embeddings is not None
         dists = torch.cdist(X, self.ref_embeddings)

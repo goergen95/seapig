@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -8,10 +9,15 @@ from seapig.scores.base import ConfidenceScore
 
 
 class Dummy(ConfidenceScore):
-    def fit(self, X=None, Y=None):
+    def fit(
+        self,
+        X: torch.Tensor | None = None,
+        Y: torch.Tensor | None = None,
+        **kwargs: Any,
+    ) -> None:
         return None  # pragma: no cover
 
-    def score(self, X, *args, **kwargs):
+    def score(self, X: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         return X
 
 
@@ -132,7 +138,7 @@ def test_plot_raises_import_error_when_matplotlib_missing(monkeypatch):
 
 def test_randomscore_select_logs_warning_when_threshold_none(caplog):
     rs = RandomScore()
-    rs.threshold = None  # type: ignore[attr-defined]
+    rs.threshold = None
     X = torch.randn(3, 2)
     caplog.clear()
     with caplog.at_level("WARNING"):

@@ -1,6 +1,7 @@
 """PCA based dimensionality reduction and confidence scoring."""
 
 from pathlib import Path
+from typing import Any
 
 import torch
 from torch.utils.data import DataLoader
@@ -46,6 +47,7 @@ class PCAScore(EmbeddingScore):
         outdir: Path | None = None,
         prefix: str | None = None,
         q: bool | float = False,
+        **kwargs: Any,
     ) -> None:
         """Train a confidence score based on sample embeddings.
 

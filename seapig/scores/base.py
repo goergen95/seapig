@@ -12,7 +12,7 @@ from seapig.utils import get_logger
 logger = get_logger(__name__)
 
 
-class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
+class ConfidenceScore(torch.nn.Module, ABC):
     """Abstract Base Class for Confidence Scores.
 
     Confidence scores quantify the deviation of query samples from the training
@@ -105,7 +105,6 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
         self,
         X: torch.Tensor | None = None,
         Y: torch.Tensor | None = None,
-        *args: Any,
         **kwargs: Any,
     ) -> None:
         """Fit a confidence score.
@@ -117,7 +116,7 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
         raise NotImplementedError()
 
     @abstractmethod
-    def score(self, X: torch.Tensor, *args: Any, **kwargs: Any) -> torch.Tensor:
+    def score(self, X: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Calculate the confidence score for a tensor of samples.
 
         Returns scores where low values indicate likely inliers and high values
@@ -126,9 +125,7 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
         """
         raise NotImplementedError()
 
-    def select(
-        self, X: torch.Tensor, *args: Any, **kwargs: Any
-    ) -> dict[str, torch.Tensor]:
+    def select(self, X: torch.Tensor, **kwargs: Any) -> dict[str, torch.Tensor]:
         """Select samples for prediction based on their confidence score.
 
         Samples with scores lower than the threshold are selected for prediction,
@@ -137,7 +134,7 @@ class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
         if self.threshold is None:
             self.set_threshold()
         assert self.threshold is not None
-        scores = self.score(X, *args, **kwargs)
+        scores = self.score(X, **kwargs)
         selected = scores < self.threshold
         return {"score": scores, "selected": selected}
 
@@ -262,14 +259,17 @@ class RandomScore(ConfidenceScore):
 
     @override
     def fit(
-        self, X: torch.Tensor | None = None, Y: torch.Tensor | None = None
+        self,
+        X: torch.Tensor | None = None,
+        Y: torch.Tensor | None = None,
+        **kwargs: Any,
     ) -> None:
         """Unused."""
         raise NotImplementedError()
 
     @override
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
-    def score(self, X: torch.Tensor) -> torch.Tensor:
+    @torch.inference_mode()
+    def score(self, X: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Compute a confidence score for every sample in a batch.
 
         Returns random scores where low values indicate likely inliers and
@@ -291,8 +291,8 @@ class RandomScore(ConfidenceScore):
         return torch.rand(X.shape[0])
 
     @override
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
-    def select(self, X: torch.Tensor) -> dict[str, torch.Tensor]:
+    @torch.inference_mode()
+    def select(self, X: torch.Tensor, **kwargs: Any) -> dict[str, torch.Tensor]:
         """Select samples for prediction based on their confidence score.
 
         Samples with scores lower than the threshold are selected for prediction.

@@ -16,13 +16,13 @@ from seapig.utils.logging import configure_logging, get_logger
 
 
 @pytest.fixture(autouse=True)
-def _restore_logger() -> pytest.FixtureResult[None]:  # type: ignore[type-arg]
+def _restore_logger() -> pytest.FixtureResult[None]:
     """Reset the seapig logger to its default state after each test."""
     pkg_logger = get_logger("seapig")
     original_level = pkg_logger.level
     original_handlers = list(pkg_logger.handlers)
     original_propagate = pkg_logger.propagate
-    yield  # type: ignore[misc]
+    yield
     pkg_logger.handlers.clear()
     for h in original_handlers:
         pkg_logger.addHandler(h)

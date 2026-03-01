@@ -89,7 +89,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         torch.save(x.cpu(), path)
 
     @staticmethod
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
+    @torch.inference_mode()
     def _load_pt(path: Path) -> torch.Tensor:
         """Read a file from disk to a `torch.Tensor`."""
         v: torch.Tensor = torch.load(path)
@@ -117,7 +117,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         return v
 
     @classmethod
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
+    @torch.inference_mode()
     def _embed(
         self, X: torch.Tensor | dict[str, torch.Tensor], model: torch.nn.Module
     ) -> torch.Tensor:
@@ -216,7 +216,6 @@ class EmbeddingScore(ConfidenceScore, ABC):
         | None = None,
         outdir: Path | None = None,
         prefix: str | None = None,
-        *args: Any,
         **kwargs: Any,
     ) -> None:
         """Train a confidence score based on sample embeddings.
@@ -341,6 +340,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         | None = None,
         outdir: Path | None = None,
         prefix: str | None = None,
+        **kwargs: Any,
     ) -> torch.Tensor:
         """Compute confidence scores for query samples.
 
@@ -454,6 +454,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         | None = None,
         outdir: Path | None = None,
         prefix: str | None = None,
+        **kwargs: Any,
     ) -> dict[str, torch.Tensor]:
         """Select samples for prediction based on their confidence score.
 

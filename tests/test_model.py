@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 import torch
 from pytorch_lightning import LightningModule
@@ -11,26 +13,31 @@ from seapig.scores.base import ConfidenceScore
 class DummyScore(ConfidenceScore):
     """Minimal duck-typed score with select()."""
 
-    def select(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
-        b = x.shape[0]
+    def select(self, X: torch.Tensor, **kwargs: Any) -> dict[str, torch.Tensor]:
+        b = X.shape[0]
         return {
-            "score": torch.arange(b, dtype=x.dtype, device=x.device),
-            "selected": torch.ones(b, dtype=torch.bool, device=x.device),
+            "score": torch.arange(b, dtype=X.dtype, device=X.device),
+            "selected": torch.ones(b, dtype=torch.bool, device=X.device),
         }
 
-    def score(self, x: torch.Tensor) -> torch.Tensor:
+    def score(self, X: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         return torch.zeros(
-            x.shape[0], dtype=x.dtype, device=x.device
+            X.shape[0], dtype=X.dtype, device=X.device
         )  # pragma: no cover
 
-    def fit(self, x: torch.Tensor) -> None:
+    def fit(
+        self,
+        X: torch.Tensor | None = None,
+        Y: torch.Tensor | None = None,
+        **kwargs: Any,
+    ) -> None:
         """Dummy implementation of fit."""
         raise NotImplementedError()
 
     @override
-    def set_threshold(self, q: float) -> None:  # pragma: no cover
+    def set_threshold(self, q: float = 0.99) -> None:  # pragma: no cover
         """Dummy implementation of set_threshold."""
-        self.threshold = q
+        self.threshold = torch.tensor(q)
 
 
 class DummyTaskTensor(LightningModule):
@@ -38,7 +45,7 @@ class DummyTaskTensor(LightningModule):
 
     test_metrics: MetricCollection = MetricCollection(Accuracy(task="binary"))
 
-    def predict(self, x: torch.Tensor) -> torch.Tensor:  # type: ignore[override]
+    def predict(self, x: torch.Tensor) -> torch.Tensor:
         return 2 * x
 
     def embed(self, x: torch.Tensor) -> torch.Tensor:
@@ -51,7 +58,7 @@ class DummyTaskTensor(LightningModule):
 class DummyTaskDict(DummyTaskTensor):
     """Task that returns a mapping from predict()."""
 
-    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:  # type: ignore[override]
+    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         return {"predictions": 3 * x, "extra": x.sum(dim=1)}
 
 
@@ -74,7 +81,7 @@ def test_init_accepts_default_and_alt_keys() -> None:
     ],
 )
 def test_init_rejects_invalid_keys(kw: str, key: str, value: str) -> None:
-    kwargs: dict[str, object] = {kw: value}
+    kwargs: dict[str, Any] = {kw: value}
     with pytest.raises(ValueError):
         _ = SelectiveInferenceTask(
             task=DummyTaskTensor(), score=DummyScore(), **kwargs
@@ -111,7 +118,7 @@ def test_forward_keeps_dict_output_and_extra_keys() -> None:
 
 def test_forward_raises_when_predict_not_tensor_or_dict() -> None:
     class BadTask(DummyTaskTensor):
-        def predict(self, x: torch.Tensor):  # type: ignore[override]
+        def predict(self, x: torch.Tensor):
             return [x]  # wrong type
 
     w = SelectiveInferenceTask(task=BadTask(), score=DummyScore())
@@ -128,7 +135,7 @@ def test_predict_step_uses_input_key_and_returns_selection() -> None:
     out = w.predict_step(batch, batch_idx=0)
     assert "predictions" in out and torch.allclose(
         out["predictions"], 2 * batch["image"]
-    )  # type: ignore[index]
+    )
     assert out["selected"].dtype is torch.bool
 
 
@@ -161,6 +168,7 @@ def test_test_step_updates_metrics_and_logs_rc(monkeypatch) -> None:
     w.test_step(batch, batch_idx=0)
 
     # SelectiveMetric should have results for collection (prefixed keys)
+    assert w.test_metrics is not None
     res = w.test_metrics.compute()
     assert any(k.startswith("full/") for k in res.keys())
     assert any(k.startswith("selected/") for k in res.keys())
@@ -187,6 +195,7 @@ def test_test_step_with_alt_keys_updates_metrics(monkeypatch) -> None:
     batch = {"x": torch.tensor([0.0, 1.0]), "y": torch.tensor([0, 1])}
     w.test_step(batch, batch_idx=0)
 
+    assert w.test_metrics is not None
     res = w.test_metrics.compute()
     assert any(k.startswith("full/") for k in res.keys())
     assert any(k.startswith("selected/") for k in res.keys())
