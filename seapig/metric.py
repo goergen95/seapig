@@ -1,7 +1,7 @@
 """Selective evaluation metric wrapper."""
 
 from collections.abc import Callable, Iterable
-from typing import final
+from typing import final, override
 
 import torch
 from torchmetrics import Metric, MetricCollection
@@ -83,6 +83,7 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
         """Return values of the computed results."""
         return self.compute().values()
 
+    @override
     def update(
         self, outputs: dict[str, torch.Tensor], target: torch.Tensor
     ) -> None:
@@ -113,6 +114,7 @@ class SelectiveMetric(Metric):  # type: ignore[misc]
         if rejected.any():
             self._rejected.update(predictions[rejected], target[rejected])
 
+    @override
     def compute(self) -> dict[str, torch.Tensor]:
         """Compute and return results for total, selected, and rejected.
 
@@ -243,6 +245,7 @@ class RiskCoverageMetric(Metric):  # type: ignore[misc]
         reduce_dims = tuple(range(1, residual.ndim))
         return residual.mean(dim=reduce_dims)
 
+    @override
     def update(
         self, outputs: dict[str, torch.Tensor], target: torch.Tensor
     ) -> None:
@@ -274,6 +277,7 @@ class RiskCoverageMetric(Metric):  # type: ignore[misc]
         else:
             self.residuals = torch.cat([self.residuals, residuals], dim=0)
 
+    @override
     def compute(self) -> dict[str, torch.Tensor]:
         """Compute risk-coverage curve metrics."""
         if self.scores.numel() == 0:
