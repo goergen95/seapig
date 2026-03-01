@@ -1,4 +1,4 @@
-name: "Quarto site — render & deploy (quartodoc)"
+name: "quarto - render and deploy"
 
 on:
   push:

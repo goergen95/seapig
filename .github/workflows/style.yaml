@@ -1,4 +1,4 @@
-name: style (ruff + mypy)
+name: style
 on:
   push:
     branches: [ main ]
