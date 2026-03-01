@@ -277,6 +277,9 @@ def test_fit_forces_eval_mode_during_embedding() -> None:
     model.eval()
     score1 = EuclideanScore(k=2)
     score1.fit(model=model, loaders=loaders)
+    assert score1.ref_embeddings is not None
+    ref_emb_eval = score1.ref_embeddings.clone()
+    assert score1.ref_embeddings is not None
     ref_emb_eval = score1.ref_embeddings.clone()
 
     # Scenario 2: Fit with model in training mode
@@ -285,6 +288,9 @@ def test_fit_forces_eval_mode_during_embedding() -> None:
     model.train()
     score2 = EuclideanScore(k=2)
     score2.fit(model=model, loaders=loaders)
+    assert score2.ref_embeddings is not None
+    ref_emb_train = score2.ref_embeddings
+    assert score2.ref_embeddings is not None
     ref_emb_train = score2.ref_embeddings
 
     # These should be IDENTICAL because fit should force eval mode

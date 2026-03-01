@@ -188,6 +188,7 @@ def test_pca_reduces_dimension_and_preserves_euclidean() -> None:
 
     # build a second score that uses the already-projected embeddings
     s_proj = EuclideanScore(k=1, pca=None)
+    assert s_pca.ref_embeddings is not None
     s_proj.ref_embeddings = s_pca.ref_embeddings.clone()
     s_proj._setup_index()
 
@@ -219,6 +220,7 @@ def test_pca_preserves_cosine_similarity() -> None:
     assert reduced_dim < D
 
     s_proj = CosineScore(k=2, pca=None)
+    assert s_pca.ref_embeddings is not None
     s_proj.ref_embeddings = s_pca.ref_embeddings.clone()
     s_proj._setup_index()
 

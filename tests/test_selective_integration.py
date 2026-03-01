@@ -124,6 +124,7 @@ def test_selective_inference_trainer_integration(tmp_path):
     reported_rejected = _find_metric(res, "rejected/BinaryAccuracy")
 
     # Final computed dict from the SelectiveMetric inside the wrapper
+    assert sel_model.test_metrics is not None
     metric_dict = sel_model.test_metrics.compute()
     metric_floats = _tensor_dict_to_floats(metric_dict)
 
@@ -194,6 +195,7 @@ def test_risk_coverage_integration_via_trainer(tmp_path):
     reported_excess = _find_metric(res, "rc/auc_excess")
 
     # final computed dict from the RiskCoverageMetric on the model
+    assert sel_model.rc_metric is not None
     metric_dict = sel_model.rc_metric.compute()
     metric_floats = _tensor_dict_to_floats(metric_dict)
 
