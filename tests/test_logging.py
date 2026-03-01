@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from io import StringIO
+from typing import Any
 
 import pytest
 
@@ -16,7 +17,7 @@ from seapig.utils.logging import configure_logging, get_logger
 
 
 @pytest.fixture(autouse=True)
-def _restore_logger() -> pytest.FixtureResult[None]:
+def _restore_logger() -> Any:
     """Reset the seapig logger to its default state after each test."""
     pkg_logger = get_logger("seapig")
     original_level = pkg_logger.level

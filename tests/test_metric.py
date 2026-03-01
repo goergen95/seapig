@@ -429,11 +429,7 @@ def test_selective_metric_with_metric_collection_and_prefixing():
     assert isinstance(out["full/mse"], torch.Tensor)
 
 
-@pytest.mark.filterwarnings(
-    "ignore",
-    category=UserWarning,
-    match="was called before the ``update`` method",
-)
+@pytest.mark.filterwarnings("ignore::UserWarning")
 def test_risk_coverage_metric_no_data_returns_zeros_and_reset_behavior():
     rcm = RiskCoverageMetric()
     # no updates yet -> should return zeros
