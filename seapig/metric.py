@@ -1,10 +1,11 @@
 """Selective evaluation metric wrapper."""
 
 from collections.abc import Callable, Iterable
-from typing import final, override
+from typing import final
 
 import torch
 from torchmetrics import Metric, MetricCollection
+from typing_extensions import override
 
 from seapig.risk_coverage import RiskCoverage, risk_coverage
 
