@@ -20,9 +20,11 @@ jobs:
           enable-cache: true
           activate-environment: true
           cache-dependency-glob: |
+            pyproject.toml
             requirements/dev.txt
+            uv.lock
       - name: Install dependencies
-        run: uv pip install .[dev]
+        run: uv sync --locked --extra suggested --extra dev
       - name: Run ruff checks
         run: |
           ruff check --output-format=github --no-fix .
@@ -41,8 +43,10 @@ jobs:
           enable-cache: true
           activate-environment: true
           cache-dependency-glob: |
+            pyproject.toml
             requirements/dev.txt
+            uv.lock
       - name: Install dependencies
-        run: uv pip install .[dev]
+        run: uv sync --locked --extra suggested --extra dev
       - name: Run ty checks
         run: ty check --output-format=github .
