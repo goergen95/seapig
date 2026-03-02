@@ -98,7 +98,7 @@ split-on-trailing-comma = false
 
 [tool.mypy]
 ignore_missing_imports = true
-exclude = "(build|data|dist|tests|env|dev|docs)/*"
+exclude = "(build|data|dist|env|dev|docs)/*"
 disable_error_code = "import-untyped"
 
 # Strict typing

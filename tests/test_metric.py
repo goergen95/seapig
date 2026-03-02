@@ -2,7 +2,7 @@ import math
 
 import pytest
 import torch
-from pytorch_lightning import LightningModule
+from lightning import LightningModule
 from torchmetrics import (
     Accuracy,
     MeanAbsoluteError,
@@ -22,7 +22,7 @@ class DummyTaskTensor(LightningModule):
 
     test_metrics: MetricCollection = MetricCollection(Accuracy(task="binary"))
 
-    def predict(self, x: torch.Tensor) -> torch.Tensor:  # type: ignore[override]
+    def predict(self, x: torch.Tensor) -> torch.Tensor:
         return 2 * x
 
     def embed(self, x: torch.Tensor) -> torch.Tensor:
@@ -37,9 +37,8 @@ class DummyTaskDict(LightningModule):
 
     test_metrics: MetricCollection = MetricCollection(Accuracy(task="binary"))
 
-    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:  # type: ignore[override]
+    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         return {"predictions": 3 * x, "extra": x.sum(dim=1)}  # pragma: no cover
-
 
 def test_selective_metric_binary_accuracy_full_vs_selected() -> None:
     base = Accuracy(task="binary")
@@ -185,7 +184,7 @@ def test_selective_metric_reset() -> None:
 
 
 @pytest.mark.parametrize("risk", ["generalized", "selective"])
-def test_risk_coverage_metric_basic_functionality(risk) -> None:
+def test_risk_coverage_metric_basic_functionality(risk: str) -> None:
     metric = RiskCoverageMetric(risk=risk)
 
     outputs = {
@@ -303,7 +302,7 @@ def test_risk_coverage_metric_state_concatenation() -> None:
 @pytest.mark.parametrize(
     "selection_behavior", ["always_select", "always_reject"]
 )
-def test_selective_metric_with_mock_metric_collection(selection_behavior):
+def test_selective_metric_with_mock_metric_collection(selection_behavior: str) -> None:
     # Create a mock metric collection
     base_metrics = MetricCollection({"mean": MeanMetric()})
     selective_metric = SelectiveMetric(base=base_metrics)
@@ -353,7 +352,7 @@ def _tensor_close(a: torch.Tensor, b: float, tol: float = 1e-6) -> bool:
 # Additional tests to cover branches in metric.py not exercised above
 
 
-def test_selective_metric_single_metric_selected_and_rejected_values():
+def test_selective_metric_single_metric_selected_and_rejected_values() -> None:
     base = MeanAbsoluteError()
     sm = SelectiveMetric(base)
 
@@ -384,7 +383,7 @@ def test_selective_metric_single_metric_selected_and_rejected_values():
     assert len(keys) == len(items) == len(values)
 
 
-def test_selective_metric_no_selected_updates_metric_not_called():
+def test_selective_metric_no_selected_updates_metric_not_called() -> None:
     # When no samples are selected, the selected submetric should not be updated
     base = MeanAbsoluteError()
     sm = SelectiveMetric(base)
@@ -406,7 +405,7 @@ def test_selective_metric_no_selected_updates_metric_not_called():
     assert res["rejected/MeanAbsoluteError"].dtype == torch.float32
 
 
-def test_selective_metric_with_metric_collection_and_prefixing():
+def test_selective_metric_with_metric_collection_and_prefixing() -> None:
     coll = MetricCollection(
         {"mae": MeanAbsoluteError(), "mse": MeanSquaredError()}
     )
@@ -429,12 +428,8 @@ def test_selective_metric_with_metric_collection_and_prefixing():
     assert isinstance(out["full/mse"], torch.Tensor)
 
 
-@pytest.mark.filterwarnings(
-    "ignore",
-    category=UserWarning,
-    match="was called before the ``update`` method",
-)
-def test_risk_coverage_metric_no_data_returns_zeros_and_reset_behavior():
+@pytest.mark.filterwarnings("ignore:.*was called before.*:UserWarning")
+def test_risk_coverage_metric_no_data_returns_zeros_and_reset_behavior() -> None:
     rcm = RiskCoverageMetric()
     # no updates yet -> should return zeros
     empty = rcm.compute()
@@ -483,7 +478,7 @@ def test_risk_coverage_metric_no_data_returns_zeros_and_reset_behavior():
     )
 
 
-def test_risk_coverage_metric_multiple_updates_concatenate_states():
+def test_risk_coverage_metric_multiple_updates_concatenate_states() -> None:
     rcm = RiskCoverageMetric()
     preds1 = torch.tensor([0.0, 1.0])
     target1 = torch.tensor([0.2, 0.8])

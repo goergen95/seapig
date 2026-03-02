@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 import torch
@@ -9,19 +10,21 @@ from torchmetrics import Accuracy, MetricCollection
 from seapig.model import SelectiveInferenceTask
 from seapig.scores.embed import EmbeddingScore
 
+_EmbedLoader = DataLoader[torch.Tensor | dict[str, torch.Tensor]]
 
-class SmallDictDataset(Dataset):
+
+class SmallDictDataset(Dataset[dict[str, torch.Tensor]]):
     def __init__(
-        self, data: torch.Tensor, labels: torch.Tensor, transform=None
-    ):
+        self, data: torch.Tensor, labels: torch.Tensor, transform: Any = None
+    ) -> None:
         self.data = data
         self.labels = labels
         self.transform = transform
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.data)
 
-    def __getitem__(self, idx: int) -> dict:
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         x = self.data[idx]
         if self.transform is not None:
             x = self.transform(x)
@@ -31,30 +34,30 @@ class SmallDictDataset(Dataset):
 class SimpleDataModule(LightningDataModule):
     """Tiny datamodule-like helper exposing train/val/test dataloaders."""
 
-    def __init__(self, train_ds, val_ds, test_ds, batch_size: int = 4):
+    def __init__(self, train_ds: SmallDictDataset, val_ds: SmallDictDataset, test_ds: SmallDictDataset, batch_size: int = 4) -> None:
         super().__init__()
         self._train = train_ds
         self._val = val_ds
         self._test = test_ds
         self.batch_size = batch_size
 
-    def train_dataloader(self):
+    def train_dataloader(self) -> DataLoader[dict[str, torch.Tensor]]:
         return DataLoader(self._train, batch_size=self.batch_size)
 
-    def val_dataloader(self):
+    def val_dataloader(self) -> DataLoader[dict[str, torch.Tensor]]:
         return DataLoader(self._val, batch_size=self.batch_size)
 
-    def predict_dataloader(self):
+    def predict_dataloader(self) -> DataLoader[dict[str, torch.Tensor]]:
         return DataLoader(self._test, batch_size=self.batch_size)
 
-    def test_dataloader(self):
+    def test_dataloader(self) -> DataLoader[dict[str, torch.Tensor]]:
         return DataLoader(self._test, batch_size=self.batch_size)
 
 
 class DummyModel(torch.nn.Module):
     """Tiny deterministic model providing forward() and embed()."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.lin = torch.nn.Linear(4, 4)
         torch.manual_seed(0)
@@ -68,7 +71,7 @@ class DummyModel(torch.nn.Module):
 
     def embed(self, x: torch.Tensor) -> torch.Tensor:
         z = x.flatten(start_dim=1)
-        return self.lin(z)
+        return cast(torch.Tensor, self.lin(z))
 
 
 class SimpleL2Score(EmbeddingScore):
@@ -78,11 +81,12 @@ class SimpleL2Score(EmbeddingScore):
     train_required = False
     cal_required = False
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(pca=None)
 
     def _fit_impl(self) -> None:
         assert self.ref_embeddings is not None
+        assert self.cal_embeddings is not None
         self.set_trained()
         self.scores = (
             torch.cdist(self.cal_embeddings, self.ref_embeddings)
@@ -106,7 +110,7 @@ class SimpleL2Score(EmbeddingScore):
         )
         self._fit_impl()
 
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
+    @torch.inference_mode()
     def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
         assert self.ref_embeddings is not None
         dists = torch.cdist(X, self.ref_embeddings)
@@ -116,7 +120,7 @@ class SimpleL2Score(EmbeddingScore):
 @pytest.mark.filterwarnings(
     r"ignore:`isinstance\(treespec, LeafSpec\)` is deprecated.*"
 )
-def test_datamodule_transform_applied_consistently(tmp_path):
+def test_datamodule_transform_applied_consistently(tmp_path: Path) -> None:
     torch.manual_seed(0)
 
     # shapes: (N, C=1, H=2, W=2) -> flattened to 4 features in model/embed
@@ -127,7 +131,7 @@ def test_datamodule_transform_applied_consistently(tmp_path):
     test_x = torch.arange(64, 84, dtype=torch.float32).reshape(5, 1, 2, 2)
     test_y = torch.zeros(5, dtype=torch.long)
 
-    def transform_fn(x):
+    def transform_fn(x: torch.Tensor) -> torch.Tensor:
         return x + 1.0
 
     train_ds = SmallDictDataset(train_x, train_y, transform=transform_fn)
@@ -142,15 +146,16 @@ def test_datamodule_transform_applied_consistently(tmp_path):
     # Fit the score by extracting embeddings from the dataloaders
     score.fit(
         model=model,
-        loaders={"train": dm.train_dataloader(), "val": dm.val_dataloader()},
+        loaders=cast(dict[str, _EmbedLoader], {"train": dm.train_dataloader(), "val": dm.val_dataloader()}),
     )
 
     # deterministic threshold (median of calibration scores)
     score.set_threshold(q=0.5)
 
     # wrap and run Trainer.predict using the datamodule (ensures datamodule transforms are used)
+    from lightning import LightningModule
     task = SelectiveInferenceTask(
-        task=model, score=score, input_key="image", target_key="label"
+        task=cast(LightningModule, model), score=score, input_key="image", target_key="label"
     )
 
     trainer = Trainer(
@@ -161,20 +166,23 @@ def test_datamodule_transform_applied_consistently(tmp_path):
         enable_progress_bar=False,
     )
     preds = trainer.predict(task, datamodule=dm)
+    assert preds is not None
 
     # collect trainer results
     trainer_scores = torch.cat(
-        [p["score"].detach().cpu() for p in preds], dim=0
+        [cast(dict[str, torch.Tensor], p)["score"].detach().cpu() for p in preds], dim=0
     )
     trainer_selected = torch.cat(
-        [p["selected"].detach().cpu() for p in preds], dim=0
+        [cast(dict[str, torch.Tensor], p)["selected"].detach().cpu() for p in preds], dim=0
     )
 
     # compute scores manually using the datamodule's test_dataloader (score embeds on the fly)
     manual_scores = score.score(
-        model=model, loader=dm.test_dataloader(), outdir=None, prefix=None
+        model=model, loader=cast(_EmbedLoader, dm.test_dataloader()), outdir=None, prefix=None
     )
-    manual_selected = manual_scores < score.get_threshold()
+    threshold = score.get_threshold()
+    assert threshold is not None
+    manual_selected = manual_scores < threshold
 
     # assertions: same shape and identical numeric results
     assert trainer_scores.shape == manual_scores.shape

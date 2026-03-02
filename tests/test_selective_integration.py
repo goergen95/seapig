@@ -1,3 +1,7 @@
+import pathlib
+from collections.abc import Mapping
+from typing import Any
+
 import pytest
 import torch
 from lightning import LightningDataModule, LightningModule, Trainer
@@ -12,7 +16,7 @@ from seapig.scores.base import ConfidenceScore
 class DummyTask(LightningModule):
     """Forward returns predictions; embed returns the input so selection can be driven by input."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         # base metric required by SelectiveInferenceTask (will be wrapped by SelectiveMetric)
         self.test_metrics = Accuracy(task="binary")
@@ -37,11 +41,13 @@ class FlagScore(ConfidenceScore):
 
     def fit(
         self,
-        ref_embeddings: torch.Tensor,
-        val_embeddings: torch.Tensor | None = None,
+        X: torch.Tensor | None = None,
+        Y: torch.Tensor | None = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         # no-op: store reference embeddings for completeness
-        self.ref_embeddings = ref_embeddings  # pragma: no cover
+        self.ref_embeddings = X  # pragma: no cover
 
     def score(self, embeddings: torch.Tensor) -> torch.Tensor:
         # return a dummy score vector (lower is better). Not used by select().
@@ -57,10 +63,10 @@ class FlagScore(ConfidenceScore):
         return {"selected": selected, "score": score}
 
 
-class SmallDataset(Dataset):
-    def __init__(self):
+class SmallDataset(Dataset[dict[str, torch.Tensor]]):
+    def __init__(self) -> None:
         # Each sample: [selected_flag, predicted_value], label
-        self.samples = [
+        self.samples: list[tuple[list[int], int]] = [
             ([1, 1], 1),  # selected, correct
             ([1, 0], 0),  # selected, correct
             ([0, 1], 0),  # rejected, incorrect
@@ -68,10 +74,10 @@ class SmallDataset(Dataset):
             ([0, 0], 0),  # rejected, correct
         ]
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         x, y = self.samples[idx]
         return {
             "image": torch.tensor(x, dtype=torch.float32),
@@ -80,19 +86,20 @@ class SmallDataset(Dataset):
 
 
 class DM(LightningDataModule):
-    def test_dataloader(self):
+    def test_dataloader(self) -> DataLoader[dict[str, torch.Tensor]]:
         # batch_size=3 -> produces batches of sizes 3 and 2 (uneven)
         return DataLoader(SmallDataset(), batch_size=3, shuffle=False)
 
 
-def _find_metric(results: dict, suffix: str):
+def _find_metric(results: Mapping[str, Any], suffix: str) -> float | None:
     for k, v in results.items():
         if k.endswith(suffix):
             return float(v)
+    return None
 
 
-def _tensor_dict_to_floats(d: dict) -> dict:
-    out = {}
+def _tensor_dict_to_floats(d: dict[str, Any]) -> dict[str, float]:
+    out: dict[str, float] = {}
     for k, v in d.items():
         out[k] = float(v.item()) if hasattr(v, "item") else float(v)
     return out
@@ -101,7 +108,7 @@ def _tensor_dict_to_floats(d: dict) -> dict:
 @pytest.mark.filterwarnings(
     r"ignore:`isinstance\(treespec, LeafSpec\)` is deprecated.*"
 )
-def test_selective_inference_trainer_integration(tmp_path):
+def test_selective_inference_trainer_integration(tmp_path: pathlib.Path) -> None:
     task = DummyTask()
     score = FlagScore()
     sel_model = SelectiveInferenceTask(
@@ -122,8 +129,12 @@ def test_selective_inference_trainer_integration(tmp_path):
     reported_full = _find_metric(res, "full/BinaryAccuracy")
     reported_selected = _find_metric(res, "selected/BinaryAccuracy")
     reported_rejected = _find_metric(res, "rejected/BinaryAccuracy")
+    assert reported_full is not None
+    assert reported_selected is not None
+    assert reported_rejected is not None
 
     # Final computed dict from the SelectiveMetric inside the wrapper
+    assert sel_model.test_metrics is not None
     metric_dict = sel_model.test_metrics.compute()
     metric_floats = _tensor_dict_to_floats(metric_dict)
 
@@ -167,7 +178,7 @@ def test_selective_inference_trainer_integration(tmp_path):
 @pytest.mark.filterwarnings(
     r"ignore:`isinstance\(treespec, LeafSpec\)` is deprecated.*"
 )
-def test_risk_coverage_integration_via_trainer(tmp_path):
+def test_risk_coverage_integration_via_trainer(tmp_path: pathlib.Path) -> None:
     task = DummyTask()
     score = FlagScore()
     sel_model = SelectiveInferenceTask(
@@ -192,8 +203,12 @@ def test_risk_coverage_integration_via_trainer(tmp_path):
     reported_emp = _find_metric(res, "rc/auc_empirical")
     reported_ref = _find_metric(res, "rc/auc_reference")
     reported_excess = _find_metric(res, "rc/auc_excess")
+    assert reported_emp is not None
+    assert reported_ref is not None
+    assert reported_excess is not None
 
     # final computed dict from the RiskCoverageMetric on the model
+    assert sel_model.rc_metric is not None
     metric_dict = sel_model.rc_metric.compute()
     metric_floats = _tensor_dict_to_floats(metric_dict)
 

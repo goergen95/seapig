@@ -2,6 +2,7 @@
 
 import pytest
 import torch
+from typing import cast
 from torch.utils.data import DataLoader, TensorDataset
 
 from seapig.scores.embed import EmbeddingScore
@@ -19,16 +20,18 @@ except ImportError:  # pragma: no cover
     KNN = None
     print("PyOD is not installed; skipping PyODScore tests.")
 
+_EmbedLoader = DataLoader[torch.Tensor | dict[str, torch.Tensor]]
+
 
 class DummyModel(torch.nn.Module):
     """Dummy model for testing embedding extraction."""
 
-    def embed(self, x):
+    def embed(self, x: torch.Tensor) -> torch.Tensor:
         if isinstance(x, dict):
             x = x["image"]  # pragma: no cover
         return x
 
-    def logits(self, x):
+    def logits(self, x: torch.Tensor) -> torch.Tensor:
         if isinstance(x, dict):
             x = x["image"]  # pragma: no cover
         # Return simple logits based on input
@@ -38,7 +41,7 @@ class DummyModel(torch.nn.Module):
 class MinimalEmbedding(EmbeddingScore):
     """Minimal concrete EmbeddingScore for testing."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.train_required = False
         self.cal_required = False
@@ -78,7 +81,7 @@ def test_fit_with_model_loaders() -> None:
     )
 
     score = MinimalEmbedding()
-    score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
+    score.fit(model=model, loaders={"train": cast(_EmbedLoader, train_loader), "val": cast(_EmbedLoader, val_loader)})
 
     assert score.ref_embeddings is not None
     assert score.ref_embeddings.shape[0] == 10
@@ -97,7 +100,7 @@ def test_fit_with_model_train_only() -> None:
     )
 
     score = MinimalEmbedding()
-    score.fit(model=model, loaders={"train": train_loader})
+    score.fit(model=model, loaders={"train": cast(_EmbedLoader, train_loader)})
 
     assert score.ref_embeddings is not None
     assert score.ref_embeddings.shape[0] == 10
@@ -108,7 +111,7 @@ def test_fit_rejects_both_embeddings_and_model() -> None:
     """Test that fit() raises error when both embeddings and model are provided."""
     model = DummyModel()
     ref_embs = torch.randn(10, 5)
-    train_loader = DataLoader([torch.randn(5)])
+    train_loader: _EmbedLoader = cast(_EmbedLoader, DataLoader([torch.randn(5)]))  # type: ignore[arg-type]
 
     score = MinimalEmbedding()
     with pytest.raises(ValueError, match="Cannot specify both"):
@@ -132,7 +135,7 @@ def test_fit_rejects_model_without_loaders() -> None:
 
 def test_fit_rejects_loaders_without_model() -> None:
     """Test that fit() raises error when loaders provided without model."""
-    train_loader = DataLoader([torch.randn(5)])
+    train_loader: _EmbedLoader = cast(_EmbedLoader, DataLoader([torch.randn(5)]))  # type: ignore[arg-type]
     score = MinimalEmbedding()
     with pytest.raises(ValueError, match="model is required"):
         score.fit(loaders={"train": train_loader})
@@ -168,7 +171,7 @@ def test_euclidean_score_fit_with_model() -> None:
     )
 
     score = EuclideanScore(k=2)
-    score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
+    score.fit(model=model, loaders={"train": cast(_EmbedLoader, train_loader), "val": cast(_EmbedLoader, val_loader)})
 
     assert score.ref_embeddings is not None
     assert score.is_trained()
@@ -205,7 +208,7 @@ def test_pca_score_fit_with_model() -> None:
     )
 
     score = PCAScore(pca=TensorPCA(n_components=0.75))
-    score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
+    score.fit(model=model, loaders={"train": cast(_EmbedLoader, train_loader), "val": cast(_EmbedLoader, val_loader)})
 
     assert score.ref_embeddings is not None
     assert score.is_trained()
@@ -244,7 +247,7 @@ def test_pyod_score_fit_with_model() -> None:
     )
 
     score = PyODScore(detector=KNN(n_neighbors=2))
-    score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
+    score.fit(model=model, loaders={"train": cast(_EmbedLoader, train_loader), "val": cast(_EmbedLoader, val_loader)})
 
     assert score.ref_embeddings is not None
     assert score.is_trained()
@@ -286,7 +289,7 @@ def test_logit_score_rejects_both_logits_and_model() -> None:
     """Test that LogitScore fit() rejects both logits and model."""
     model = DummyModel()
     logits = torch.randn(10, 3)
-    loader = DataLoader([torch.randn(8)])
+    loader = cast(DataLoader[object], DataLoader([torch.randn(8)]))  # type: ignore[arg-type]
 
     score = SoftmaxScore()
     with pytest.raises(ValueError, match="Cannot specify both"):

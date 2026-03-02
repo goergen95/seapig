@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -8,14 +9,14 @@ from seapig.scores.base import ConfidenceScore
 
 
 class Dummy(ConfidenceScore):
-    def fit(self, X=None, Y=None):
+    def fit(self, X: torch.Tensor | None = None, Y: torch.Tensor | None = None, *args: Any, **kwargs: Any) -> None:
         return None  # pragma: no cover
 
-    def score(self, X, *args, **kwargs):
+    def score(self, X: torch.Tensor, *args: Any, **kwargs: Any) -> torch.Tensor:
         return X
 
 
-def test_random_score():
+def test_random_score() -> None:
     # Create a RandomScore instance
     random_score = RandomScore()
 
@@ -34,12 +35,12 @@ def test_random_score():
     assert selection["selected"].shape == (10,)
     assert torch.all(
         selection["selected"]
-        == (selection["score"] < random_score.get_threshold())
+        == (selection["score"] < random_score.get_threshold())  # type: ignore[operator]
     )
 
 
 @pytest.mark.parametrize("include_query", [False, True])
-def test_plot_method(include_query):
+def test_plot_method(include_query: bool) -> None:
     pytest.importorskip("matplotlib")
     # Create dummy embeddings
     ref_embeddings = torch.randn(100, 64)
@@ -61,7 +62,7 @@ def test_plot_method(include_query):
         mock_show.assert_called_once()
 
 
-def test_base_select_sets_threshold_and_computes_selection():
+def test_base_select_sets_threshold_and_computes_selection() -> None:
     """Ensure ConfidenceScore.select() sets the threshold from calibration
     scores when threshold is None and returns the correct selection mask.
     """
@@ -81,7 +82,9 @@ def test_base_select_sets_threshold_and_computes_selection():
     selection = dummy.select(query)
 
     # threshold should have been set from calibration scores
-    assert torch.allclose(dummy.get_threshold(), expected_thr)
+    thr = dummy.get_threshold()
+    assert thr is not None
+    assert torch.allclose(thr, expected_thr)
 
     # score returned unchanged and selected equals score < threshold
     assert torch.equal(selection["score"], query)
@@ -111,17 +114,19 @@ def test_set_threshold_invalid_quantile_raises() -> None:
         s.set_threshold(q=0.0)
 
 
-def test_plot_raises_import_error_when_matplotlib_missing(monkeypatch):
+def test_plot_raises_import_error_when_matplotlib_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     # Simulate matplotlib not being installed by intercepting imports
     import builtins
 
     d = Dummy()
     d.scores = torch.tensor([0.1, 0.2])
 
-    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+    def fake_import(name: str, globals: Any = None, locals: Any = None, fromlist: tuple[str, ...] = (), level: int = 0) -> Any:
         if name == "matplotlib" or name.startswith("matplotlib."):
             raise ImportError("No module named matplotlib")
+        return orig_import(name, globals, locals, fromlist, level)
 
+    orig_import = builtins.__import__
     monkeypatch.setattr(builtins, "__import__", fake_import)
 
     with pytest.raises(ImportError):
@@ -130,9 +135,9 @@ def test_plot_raises_import_error_when_matplotlib_missing(monkeypatch):
     # monkeypatch will restore the original import automatically
 
 
-def test_randomscore_select_logs_warning_when_threshold_none(caplog):
+def test_randomscore_select_logs_warning_when_threshold_none(caplog: pytest.LogCaptureFixture) -> None:
     rs = RandomScore()
-    rs.threshold = None  # type: ignore[attr-defined]
+    rs.threshold = None
     X = torch.randn(3, 2)
     caplog.clear()
     with caplog.at_level("WARNING"):
