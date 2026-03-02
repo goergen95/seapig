@@ -76,10 +76,10 @@ class TestRiskCoverage:
         # Test invalid input types
         # Intentional bad-type calls for validation; silence static checker
         with pytest.raises(TypeError):
-            risk_coverage([1, 2, 3], residuals)
+            risk_coverage([1, 2, 3], residuals)  # type: ignore[invalid-argument-type]
 
         with pytest.raises(TypeError):
-            risk_coverage(score, [1, 2, 3])
+            risk_coverage(score, [1, 2, 3])  # type: ignore[invalid-argument-type]
 
     def test_risk_coverage_attributes(self, correlated_data):
         """Test that RiskCoverage has correct attributes."""
