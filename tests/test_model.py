@@ -58,7 +58,7 @@ class DummyTaskTensor(LightningModule):
 class DummyTaskDict(DummyTaskTensor):
     """Task that returns a mapping from predict()."""
 
-    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
+    def predict(self, x: torch.Tensor) -> Any:
         return {"predictions": 3 * x, "extra": x.sum(dim=1)}
 
 
