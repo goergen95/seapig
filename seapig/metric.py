@@ -67,15 +67,15 @@ class SelectiveMetric(Metric):
 
     def items(self) -> Iterable[tuple[str, torch.Tensor]]:
         """Return items of the computed results."""
-        return self.compute().items()
+        return self.compute().items()  # ty: ignore[missing-argument]
 
     def keys(self) -> Iterable[str]:
         """Return keys of the computed results."""
-        return self.compute().keys()
+        return self.compute().keys()  # ty: ignore[missing-argument]
 
     def values(self) -> Iterable[torch.Tensor]:
         """Return values of the computed results."""
-        return self.compute().values()
+        return self.compute().values()  # ty: ignore[missing-argument]
 
     @override
     def update(
@@ -99,14 +99,14 @@ class SelectiveMetric(Metric):
         self._rejected.to(device)
 
         # Update full with all samples
-        self._full.update(predictions, target)
+        self._full.update(predictions, target)  # ty: ignore[invalid-argument-type]
 
         # Conditionally update selected/rejected submetrics
         if selected.any():
-            self._selected.update(predictions[selected], target[selected])
+            self._selected.update(predictions[selected], target[selected])  # ty: ignore[invalid-argument-type]
 
         if rejected.any():
-            self._rejected.update(predictions[rejected], target[rejected])
+            self._rejected.update(predictions[rejected], target[rejected])  # ty: ignore[invalid-argument-type]
 
     @override
     def compute(self) -> dict[str, torch.Tensor]:
@@ -139,7 +139,7 @@ class SelectiveMetric(Metric):
             metric_name = type(m).__name__
             if not m.update_called:
                 return {f"{prefix}/{metric_name}": torch.tensor(0.0)}
-            result = m.compute()
+            result = m.compute()  # ty: ignore[missing-argument]
             return {
                 f"{prefix}/{metric_name}": result
                 if isinstance(result, torch.Tensor)
@@ -217,15 +217,15 @@ class RiskCoverageMetric(Metric):
 
     def items(self) -> Iterable[tuple[str, torch.Tensor]]:
         """Return items of the computed results."""
-        return self.compute().items()
+        return self.compute().items()  # ty: ignore[missing-argument]
 
     def keys(self) -> Iterable[str]:
         """Return keys of the computed results."""
-        return self.compute().keys()
+        return self.compute().keys()  # ty: ignore[missing-argument]
 
     def values(self) -> Iterable[torch.Tensor]:
         """Return values of the computed results."""
-        return self.compute().values()
+        return self.compute().values()  # ty: ignore[missing-argument]
 
     @staticmethod
     def _default_error_fn(

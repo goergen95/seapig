@@ -126,7 +126,7 @@ def test_selective_inference_trainer_integration(tmp_path):
 
     # Final computed dict from the SelectiveMetric inside the wrapper
     assert sel_model.test_metrics is not None
-    metric_dict = sel_model.test_metrics.compute()
+    metric_dict = sel_model.test_metrics.compute()  # ty: ignore[missing-argument]
     metric_floats = _tensor_dict_to_floats(metric_dict)
 
     # Ensure trainer-reported values match the metric.compute() values
@@ -197,7 +197,7 @@ def test_risk_coverage_integration_via_trainer(tmp_path):
 
     # final computed dict from the RiskCoverageMetric on the model
     assert sel_model.rc_metric is not None
-    metric_dict = sel_model.rc_metric.compute()
+    metric_dict = sel_model.rc_metric.compute()  # ty: ignore[missing-argument]
     metric_floats = _tensor_dict_to_floats(metric_dict)
 
     # Ensure trainer-reported values match metric.compute() values

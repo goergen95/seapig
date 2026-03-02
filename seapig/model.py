@@ -169,13 +169,13 @@ class SelectiveInferenceTask(LightningModule):
         outputs = self.forward(x)
 
         if self.test_metrics is not None:
-            self.test_metrics.update(outputs, y)
-            self.log_dict(self.test_metrics.compute())
+            self.test_metrics.update(outputs, y)  # ty: ignore[invalid-argument-type]
+            self.log_dict(self.test_metrics.compute())  # ty: ignore[missing-argument]
 
         # Update risk‑coverage metric; final values are logged in on_test_epoch_end
         if self.rc_metric is not None:
-            self.rc_metric.update(outputs, y)
-            self.log_dict(self.rc_metric.compute())
+            self.rc_metric.update(outputs, y)  # ty: ignore[invalid-argument-type]
+            self.log_dict(self.rc_metric.compute())  # ty: ignore[missing-argument]
 
         if self.test_outputs is not None:
             self.test_outputs.append(outputs)
@@ -183,9 +183,9 @@ class SelectiveInferenceTask(LightningModule):
     def on_test_epoch_end(self) -> None:
         """Log final computed test metrics once (avoid per-batch aggregation)."""
         if self.test_metrics is not None:
-            self.log_dict(self.test_metrics.compute(), sync_dist=True)
+            self.log_dict(self.test_metrics.compute(), sync_dist=True)  # ty: ignore[missing-argument]
         if self.rc_metric is not None:
-            self.log_dict(self.rc_metric.compute(), sync_dist=True)
+            self.log_dict(self.rc_metric.compute(), sync_dist=True)  # ty: ignore[missing-argument]
 
     @torch.inference_mode()
     def predict_step(
