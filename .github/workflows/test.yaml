@@ -24,6 +24,8 @@ jobs:
             uv.lock
       - name: Install dependencies
         run: uv pip install -r requirements/dev.txt -r requirements/suggested.txt
+      - name: List dependencies
+        run: uv pip list
       - name: Run tests
         run: |
           pytest --cov --junitxml=junit.xml -o junit_family=legacy

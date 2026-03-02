@@ -27,6 +27,9 @@ jobs:
       - name: Install dependencies
         run: uv pip install -r requirements/dev.txt -r requirements/suggested.txt -r requirements/docs.txt
 
+      - name: List dependencies
+        run: uv pip list
+
       - name: Setup Quarto
         uses: quarto-dev/quarto-actions/setup@v2
 
