@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import abc
 import inspect
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import torch
 import torch.nn.functional as F
@@ -484,7 +485,8 @@ class LogitScore(ConfidenceScore, abc.ABC):
                 y = batch.get("label", None)
 
             assert callable(model.logits)
-            logits = model.logits(x=x.to(device))
+            _logits_fn = cast(Callable[..., torch.Tensor], model.logits)
+            logits = _logits_fn(x=x.to(device))
             if not isinstance(logits, torch.Tensor):
                 raise ValueError("Extracted logits is not a torch.Tensor")
             logits_ls.append(logits)

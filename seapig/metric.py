@@ -1,7 +1,7 @@
 """Selective evaluation metric wrapper."""
 
 from collections.abc import Callable, Iterable
-from typing import final
+from typing import TYPE_CHECKING, final
 
 import torch
 from torchmetrics import Metric, MetricCollection
@@ -44,6 +44,13 @@ class SelectiveMetric(Metric):
     - If no samples are selected or rejected, the respective metric is not updated for
         that call.
     """
+
+    if TYPE_CHECKING:
+        # torchmetrics wraps update/compute in Metric.__init__, causing type
+        # checkers to see a union type. These annotations give checkers the
+        # concrete callable signatures for SelectiveMetric instances.
+        update: Callable[[dict[str, torch.Tensor], torch.Tensor], None]
+        compute: Callable[[], dict[str, torch.Tensor]]
 
     def __init__(
         self,
@@ -183,6 +190,13 @@ class RiskCoverageMetric(Metric):
         Function that reduces (B, ...) preds and targets to per‑sample residuals
         of shape (B,). If None, uses mean absolute error per sample.
     """
+
+    if TYPE_CHECKING:
+        # torchmetrics wraps update/compute in Metric.__init__, causing type
+        # checkers to see a union type. These annotations give checkers the
+        # concrete callable signatures for RiskCoverageMetric instances.
+        update: Callable[[dict[str, torch.Tensor], torch.Tensor], None]
+        compute: Callable[[], dict[str, torch.Tensor]]
 
     full_state_update: bool = False
 
