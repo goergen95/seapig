@@ -108,7 +108,9 @@ def _tensor_dict_to_floats(d: dict[str, Any]) -> dict[str, float]:
 @pytest.mark.filterwarnings(
     r"ignore:`isinstance\(treespec, LeafSpec\)` is deprecated.*"
 )
-def test_selective_inference_trainer_integration(tmp_path: pathlib.Path) -> None:
+def test_selective_inference_trainer_integration(
+    tmp_path: pathlib.Path,
+) -> None:
     task = DummyTask()
     score = FlagScore()
     sel_model = SelectiveInferenceTask(

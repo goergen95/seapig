@@ -45,8 +45,7 @@ class IdentityModel(torch.nn.Module):
 
 
 def make_loader_from_tensors(
-    logits: torch.Tensor,
-    labels: torch.Tensor | None = None,
+    logits: torch.Tensor, labels: torch.Tensor | None = None
 ) -> DataLoader[Any]:
     if labels is None:
         items: list[Any] = [la.unsqueeze(0) for la in logits]
@@ -132,7 +131,9 @@ def test_predict_proba_temperature() -> None:
     logits = torch.tensor([[2.0, 1.0], [0.5, 0.1]])
     s = SoftmaxScore()
 
-    def predict_proba(logits: torch.Tensor, temperature: float | None = None) -> torch.Tensor:
+    def predict_proba(
+        logits: torch.Tensor, temperature: float | None = None
+    ) -> torch.Tensor:
         T = 1.0 if temperature is None else float(temperature)
         z = logits / T - (logits / T).amax(dim=1, keepdim=True)
         exp_z = z.exp()
@@ -176,7 +177,9 @@ def test_logit_helpers_consistency() -> None:
         (torch.tensor([[0.0, 0.0]]), -torch.tensor([0.5])),
     ],
 )
-def test_softmax_score_matches_maxprob(logits: torch.Tensor, expected_msp: torch.Tensor) -> None:
+def test_softmax_score_matches_maxprob(
+    logits: torch.Tensor, expected_msp: torch.Tensor
+) -> None:
     s = SoftmaxScore()
     sc = s.score(logits)
     T = 1.0 if s.temperature is None else float(s.temperature)
@@ -466,7 +469,9 @@ def test_softmax_binary_single_logit() -> None:
 
 def test_score_empty_inputs() -> None:
     # All scores should handle empty logits gracefully
-    _ScoreClasses: list[type[SoftmaxScore | MarginScore | EntropyScore | EnergyScore]] = [SoftmaxScore, MarginScore, EntropyScore, EnergyScore]
+    _ScoreClasses: list[
+        type[SoftmaxScore | MarginScore | EntropyScore | EnergyScore]
+    ] = [SoftmaxScore, MarginScore, EntropyScore, EnergyScore]
     for Score in _ScoreClasses:
         score = Score(task="multiclass")
         logits = torch.empty((0, 3))
@@ -476,7 +481,9 @@ def test_score_empty_inputs() -> None:
 
 def test_score_nan_inf_inputs() -> None:
     logits = torch.tensor([[float("nan"), 0.0], [float("inf"), -float("inf")]])
-    _ScoreClasses: list[type[SoftmaxScore | MarginScore | EntropyScore | EnergyScore]] = [SoftmaxScore, MarginScore, EntropyScore, EnergyScore]
+    _ScoreClasses: list[
+        type[SoftmaxScore | MarginScore | EntropyScore | EnergyScore]
+    ] = [SoftmaxScore, MarginScore, EntropyScore, EnergyScore]
     for Score in _ScoreClasses:
         score = Score(task="multiclass")
         out = score.score(logits)
@@ -567,7 +574,9 @@ def test_check_model_logits_signature() -> None:
         LogitScore._check_model(model)
 
 
-def test_fit_temperature_lbfgs_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fit_temperature_lbfgs_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # Force LBFGS to fail, triggering Adam fallback
     logits = torch.randn(5, 2)
     labels = torch.randint(0, 2, (5,))

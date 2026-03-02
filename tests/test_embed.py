@@ -54,7 +54,9 @@ def test_pca_correctly_initialized() -> None:
     assert isinstance(e.pca, TensorPCA)
 
 
-def test_setup_path_creates_dir_and_returns_path(tmp_path: pathlib.Path) -> None:
+def test_setup_path_creates_dir_and_returns_path(
+    tmp_path: pathlib.Path,
+) -> None:
     outdir = tmp_path / "subdir"
     path = EmbeddingScore._setup_path(outdir=outdir, prefix="myprefix")
     assert path is not None
@@ -123,7 +125,9 @@ def test_embed_dl_concatenates_batches() -> None:
         # batch is list of tuples like (tensor,), extract and stack
         return torch.stack([b[0] for b in batch], dim=0)
 
-    loader = cast(_EmbedLoader, DataLoader(dataset, batch_size=1, collate_fn=collate_fn))
+    loader = cast(
+        _EmbedLoader, DataLoader(dataset, batch_size=1, collate_fn=collate_fn)
+    )
     embs = EmbeddingScore._embed_dl(model=model, loader=loader)
     assert embs.shape[0] == 4
     assert embs.shape[1] == 2
@@ -137,7 +141,9 @@ def test_embed_from_dict_errors_and_saves(tmp_path: pathlib.Path) -> None:
     def collate_fn(batch: list[tuple[torch.Tensor, ...]]) -> torch.Tensor:
         return torch.stack([b[0] for b in batch], dim=0)
 
-    loader = cast(_EmbedLoader, DataLoader(dataset, batch_size=1, collate_fn=collate_fn))
+    loader = cast(
+        _EmbedLoader, DataLoader(dataset, batch_size=1, collate_fn=collate_fn)
+    )
     loaders: dict[str, _EmbedLoader] = {"train": loader}
     # missing key 'val' should KeyError
     with pytest.raises(KeyError):
@@ -220,8 +226,12 @@ def test_fit_model_without_embed_raises(tmp_path: pathlib.Path) -> None:
         pass
 
     loaders: dict[str, _EmbedLoader] = {
-        "train": cast(_EmbedLoader, DataLoader([torch.tensor([0.0, 0.1])], batch_size=1)),  # type: ignore[arg-type]
-        "val": cast(_EmbedLoader, DataLoader([torch.tensor([0.0, 0.1])], batch_size=1)),  # type: ignore[arg-type]
+        "train": cast(
+            _EmbedLoader, DataLoader([torch.tensor([0.0, 0.1])], batch_size=1)
+        ),  # type: ignore[arg-type]
+        "val": cast(
+            _EmbedLoader, DataLoader([torch.tensor([0.0, 0.1])], batch_size=1)
+        ),  # type: ignore[arg-type]
     }
 
     s = MinimalEmbedding()
@@ -229,15 +239,20 @@ def test_fit_model_without_embed_raises(tmp_path: pathlib.Path) -> None:
         s.fit(model=NoEmbedModel(), loaders=loaders)
 
 
-def test_score_with_model_loader_writes_and_returns_tensor(tmp_path: pathlib.Path) -> None:
+def test_score_with_model_loader_writes_and_returns_tensor(
+    tmp_path: pathlib.Path,
+) -> None:
 
     samples = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
     dataset = TensorDataset(samples)
-    loader = cast(_EmbedLoader, DataLoader(
-        dataset,
-        batch_size=1,
-        collate_fn=lambda b: torch.stack([x[0] for x in b], 0),
-    ))
+    loader = cast(
+        _EmbedLoader,
+        DataLoader(
+            dataset,
+            batch_size=1,
+            collate_fn=lambda b: torch.stack([x[0] for x in b], 0),
+        ),
+    )
 
     s = MinimalEmbedding()
     s.train_required = False
@@ -253,14 +268,19 @@ def test_score_with_model_loader_writes_and_returns_tensor(tmp_path: pathlib.Pat
     (tmp_path / "pfx.pt").unlink()
 
 
-def test_select_with_model_loader_respects_threshold(tmp_path: pathlib.Path) -> None:
+def test_select_with_model_loader_respects_threshold(
+    tmp_path: pathlib.Path,
+) -> None:
     samples = torch.tensor([[0.0, 0.0], [10.0, 10.0]])
     dataset = TensorDataset(samples)
-    loader = cast(_EmbedLoader, DataLoader(
-        dataset,
-        batch_size=1,
-        collate_fn=lambda b: torch.stack([x[0] for x in b], 0),
-    ))
+    loader = cast(
+        _EmbedLoader,
+        DataLoader(
+            dataset,
+            batch_size=1,
+            collate_fn=lambda b: torch.stack([x[0] for x in b], 0),
+        ),
+    )
 
     s = MinimalEmbedding()
     s.threshold = torch.tensor(5.0)
@@ -340,11 +360,14 @@ def test_score_with_model_loader_only() -> None:
     # Create a simple dataloader
     samples = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
     dataset = TensorDataset(samples)
-    loader = cast(_EmbedLoader, DataLoader(
-        dataset,
-        batch_size=1,
-        collate_fn=lambda b: torch.stack([x[0] for x in b], 0),
-    ))
+    loader = cast(
+        _EmbedLoader,
+        DataLoader(
+            dataset,
+            batch_size=1,
+            collate_fn=lambda b: torch.stack([x[0] for x in b], 0),
+        ),
+    )
 
     # Call score with model and loader
     scores = s.score(model=IdentityModel(), loader=loader)
@@ -423,11 +446,14 @@ def test_select_with_model_loader_only() -> None:
     # Create a simple dataloader
     samples = torch.tensor([[0.0, 0.0], [10.0, 10.0]])
     dataset = TensorDataset(samples)
-    loader = cast(_EmbedLoader, DataLoader(
-        dataset,
-        batch_size=1,
-        collate_fn=lambda b: torch.stack([x[0] for x in b], 0),
-    ))
+    loader = cast(
+        _EmbedLoader,
+        DataLoader(
+            dataset,
+            batch_size=1,
+            collate_fn=lambda b: torch.stack([x[0] for x in b], 0),
+        ),
+    )
 
     # Call select with model and loader
     result = s.select(model=IdentityModel(), loader=loader)
@@ -467,7 +493,9 @@ def test_select_requires_parameters() -> None:
         s.select()
 
 
-def test_embed_loadorembed_uses_disk_when_present(tmp_path: pathlib.Path) -> None:
+def test_embed_loadorembed_uses_disk_when_present(
+    tmp_path: pathlib.Path,
+) -> None:
     """When a saved embeddings file exists, _loadorembed should load it and
     move it to the model device. It should also emit a UserWarning.
     """
@@ -487,7 +515,9 @@ def test_embed_loadorembed_uses_disk_when_present(tmp_path: pathlib.Path) -> Non
 
     m = ParamModel()
     # move model to cpu (default) and ensure file load uses same device
-    loader = cast(_EmbedLoader, DataLoader([torch.tensor([0.0, 0.1])], batch_size=1))  # type: ignore[arg-type]
+    loader = cast(
+        _EmbedLoader, DataLoader([torch.tensor([0.0, 0.1])], batch_size=1)
+    )  # type: ignore[arg-type]
 
     with pytest.warns(UserWarning):
         out = EmbeddingScore._loadorembed(path=path, model=m, loader=loader)
@@ -522,7 +552,9 @@ def test_fit_parameter_validation_errors() -> None:
 
     # loaders provided but model missing should raise
     dataset = TensorDataset(torch.tensor([[0.0, 0.1]]))
-    loaders: dict[str, _EmbedLoader] = {"train": cast(_EmbedLoader, DataLoader(dataset, batch_size=1))}
+    loaders: dict[str, _EmbedLoader] = {
+        "train": cast(_EmbedLoader, DataLoader(dataset, batch_size=1))
+    }
     with pytest.raises(ValueError, match="model is required"):
         s.fit(loaders=loaders)
 
@@ -543,11 +575,14 @@ def test_embed_dl_restores_training_state() -> None:
 
     samples = torch.tensor([[1.0, 1.0], [2.0, 2.0]])
     dataset = TensorDataset(samples)
-    loader = cast(_EmbedLoader, DataLoader(
-        dataset,
-        batch_size=1,
-        collate_fn=lambda b: torch.stack([x[0] for x in b], 0),
-    ))
+    loader = cast(
+        _EmbedLoader,
+        DataLoader(
+            dataset,
+            batch_size=1,
+            collate_fn=lambda b: torch.stack([x[0] for x in b], 0),
+        ),
+    )
 
     out = EmbeddingScore._embed_dl(model=model, loader=loader)
     # model should have been restored to training mode
@@ -563,12 +598,20 @@ def test_embed_dl_restores_training_state() -> None:
     ],
     ids=["matplotlib", "tsne", "umap"],
 )
-def missing_library(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> tuple[str | None, str]:
+def missing_library(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> tuple[str | None, str]:
     """Patch imports so the named top-level library raises ImportError."""
     block_prefix, method, expected_msg = request.param
     orig_import = builtins.__import__
 
-    def fake_import(name: str, globals: Any = None, locals: Any = None, fromlist: tuple[str, ...] = (), level: int = 0) -> Any:
+    def fake_import(
+        name: str,
+        globals: Any = None,
+        locals: Any = None,
+        fromlist: tuple[str, ...] = (),
+        level: int = 0,
+    ) -> Any:
         if name.startswith(block_prefix):
             raise ImportError(f"No {block_prefix}")
         return orig_import(name, globals, locals, fromlist, level)
@@ -577,7 +620,9 @@ def missing_library(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPa
     return method, expected_msg
 
 
-def test_plot_embs_missing_libraries_raise(missing_library: tuple[str | None, str]) -> None:
+def test_plot_embs_missing_libraries_raise(
+    missing_library: tuple[str | None, str],
+) -> None:
     """Unified test: missing library import should raise the expected ImportError."""
     method, expected_msg = missing_library
     e = DummyEmbedding()
@@ -609,7 +654,9 @@ def test_loadorembed_uses_existing_file_and_moves_to_model_device(
 
     model = ParamModel()
     # simple loader (not used when path exists)
-    loader = cast(_EmbedLoader, DataLoader([torch.tensor([0.0, 0.1])], batch_size=1))  # type: ignore[arg-type]
+    loader = cast(
+        _EmbedLoader, DataLoader([torch.tensor([0.0, 0.1])], batch_size=1)
+    )  # type: ignore[arg-type]
 
     with pytest.warns(UserWarning):
         out = EmbeddingScore._loadorembed(path, model, loader)
@@ -646,10 +693,16 @@ def test_fit_errors_when_both_or_neither_provided() -> None:
         s.fit()
 
     with pytest.raises(ValueError, match="Cannot specify both embeddings"):
-        s.fit(X=emb, model=IdentityModel(), loaders=cast(dict[str, _EmbedLoader], {}))
+        s.fit(
+            X=emb,
+            model=IdentityModel(),
+            loaders=cast(dict[str, _EmbedLoader], {}),
+        )
 
 
-def test_select_triggers_set_threshold_when_none(caplog: pytest.LogCaptureFixture) -> None:
+def test_select_triggers_set_threshold_when_none(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     s = MinimalEmbedding()
     s.train_required = False
     s.cal_required = False

@@ -34,7 +34,13 @@ class SmallDictDataset(Dataset[dict[str, torch.Tensor]]):
 class SimpleDataModule(LightningDataModule):
     """Tiny datamodule-like helper exposing train/val/test dataloaders."""
 
-    def __init__(self, train_ds: SmallDictDataset, val_ds: SmallDictDataset, test_ds: SmallDictDataset, batch_size: int = 4) -> None:
+    def __init__(
+        self,
+        train_ds: SmallDictDataset,
+        val_ds: SmallDictDataset,
+        test_ds: SmallDictDataset,
+        batch_size: int = 4,
+    ) -> None:
         super().__init__()
         self._train = train_ds
         self._val = val_ds
@@ -146,7 +152,10 @@ def test_datamodule_transform_applied_consistently(tmp_path: Path) -> None:
     # Fit the score by extracting embeddings from the dataloaders
     score.fit(
         model=model,
-        loaders=cast(dict[str, _EmbedLoader], {"train": dm.train_dataloader(), "val": dm.val_dataloader()}),
+        loaders=cast(
+            dict[str, _EmbedLoader],
+            {"train": dm.train_dataloader(), "val": dm.val_dataloader()},
+        ),
     )
 
     # deterministic threshold (median of calibration scores)
@@ -154,8 +163,12 @@ def test_datamodule_transform_applied_consistently(tmp_path: Path) -> None:
 
     # wrap and run Trainer.predict using the datamodule (ensures datamodule transforms are used)
     from lightning import LightningModule
+
     task = SelectiveInferenceTask(
-        task=cast(LightningModule, model), score=score, input_key="image", target_key="label"
+        task=cast(LightningModule, model),
+        score=score,
+        input_key="image",
+        target_key="label",
     )
 
     trainer = Trainer(
@@ -170,15 +183,26 @@ def test_datamodule_transform_applied_consistently(tmp_path: Path) -> None:
 
     # collect trainer results
     trainer_scores = torch.cat(
-        [cast(dict[str, torch.Tensor], p)["score"].detach().cpu() for p in preds], dim=0
+        [
+            cast(dict[str, torch.Tensor], p)["score"].detach().cpu()
+            for p in preds
+        ],
+        dim=0,
     )
     trainer_selected = torch.cat(
-        [cast(dict[str, torch.Tensor], p)["selected"].detach().cpu() for p in preds], dim=0
+        [
+            cast(dict[str, torch.Tensor], p)["selected"].detach().cpu()
+            for p in preds
+        ],
+        dim=0,
     )
 
     # compute scores manually using the datamodule's test_dataloader (score embeds on the fly)
     manual_scores = score.score(
-        model=model, loader=cast(_EmbedLoader, dm.test_dataloader()), outdir=None, prefix=None
+        model=model,
+        loader=cast(_EmbedLoader, dm.test_dataloader()),
+        outdir=None,
+        prefix=None,
     )
     threshold = score.get_threshold()
     assert threshold is not None

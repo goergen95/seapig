@@ -46,7 +46,9 @@ def test_euclidean_distance_simple_nearest() -> None:
         ("median", lambda ds: ds.median()),
     ],
 )
-def test_euclidean_k_and_stats(stat: str, expected_fn: Callable[[torch.Tensor], torch.Tensor]) -> None:
+def test_euclidean_k_and_stats(
+    stat: str, expected_fn: Callable[[torch.Tensor], torch.Tensor]
+) -> None:
     """Test EuclideanScore k-nearest selection and aggregation statistic."""
     # create 3 refs, query at origin: distances are simple
     refs = torch.tensor(
