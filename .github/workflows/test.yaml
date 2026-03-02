@@ -11,11 +11,9 @@ jobs:
     strategy:
       matrix:
         python-version: ['3.10', '3.11', '3.12']
-
-   steps:
+    steps:
       - name: Clone repository
         uses: actions/checkout@v6
-
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
@@ -25,14 +23,11 @@ jobs:
           cache-dependency-glob: |
             requirements/**/*.txt
             **/pyproject.toml
-
       - name: Install dependencies
-        run: uv pip install .[all]
-
+        run: uv pip install .[suggested,dev]
       - name: Run tests
         run: |
           pytest --cov --junitxml=junit.xml -o junit_family=legacy
-
       - name: Report coverage
         uses: codecov/codecov-action@v5
         with:

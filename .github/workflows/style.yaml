@@ -22,7 +22,7 @@ jobs:
           cache-dependency-glob: |
             requirements/dev.txt
       - name: Install dependencies
-        run: uv pip install -r requirements/dev.txt
+        run: uv pip install .[dev]
       - name: Run ruff checks
         run: |
           ruff check --output-format=github --no-fix .
@@ -43,6 +43,6 @@ jobs:
           cache-dependency-glob: |
             requirements/dev.txt
       - name: Install dependencies
-        run: uv pip install -r requirements/dev.txt
+        run: uv pip install .[dev]
       - name: Run ty checks
-        run: ty check --output-format=github"
+        run: ty check --output-format=github .
