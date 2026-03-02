@@ -89,7 +89,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         torch.save(x.cpu(), path)
 
     @staticmethod
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
+    @torch.inference_mode()
     def _load_pt(path: Path) -> torch.Tensor:
         """Read a file from disk to a `torch.Tensor`."""
         v: torch.Tensor = torch.load(path)
@@ -117,7 +117,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         return v
 
     @classmethod
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
+    @torch.inference_mode()
     def _embed(
         self, X: torch.Tensor | dict[str, torch.Tensor], model: torch.nn.Module
     ) -> torch.Tensor:

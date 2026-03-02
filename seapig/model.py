@@ -22,7 +22,7 @@ TARGET_KEYS = Literal[
 ]
 
 
-class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
+class SelectiveInferenceTask(LightningModule):
     """Wrap a LightningModule to attach a confidence‑score based selector.
 
     This task is designed to be compatible with ``torchgeo`` based tasks and
@@ -110,7 +110,7 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         if acc_test_outputs:
             self.test_outputs = []
 
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
+    @torch.inference_mode()
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         """Run the wrapped model and attach selection scores.
 
@@ -137,7 +137,7 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
 
         return preds | selection
 
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
+    @torch.inference_mode()
     def test_step(
         self, batch: dict[str, Any], batch_idx: int, dataloader_idx: int = 0
     ) -> None:
@@ -185,7 +185,7 @@ class SelectiveInferenceTask(LightningModule):  # type: ignore[misc]
         if self.rc_metric is not None:
             self.log_dict(self.rc_metric.compute(), sync_dist=True)
 
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
+    @torch.inference_mode()
     def predict_step(
         self, batch: dict[str, Any], batch_idx: int, dataloader_idx: int = 0
     ) -> dict[str, torch.Tensor]:

@@ -39,7 +39,7 @@ logger = get_logger(__name__)
 
 
 @final
-class TensorPCA(torch.nn.Module):  # type: ignore[misc]
+class TensorPCA(torch.nn.Module):
     """Tensor-based PCA with L2-normalized inputs.
 
     Operation modes
