@@ -9,7 +9,13 @@ from seapig.scores.base import ConfidenceScore
 
 
 class Dummy(ConfidenceScore):
-    def fit(self, X: torch.Tensor | None = None, Y: torch.Tensor | None = None, *args: Any, **kwargs: Any) -> None:
+    def fit(
+        self,
+        X: torch.Tensor | None = None,
+        Y: torch.Tensor | None = None,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
         return None  # pragma: no cover
 
     def score(self, X: torch.Tensor, *args: Any, **kwargs: Any) -> torch.Tensor:
@@ -114,14 +120,22 @@ def test_set_threshold_invalid_quantile_raises() -> None:
         s.set_threshold(q=0.0)
 
 
-def test_plot_raises_import_error_when_matplotlib_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_plot_raises_import_error_when_matplotlib_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # Simulate matplotlib not being installed by intercepting imports
     import builtins
 
     d = Dummy()
     d.scores = torch.tensor([0.1, 0.2])
 
-    def fake_import(name: str, globals: Any = None, locals: Any = None, fromlist: tuple[str, ...] = (), level: int = 0) -> Any:
+    def fake_import(
+        name: str,
+        globals: Any = None,
+        locals: Any = None,
+        fromlist: tuple[str, ...] = (),
+        level: int = 0,
+    ) -> Any:
         if name == "matplotlib" or name.startswith("matplotlib."):
             raise ImportError("No module named matplotlib")
         return orig_import(name, globals, locals, fromlist, level)
@@ -135,7 +149,9 @@ def test_plot_raises_import_error_when_matplotlib_missing(monkeypatch: pytest.Mo
     # monkeypatch will restore the original import automatically
 
 
-def test_randomscore_select_logs_warning_when_threshold_none(caplog: pytest.LogCaptureFixture) -> None:
+def test_randomscore_select_logs_warning_when_threshold_none(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     rs = RandomScore()
     rs.threshold = None
     X = torch.randn(3, 2)

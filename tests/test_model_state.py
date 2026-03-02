@@ -5,11 +5,12 @@ properly preserve the model's training/evaluation state, which is critical
 for models with BatchNorm or Dropout layers.
 """
 
+from typing import cast
+
 import torch
 from lightning import LightningModule
 from torch.utils.data import DataLoader, Dataset
 from torchmetrics import Accuracy, MetricCollection
-from typing import cast
 
 from seapig import SelectiveInferenceTask
 from seapig.scores.knn import EuclideanScore
@@ -109,7 +110,9 @@ def test_fit_preserves_model_state() -> None:
     val_dataset = DictDataset(val_data)
     val_loader = DataLoader(val_dataset, batch_size=4)
 
-    loaders: dict[str, _EmbedLoader] = cast(dict[str, _EmbedLoader], {"train": train_loader, "val": val_loader})
+    loaders: dict[str, _EmbedLoader] = cast(
+        dict[str, _EmbedLoader], {"train": train_loader, "val": val_loader}
+    )
 
     score = EuclideanScore(k=2)
 
@@ -147,7 +150,9 @@ def test_score_preserves_model_state() -> None:
     test_dataset = DictDataset(test_data)
     test_loader = DataLoader(test_dataset, batch_size=4)
 
-    loaders: dict[str, _EmbedLoader] = cast(dict[str, _EmbedLoader], {"train": train_loader, "val": val_loader})
+    loaders: dict[str, _EmbedLoader] = cast(
+        dict[str, _EmbedLoader], {"train": train_loader, "val": val_loader}
+    )
 
     score = EuclideanScore(k=2)
 
@@ -192,7 +197,9 @@ def test_loop_vs_standalone_scores_match() -> None:
     test_dataset = DictDataset(test_data)
     test_loader = DataLoader(test_dataset, batch_size=4)
 
-    loaders: dict[str, _EmbedLoader] = cast(dict[str, _EmbedLoader], {"train": train_loader, "val": val_loader})
+    loaders: dict[str, _EmbedLoader] = cast(
+        dict[str, _EmbedLoader], {"train": train_loader, "val": val_loader}
+    )
 
     # Scenario 1: Fit score and compute test scores (standalone)
     model.eval()
@@ -274,7 +281,9 @@ def test_fit_forces_eval_mode_during_embedding() -> None:
     val_dataset = DictDataset(val_data)
     val_loader = DataLoader(val_dataset, batch_size=4)
 
-    loaders: dict[str, _EmbedLoader] = cast(dict[str, _EmbedLoader], {"train": train_loader, "val": val_loader})
+    loaders: dict[str, _EmbedLoader] = cast(
+        dict[str, _EmbedLoader], {"train": train_loader, "val": val_loader}
+    )
 
     # Scenario 1: Fit with model in eval mode
     model.eval()

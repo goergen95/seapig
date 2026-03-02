@@ -230,7 +230,9 @@ def test_partial_fit_matches_incremental_pca() -> None:
     )
 
 
-def _assert_state_dicts_equal(sd1: dict[str, torch.Tensor | None], sd2: dict[str, torch.Tensor | None]) -> None:
+def _assert_state_dicts_equal(
+    sd1: dict[str, torch.Tensor | None], sd2: dict[str, torch.Tensor | None]
+) -> None:
     """Helper to compare two state_dict-like mappings of tensors.
 
     Compares tensor contents on CPU. Accepts None entries.

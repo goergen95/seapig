@@ -1,8 +1,9 @@
+from typing import Any
+
 import pytest
 import torch
 from lightning import LightningModule
 from torchmetrics import Accuracy, MetricCollection
-from typing import Any
 from typing_extensions import override
 
 from seapig import RiskCoverageMetric, SelectiveInferenceTask
@@ -24,7 +25,13 @@ class DummyScore(ConfidenceScore):
             x.shape[0], dtype=x.dtype, device=x.device
         )  # pragma: no cover
 
-    def fit(self, X: torch.Tensor | None = None, Y: torch.Tensor | None = None, *args: Any, **kwargs: Any) -> None:
+    def fit(
+        self,
+        X: torch.Tensor | None = None,
+        Y: torch.Tensor | None = None,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
         """Dummy implementation of fit."""
         raise NotImplementedError()
 
@@ -78,7 +85,9 @@ def test_init_rejects_invalid_keys(kw: str, key: str, value: str) -> None:
     kwargs: dict[str, object] = {kw: value}
     with pytest.raises(ValueError):
         _ = SelectiveInferenceTask(
-            task=DummyTaskTensor(), score=DummyScore(), **kwargs  # type: ignore[arg-type]
+            task=DummyTaskTensor(),
+            score=DummyScore(),
+            **kwargs,  # type: ignore[arg-type]
         )
 
 
@@ -139,7 +148,9 @@ def test_predict_step_missing_key_raises_keyerror() -> None:
         _ = w.predict_step({"not_image": torch.zeros(1, 2)}, batch_idx=0)
 
 
-def test_test_step_updates_metrics_and_logs_rc(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_test_step_updates_metrics_and_logs_rc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     task = DummyTaskTensor()
     score = DummyScore()
     w = SelectiveInferenceTask(
@@ -148,7 +159,9 @@ def test_test_step_updates_metrics_and_logs_rc(monkeypatch: pytest.MonkeyPatch) 
 
     calls: dict[str, object] = {"log_arg": None}
 
-    def fake_log_dict(arg: dict[str, Any], batch_size: int | None = None, **kwargs: Any) -> None:
+    def fake_log_dict(
+        arg: dict[str, Any], batch_size: int | None = None, **kwargs: Any
+    ) -> None:
         calls["log_arg"] = arg
         return None
 
@@ -176,7 +189,9 @@ def test_test_step_updates_metrics_and_logs_rc(monkeypatch: pytest.MonkeyPatch) 
     assert "rc/auc_excess" in metrics
 
 
-def test_test_step_with_alt_keys_updates_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_test_step_with_alt_keys_updates_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     task = DummyTaskTensor()
     score = DummyScore()
     w = SelectiveInferenceTask(
@@ -195,7 +210,9 @@ def test_test_step_with_alt_keys_updates_metrics(monkeypatch: pytest.MonkeyPatch
     assert any(k.startswith("selected/") for k in res.keys())
 
 
-def test_test_step_missing_keys_raise_keyerror(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_test_step_missing_keys_raise_keyerror(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     w = SelectiveInferenceTask(task=DummyTaskTensor(), score=DummyScore())
     monkeypatch.setattr(w, "log_dict", lambda *a, **k: None)
 
@@ -245,7 +262,9 @@ def test_get_risk_coverage_curve() -> None:
     assert hasattr(curve, "auc_excess")
 
 
-def test_return_test_outputs_collects_outputs(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_return_test_outputs_collects_outputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """When return_test_outputs=True the wrapper accumulates per-batch
     outputs. Also verify the default behaviour (False) leaves
     test_outputs as None.
@@ -275,7 +294,9 @@ def test_return_test_outputs_collects_outputs(monkeypatch: pytest.MonkeyPatch) -
     assert w2.test_outputs is None
 
 
-def test_return_test_outputs_without_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_return_test_outputs_without_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """If the wrapped task does not expose test_metrics, the wrapper
     should still collect per-batch outputs when return_test_outputs=True.
     """

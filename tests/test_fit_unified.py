@@ -1,8 +1,9 @@
 """Tests for unified fit() method API."""
 
+from typing import cast
+
 import pytest
 import torch
-from typing import cast
 from torch.utils.data import DataLoader, TensorDataset
 
 from seapig.scores.embed import EmbeddingScore
@@ -81,7 +82,13 @@ def test_fit_with_model_loaders() -> None:
     )
 
     score = MinimalEmbedding()
-    score.fit(model=model, loaders={"train": cast(_EmbedLoader, train_loader), "val": cast(_EmbedLoader, val_loader)})
+    score.fit(
+        model=model,
+        loaders={
+            "train": cast(_EmbedLoader, train_loader),
+            "val": cast(_EmbedLoader, val_loader),
+        },
+    )
 
     assert score.ref_embeddings is not None
     assert score.ref_embeddings.shape[0] == 10
@@ -111,7 +118,9 @@ def test_fit_rejects_both_embeddings_and_model() -> None:
     """Test that fit() raises error when both embeddings and model are provided."""
     model = DummyModel()
     ref_embs = torch.randn(10, 5)
-    train_loader: _EmbedLoader = cast(_EmbedLoader, DataLoader([torch.randn(5)]))  # type: ignore[arg-type]
+    train_loader: _EmbedLoader = cast(
+        _EmbedLoader, DataLoader([torch.randn(5)])
+    )  # type: ignore[arg-type]
 
     score = MinimalEmbedding()
     with pytest.raises(ValueError, match="Cannot specify both"):
@@ -135,7 +144,9 @@ def test_fit_rejects_model_without_loaders() -> None:
 
 def test_fit_rejects_loaders_without_model() -> None:
     """Test that fit() raises error when loaders provided without model."""
-    train_loader: _EmbedLoader = cast(_EmbedLoader, DataLoader([torch.randn(5)]))  # type: ignore[arg-type]
+    train_loader: _EmbedLoader = cast(
+        _EmbedLoader, DataLoader([torch.randn(5)])
+    )  # type: ignore[arg-type]
     score = MinimalEmbedding()
     with pytest.raises(ValueError, match="model is required"):
         score.fit(loaders={"train": train_loader})
@@ -171,7 +182,13 @@ def test_euclidean_score_fit_with_model() -> None:
     )
 
     score = EuclideanScore(k=2)
-    score.fit(model=model, loaders={"train": cast(_EmbedLoader, train_loader), "val": cast(_EmbedLoader, val_loader)})
+    score.fit(
+        model=model,
+        loaders={
+            "train": cast(_EmbedLoader, train_loader),
+            "val": cast(_EmbedLoader, val_loader),
+        },
+    )
 
     assert score.ref_embeddings is not None
     assert score.is_trained()
@@ -208,7 +225,13 @@ def test_pca_score_fit_with_model() -> None:
     )
 
     score = PCAScore(pca=TensorPCA(n_components=0.75))
-    score.fit(model=model, loaders={"train": cast(_EmbedLoader, train_loader), "val": cast(_EmbedLoader, val_loader)})
+    score.fit(
+        model=model,
+        loaders={
+            "train": cast(_EmbedLoader, train_loader),
+            "val": cast(_EmbedLoader, val_loader),
+        },
+    )
 
     assert score.ref_embeddings is not None
     assert score.is_trained()
@@ -247,7 +270,13 @@ def test_pyod_score_fit_with_model() -> None:
     )
 
     score = PyODScore(detector=KNN(n_neighbors=2))
-    score.fit(model=model, loaders={"train": cast(_EmbedLoader, train_loader), "val": cast(_EmbedLoader, val_loader)})
+    score.fit(
+        model=model,
+        loaders={
+            "train": cast(_EmbedLoader, train_loader),
+            "val": cast(_EmbedLoader, val_loader),
+        },
+    )
 
     assert score.ref_embeddings is not None
     assert score.is_trained()

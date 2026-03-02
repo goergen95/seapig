@@ -40,6 +40,7 @@ class DummyTaskDict(LightningModule):
     def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         return {"predictions": 3 * x, "extra": x.sum(dim=1)}  # pragma: no cover
 
+
 def test_selective_metric_binary_accuracy_full_vs_selected() -> None:
     base = Accuracy(task="binary")
     sel = SelectiveMetric(base)
@@ -302,7 +303,9 @@ def test_risk_coverage_metric_state_concatenation() -> None:
 @pytest.mark.parametrize(
     "selection_behavior", ["always_select", "always_reject"]
 )
-def test_selective_metric_with_mock_metric_collection(selection_behavior: str) -> None:
+def test_selective_metric_with_mock_metric_collection(
+    selection_behavior: str,
+) -> None:
     # Create a mock metric collection
     base_metrics = MetricCollection({"mean": MeanMetric()})
     selective_metric = SelectiveMetric(base=base_metrics)
@@ -429,7 +432,9 @@ def test_selective_metric_with_metric_collection_and_prefixing() -> None:
 
 
 @pytest.mark.filterwarnings("ignore:.*was called before.*:UserWarning")
-def test_risk_coverage_metric_no_data_returns_zeros_and_reset_behavior() -> None:
+def test_risk_coverage_metric_no_data_returns_zeros_and_reset_behavior() -> (
+    None
+):
     rcm = RiskCoverageMetric()
     # no updates yet -> should return zeros
     empty = rcm.compute()
