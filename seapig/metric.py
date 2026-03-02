@@ -1,9 +1,11 @@
 """Selective evaluation metric wrapper."""
 
+import copy
 from collections.abc import Callable, Iterable
 
 import torch
 from torchmetrics import Metric, MetricCollection
+from typing_extensions import override
 
 from seapig.risk_coverage import RiskCoverage, risk_coverage
 
@@ -43,6 +45,10 @@ class SelectiveMetric(Metric):
         that call.
     """
 
+    _full: Metric | MetricCollection
+    _selected: Metric | MetricCollection
+    _rejected: Metric | MetricCollection
+
     def __init__(
         self,
         base: Metric | MetricCollection,
@@ -50,23 +56,12 @@ class SelectiveMetric(Metric):
         selection_key: str = "selected",
     ) -> None:
         super().__init__()
-        import copy as _copy
-
-        # Deep-copy the base metric/collection for independent state
-        full = _copy.deepcopy(base)
-        selected = _copy.deepcopy(base)
-        rejected = _copy.deepcopy(base)
-
-        # Register as submodules so torch/Lightning see and manage them
-        self._full = full
-        self.add_module("_full", self._full)
-
-        self._selected = selected
-        self.add_module("_selected", self._selected)
-
-        self._rejected = rejected
-        self.add_module("_rejected", self._rejected)
-
+        # Deep-copy the base metric/collection for independent state.
+        # nn.Module.__setattr__ automatically registers Module instances
+        # as submodules, so explicit add_module() calls are not needed.
+        self._full = copy.deepcopy(base)
+        self._selected = copy.deepcopy(base)
+        self._rejected = copy.deepcopy(base)
         self.prediction_key = prediction_key
         self.selection_key = selection_key
 
@@ -82,6 +77,7 @@ class SelectiveMetric(Metric):
         """Return values of the computed results."""
         return self.compute().values()
 
+    @override
     def update(
         self, outputs: dict[str, torch.Tensor], target: torch.Tensor
     ) -> None:
@@ -112,6 +108,7 @@ class SelectiveMetric(Metric):
         if rejected.any():
             self._rejected.update(predictions[rejected], target[rejected])
 
+    @override
     def compute(self) -> dict[str, torch.Tensor]:
         """Compute and return results for total, selected, and rejected.
 
@@ -129,31 +126,32 @@ class SelectiveMetric(Metric):
             m: Metric | MetricCollection, prefix: str
         ) -> dict[str, torch.Tensor]:
             if isinstance(m, MetricCollection):
-                # Generate outputs for all metrics in the collection
-                out = {}
-                for name, metric in m.items():
-                    if getattr(
-                        metric, "update_called", False
-                    ):  # Check if the metric was updated
-                        out[f"{prefix}/{name}"] = metric.compute()
-                    else:
-                        out[f"{prefix}/{name}"] = torch.tensor(0.0)
-                return out
-            else:
-                # Generate output for a single metric
-                metric_name = type(m).__name__
-                if getattr(
-                    m, "update_called", False
-                ):  # Check if the metric was updated
-                    return {f"{prefix}/{metric_name}": m.compute()}
-                else:
-                    return {f"{prefix}/{metric_name}": torch.tensor(0.0)}
+                # Compute all metrics at once (properly typed as dict[str, Tensor])
+                # then zero out any metrics that were not updated
+                computed = m.compute()
+                return {
+                    f"{prefix}/{name}": computed[name]
+                    if metric.update_called
+                    else torch.tensor(0.0)
+                    for name, metric in m.items()
+                }
+            # Single metric: return 0.0 if not updated, otherwise compute
+            metric_name = type(m).__name__
+            if not m.update_called:
+                return {f"{prefix}/{metric_name}": torch.tensor(0.0)}
+            result = m.compute()
+            return {
+                f"{prefix}/{metric_name}": result
+                if isinstance(result, torch.Tensor)
+                else torch.tensor(result)
+            }
 
         total_map = _to_mapping(self._full, "full")
         selected_map = _to_mapping(self._selected, "selected")
         rejected_map = _to_mapping(self._rejected, "rejected")
         return {**total_map, **selected_map, **rejected_map}
 
+    @override
     def reset(self) -> None:
         """Reset both internal metric instances."""
         self._full.reset()
@@ -241,6 +239,7 @@ class RiskCoverageMetric(Metric):
         reduce_dims = tuple(range(1, residual.ndim))
         return residual.mean(dim=reduce_dims)
 
+    @override
     def update(
         self, outputs: dict[str, torch.Tensor], target: torch.Tensor
     ) -> None:
@@ -272,6 +271,7 @@ class RiskCoverageMetric(Metric):
         else:
             self.residuals = torch.cat([self.residuals, residuals], dim=0)
 
+    @override
     def compute(self) -> dict[str, torch.Tensor]:
         """Compute risk-coverage curve metrics."""
         if self.scores.numel() == 0:
@@ -305,6 +305,7 @@ class RiskCoverageMetric(Metric):
         """Return the last computed RiskCoverage object (or None if not computed)."""
         return self._last_curve
 
+    @override
     def reset(self) -> None:
         """Reset the accumulated scores and residuals."""
         self.scores = torch.tensor(
