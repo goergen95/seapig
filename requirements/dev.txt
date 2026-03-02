@@ -5,3 +5,7 @@ ruff
 mypy
 nbmake
 build
+types-PyYAML
+types-decorator
+types-requests
+types-tabulate
