@@ -505,7 +505,7 @@ def test_embed_accepts_dict_and_sequence_inputs() -> None:
 
     # tuple/list case
     xtup = (torch.tensor([[3.0, 4.0]]),)
-    out2 = EmbeddingScore._embed(cast(torch.Tensor, xtup), m)
+    out2 = EmbeddingScore._embed(xtup, m)  # type: ignore[arg-type]
     assert torch.allclose(out2, xtup[0])
 
 
