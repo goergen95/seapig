@@ -119,8 +119,9 @@ def test_fit_rejects_both_embeddings_and_model() -> None:
     model = DummyModel()
     ref_embs = torch.randn(10, 5)
     train_loader: _EmbedLoader = cast(
-        _EmbedLoader, DataLoader([torch.randn(5)])
-    )  # type: ignore[arg-type]
+        _EmbedLoader,
+        DataLoader([torch.randn(5)]),  # type: ignore[arg-type]
+    )
 
     score = MinimalEmbedding()
     with pytest.raises(ValueError, match="Cannot specify both"):
@@ -145,8 +146,9 @@ def test_fit_rejects_model_without_loaders() -> None:
 def test_fit_rejects_loaders_without_model() -> None:
     """Test that fit() raises error when loaders provided without model."""
     train_loader: _EmbedLoader = cast(
-        _EmbedLoader, DataLoader([torch.randn(5)])
-    )  # type: ignore[arg-type]
+        _EmbedLoader,
+        DataLoader([torch.randn(5)]),  # type: ignore[arg-type]
+    )
     score = MinimalEmbedding()
     with pytest.raises(ValueError, match="model is required"):
         score.fit(loaders={"train": train_loader})

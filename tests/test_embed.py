@@ -227,11 +227,13 @@ def test_fit_model_without_embed_raises(tmp_path: pathlib.Path) -> None:
 
     loaders: dict[str, _EmbedLoader] = {
         "train": cast(
-            _EmbedLoader, DataLoader([torch.tensor([0.0, 0.1])], batch_size=1)
-        ),  # type: ignore[arg-type]
+            _EmbedLoader,
+            DataLoader([torch.tensor([0.0, 0.1])], batch_size=1),  # type: ignore[arg-type]
+        ),
         "val": cast(
-            _EmbedLoader, DataLoader([torch.tensor([0.0, 0.1])], batch_size=1)
-        ),  # type: ignore[arg-type]
+            _EmbedLoader,
+            DataLoader([torch.tensor([0.0, 0.1])], batch_size=1),  # type: ignore[arg-type]
+        ),
     }
 
     s = MinimalEmbedding()
@@ -516,8 +518,9 @@ def test_embed_loadorembed_uses_disk_when_present(
     m = ParamModel()
     # move model to cpu (default) and ensure file load uses same device
     loader = cast(
-        _EmbedLoader, DataLoader([torch.tensor([0.0, 0.1])], batch_size=1)
-    )  # type: ignore[arg-type]
+        _EmbedLoader,
+        DataLoader([torch.tensor([0.0, 0.1])], batch_size=1),  # type: ignore[arg-type]
+    )
 
     with pytest.warns(UserWarning):
         out = EmbeddingScore._loadorembed(path=path, model=m, loader=loader)
@@ -655,9 +658,9 @@ def test_loadorembed_uses_existing_file_and_moves_to_model_device(
     model = ParamModel()
     # simple loader (not used when path exists)
     loader = cast(
-        _EmbedLoader, DataLoader([torch.tensor([0.0, 0.1])], batch_size=1)
-    )  # type: ignore[arg-type]
-
+        _EmbedLoader,
+        DataLoader([torch.tensor([0.0, 0.1])], batch_size=1),  # type: ignore[arg-type]
+    )
     with pytest.warns(UserWarning):
         out = EmbeddingScore._loadorembed(path, model, loader)
     assert isinstance(out, torch.Tensor)
