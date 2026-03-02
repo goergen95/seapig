@@ -22,7 +22,7 @@ jobs:
           cache-dependency-glob: |
             uv.lock
       - name: Install dependencies
-        run: uv pip install -r requirements/dev.txt -r requirements/suggested.txt
+        run: uv pip install .[suggested,dev]
       - name: List dependencies
         run: uv pip list
       - name: Run ruff checks
@@ -45,7 +45,7 @@ jobs:
           cache-dependency-glob: |
             uv.lock
       - name: Install dependencies
-        run: uv pip install -r requirements/dev.txt -r requirements/suggested.txt
+        run: uv pip install .[suggested,dev]
       - name: List dependencies
         run: uv pip list
       - name: Run ty checks
