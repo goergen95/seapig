@@ -21,11 +21,9 @@ jobs:
           enable-cache: true
           activate-environment: true
           cache-dependency-glob: |
-            pyproject.toml
-            requirements/**/*.txt
             uv.lock
       - name: Install dependencies
-        run: uv sync --locked --extra suggested --extra dev
+        run: uv pip install -r requirements/dev.txt -r requirements/suggested.txt
       - name: Run tests
         run: |
           pytest --cov --junitxml=junit.xml -o junit_family=legacy
