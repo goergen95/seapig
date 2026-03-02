@@ -3,8 +3,9 @@
 import inspect
 import warnings
 from abc import ABC
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import torch
 from torch.utils.data import DataLoader
@@ -123,16 +124,17 @@ class EmbeddingScore(ConfidenceScore, ABC):
     ) -> torch.Tensor:
         """Embed a batch based on a models embed method."""
         assert callable(model.embed)
+        _embed_fn = cast(Callable[[torch.Tensor], torch.Tensor], model.embed)
         if isinstance(X, dict):
             if "image" not in X.keys():
                 raise KeyError(
                     'A batch dictionary is required to contain the "image" key.'
                 )
-            z = model.embed(X["image"])
+            z = _embed_fn(X["image"])
         elif isinstance(X, (list, tuple)):
-            z = model.embed(X[0])
+            z = _embed_fn(X[0])
         else:
-            z = model.embed(X)
+            z = _embed_fn(X)
         assert isinstance(z, torch.Tensor)
         if len(z.shape) > 2:  # we expect (B,D)
             raise ValueError(
