@@ -249,11 +249,11 @@ class LogitScore(ConfidenceScore, abc.ABC):
             # clone logits to ensure we don't use inference-mode tensors
             scaled = logits.clone() / T
             loss = self._temperature_loss(scaled, labels)
-            loss.backward()
+            loss.backward()  # type: ignore[no-untyped-call]
             return loss
 
         try:
-            optimizer.step(closure)
+            optimizer.step(closure)  # type: ignore[no-untyped-call]
         except Exception:
             # fallback to Adam on a fresh leaf Parameter if LBFGS fails
             log_t = torch.nn.Parameter(
@@ -265,7 +265,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
                 T = log_t.exp().clamp(min=1e-3, max=1e3)
                 scaled = logits.clone() / T
                 loss = self._temperature_loss(scaled, labels)
-                loss.backward()
+                loss.backward()  # type: ignore[no-untyped-call]
                 opt.step()
 
         T_final = log_t.exp().clamp(min=1e-3, max=1e3).detach()
