@@ -155,7 +155,7 @@ class PyODScore(EmbeddingScore):
             self.set_calibrated()
 
     @override
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
+    @torch.inference_mode()
     def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
         """Compute a confidence score based on sample embeddings.
 

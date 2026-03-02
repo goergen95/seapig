@@ -12,7 +12,7 @@ from seapig.utils import get_logger
 logger = get_logger(__name__)
 
 
-class ConfidenceScore(torch.nn.Module, ABC):  # type: ignore[misc]
+class ConfidenceScore(torch.nn.Module, ABC):
     """Abstract Base Class for Confidence Scores.
 
     Confidence scores quantify the deviation of query samples from the training
@@ -268,7 +268,7 @@ class RandomScore(ConfidenceScore):
         raise NotImplementedError()
 
     @override
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
+    @torch.inference_mode()
     def score(self, X: torch.Tensor) -> torch.Tensor:
         """Compute a confidence score for every sample in a batch.
 
@@ -291,7 +291,7 @@ class RandomScore(ConfidenceScore):
         return torch.rand(X.shape[0])
 
     @override
-    @torch.inference_mode()  # type: ignore[untyped-decorator]
+    @torch.inference_mode()
     def select(self, X: torch.Tensor) -> dict[str, torch.Tensor]:
         """Select samples for prediction based on their confidence score.
 
