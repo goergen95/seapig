@@ -1,7 +1,8 @@
 import pytest
 import torch
-from pytorch_lightning import LightningModule
+from lightning import LightningModule
 from torchmetrics import Accuracy, MetricCollection
+from typing import Any
 from typing_extensions import override
 
 from seapig import RiskCoverageMetric, SelectiveInferenceTask
@@ -23,14 +24,14 @@ class DummyScore(ConfidenceScore):
             x.shape[0], dtype=x.dtype, device=x.device
         )  # pragma: no cover
 
-    def fit(self, x: torch.Tensor) -> None:
+    def fit(self, X: torch.Tensor | None = None, Y: torch.Tensor | None = None, *args: Any, **kwargs: Any) -> None:
         """Dummy implementation of fit."""
         raise NotImplementedError()
 
     @override
-    def set_threshold(self, q: float) -> None:  # pragma: no cover
+    def set_threshold(self, q: float = 0.99) -> None:  # pragma: no cover
         """Dummy implementation of set_threshold."""
-        self.threshold = q
+        self.threshold = torch.tensor(q)
 
 
 class DummyTaskTensor(LightningModule):
@@ -38,7 +39,7 @@ class DummyTaskTensor(LightningModule):
 
     test_metrics: MetricCollection = MetricCollection(Accuracy(task="binary"))
 
-    def predict(self, x: torch.Tensor) -> torch.Tensor:  # type: ignore[override]
+    def predict(self, x: torch.Tensor) -> torch.Tensor:
         return 2 * x
 
     def embed(self, x: torch.Tensor) -> torch.Tensor:
@@ -77,7 +78,7 @@ def test_init_rejects_invalid_keys(kw: str, key: str, value: str) -> None:
     kwargs: dict[str, object] = {kw: value}
     with pytest.raises(ValueError):
         _ = SelectiveInferenceTask(
-            task=DummyTaskTensor(), score=DummyScore(), **kwargs
+            task=DummyTaskTensor(), score=DummyScore(), **kwargs  # type: ignore[arg-type]
         )
 
 
@@ -111,7 +112,7 @@ def test_forward_keeps_dict_output_and_extra_keys() -> None:
 
 def test_forward_raises_when_predict_not_tensor_or_dict() -> None:
     class BadTask(DummyTaskTensor):
-        def predict(self, x: torch.Tensor):  # type: ignore[override]
+        def predict(self, x: torch.Tensor) -> list[torch.Tensor]:  # type: ignore[override]
             return [x]  # wrong type
 
     w = SelectiveInferenceTask(task=BadTask(), score=DummyScore())
@@ -128,7 +129,7 @@ def test_predict_step_uses_input_key_and_returns_selection() -> None:
     out = w.predict_step(batch, batch_idx=0)
     assert "predictions" in out and torch.allclose(
         out["predictions"], 2 * batch["image"]
-    )  # type: ignore[index]
+    )
     assert out["selected"].dtype is torch.bool
 
 
@@ -138,7 +139,7 @@ def test_predict_step_missing_key_raises_keyerror() -> None:
         _ = w.predict_step({"not_image": torch.zeros(1, 2)}, batch_idx=0)
 
 
-def test_test_step_updates_metrics_and_logs_rc(monkeypatch) -> None:
+def test_test_step_updates_metrics_and_logs_rc(monkeypatch: pytest.MonkeyPatch) -> None:
     task = DummyTaskTensor()
     score = DummyScore()
     w = SelectiveInferenceTask(
@@ -147,7 +148,7 @@ def test_test_step_updates_metrics_and_logs_rc(monkeypatch) -> None:
 
     calls: dict[str, object] = {"log_arg": None}
 
-    def fake_log_dict(arg, batch_size=None, **kwargs):  # noqa: ANN001
+    def fake_log_dict(arg: dict[str, Any], batch_size: int | None = None, **kwargs: Any) -> None:
         calls["log_arg"] = arg
         return None
 
@@ -161,6 +162,7 @@ def test_test_step_updates_metrics_and_logs_rc(monkeypatch) -> None:
     w.test_step(batch, batch_idx=0)
 
     # SelectiveMetric should have results for collection (prefixed keys)
+    assert w.test_metrics is not None
     res = w.test_metrics.compute()
     assert any(k.startswith("full/") for k in res.keys())
     assert any(k.startswith("selected/") for k in res.keys())
@@ -174,7 +176,7 @@ def test_test_step_updates_metrics_and_logs_rc(monkeypatch) -> None:
     assert "rc/auc_excess" in metrics
 
 
-def test_test_step_with_alt_keys_updates_metrics(monkeypatch) -> None:
+def test_test_step_with_alt_keys_updates_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
     task = DummyTaskTensor()
     score = DummyScore()
     w = SelectiveInferenceTask(
@@ -187,12 +189,13 @@ def test_test_step_with_alt_keys_updates_metrics(monkeypatch) -> None:
     batch = {"x": torch.tensor([0.0, 1.0]), "y": torch.tensor([0, 1])}
     w.test_step(batch, batch_idx=0)
 
+    assert w.test_metrics is not None
     res = w.test_metrics.compute()
     assert any(k.startswith("full/") for k in res.keys())
     assert any(k.startswith("selected/") for k in res.keys())
 
 
-def test_test_step_missing_keys_raise_keyerror(monkeypatch) -> None:
+def test_test_step_missing_keys_raise_keyerror(monkeypatch: pytest.MonkeyPatch) -> None:
     w = SelectiveInferenceTask(task=DummyTaskTensor(), score=DummyScore())
     monkeypatch.setattr(w, "log_dict", lambda *a, **k: None)
 
@@ -242,7 +245,7 @@ def test_get_risk_coverage_curve() -> None:
     assert hasattr(curve, "auc_excess")
 
 
-def test_return_test_outputs_collects_outputs(monkeypatch) -> None:
+def test_return_test_outputs_collects_outputs(monkeypatch: pytest.MonkeyPatch) -> None:
     """When return_test_outputs=True the wrapper accumulates per-batch
     outputs. Also verify the default behaviour (False) leaves
     test_outputs as None.
@@ -272,14 +275,14 @@ def test_return_test_outputs_collects_outputs(monkeypatch) -> None:
     assert w2.test_outputs is None
 
 
-def test_return_test_outputs_without_metrics(monkeypatch) -> None:
+def test_return_test_outputs_without_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
     """If the wrapped task does not expose test_metrics, the wrapper
     should still collect per-batch outputs when return_test_outputs=True.
     """
 
     class NoMetricTask(DummyTaskDict):
         # Explicitly remove metrics to simulate tasks that don't define them
-        test_metrics = None
+        test_metrics: None = None  # type: ignore[assignment]
 
     task = NoMetricTask()
     score = DummyScore()

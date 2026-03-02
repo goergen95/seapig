@@ -7,6 +7,7 @@ calibration.
 """
 
 import math
+import pathlib
 
 import pytest
 import torch
@@ -229,7 +230,7 @@ def test_partial_fit_matches_incremental_pca() -> None:
     )
 
 
-def _assert_state_dicts_equal(sd1: dict, sd2: dict) -> None:
+def _assert_state_dicts_equal(sd1: dict[str, torch.Tensor | None], sd2: dict[str, torch.Tensor | None]) -> None:
     """Helper to compare two state_dict-like mappings of tensors.
 
     Compares tensor contents on CPU. Accepts None entries.
@@ -253,7 +254,7 @@ def _assert_state_dicts_equal(sd1: dict, sd2: dict) -> None:
             )
 
 
-def test_save_load_tensorpca_linear_and_rff(tmp_path) -> None:
+def test_save_load_tensorpca_linear_and_rff(tmp_path: pathlib.Path) -> None:
     """Saving and loading a fitted TensorPCA should preserve all buffers.
 
     This test covers both linear and RFF modes. It saves state_dict to disk

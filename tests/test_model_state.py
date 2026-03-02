@@ -9,9 +9,12 @@ import torch
 from lightning import LightningModule
 from torch.utils.data import DataLoader, Dataset
 from torchmetrics import Accuracy, MetricCollection
+from typing import cast
 
 from seapig import SelectiveInferenceTask
 from seapig.scores.knn import EuclideanScore
+
+_EmbedLoader = DataLoader[torch.Tensor | dict[str, torch.Tensor]]
 
 
 class DictDataset(Dataset[dict[str, torch.Tensor]]):
@@ -47,7 +50,7 @@ class ModelWithBatchNorm(LightningModule):
         x = torch.relu(x)
         x = self.pool(x)
         x = x.flatten(start_dim=1)
-        return self.fc(x)
+        return cast(torch.Tensor, self.fc(x))
 
     def embed(self, x: torch.Tensor) -> torch.Tensor:
         """Extract embeddings before final classification layer."""
@@ -106,7 +109,7 @@ def test_fit_preserves_model_state() -> None:
     val_dataset = DictDataset(val_data)
     val_loader = DataLoader(val_dataset, batch_size=4)
 
-    loaders = {"train": train_loader, "val": val_loader}
+    loaders: dict[str, _EmbedLoader] = cast(dict[str, _EmbedLoader], {"train": train_loader, "val": val_loader})
 
     score = EuclideanScore(k=2)
 
@@ -144,7 +147,7 @@ def test_score_preserves_model_state() -> None:
     test_dataset = DictDataset(test_data)
     test_loader = DataLoader(test_dataset, batch_size=4)
 
-    loaders = {"train": train_loader, "val": val_loader}
+    loaders: dict[str, _EmbedLoader] = cast(dict[str, _EmbedLoader], {"train": train_loader, "val": val_loader})
 
     score = EuclideanScore(k=2)
 
@@ -189,7 +192,7 @@ def test_loop_vs_standalone_scores_match() -> None:
     test_dataset = DictDataset(test_data)
     test_loader = DataLoader(test_dataset, batch_size=4)
 
-    loaders = {"train": train_loader, "val": val_loader}
+    loaders: dict[str, _EmbedLoader] = cast(dict[str, _EmbedLoader], {"train": train_loader, "val": val_loader})
 
     # Scenario 1: Fit score and compute test scores (standalone)
     model.eval()
@@ -271,12 +274,13 @@ def test_fit_forces_eval_mode_during_embedding() -> None:
     val_dataset = DictDataset(val_data)
     val_loader = DataLoader(val_dataset, batch_size=4)
 
-    loaders = {"train": train_loader, "val": val_loader}
+    loaders: dict[str, _EmbedLoader] = cast(dict[str, _EmbedLoader], {"train": train_loader, "val": val_loader})
 
     # Scenario 1: Fit with model in eval mode
     model.eval()
     score1 = EuclideanScore(k=2)
     score1.fit(model=model, loaders=loaders)
+    assert score1.ref_embeddings is not None
     ref_emb_eval = score1.ref_embeddings.clone()
 
     # Scenario 2: Fit with model in training mode
@@ -286,6 +290,7 @@ def test_fit_forces_eval_mode_during_embedding() -> None:
     score2 = EuclideanScore(k=2)
     score2.fit(model=model, loaders=loaders)
     ref_emb_train = score2.ref_embeddings
+    assert ref_emb_train is not None
 
     # These should be IDENTICAL because fit should force eval mode
     # This will FAIL with the current implementation

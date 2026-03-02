@@ -13,7 +13,7 @@ class _MockDetectorBasic:
     decision_function output."""
 
     def __init__(self, score_on_call: float = 0.5):
-        self.decision_scores_ = None
+        self.decision_scores_: np.ndarray | None = None
         self._call_score = score_on_call
 
     def fit(self, X: np.ndarray) -> None:
@@ -29,7 +29,7 @@ class _MockDetectorRange:
     Useful for q-trimming tests."""
 
     def __init__(self) -> None:
-        self.decision_scores_ = None
+        self.decision_scores_: np.ndarray | None = None
 
     def fit(self, X: np.ndarray) -> None:
         n = X.shape[0]
@@ -90,7 +90,8 @@ def test_score_uses_detector_decision_function() -> None:
     class DetFn(_MockDetectorBasic):
         def decision_function(self, X: np.ndarray) -> np.ndarray:
             # return sum of each row so we can validate the mapping
-            return X.sum(axis=1)
+            result: np.ndarray = np.array(X.sum(axis=1), dtype=np.float64)
+            return result
 
     det = DetFn()
     score = PyODScore(detector=det, pca=None)

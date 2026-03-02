@@ -2,6 +2,7 @@
 
 import pytest
 import torch
+from typing import cast
 
 from seapig.risk_coverage import RiskCoverage, risk_coverage
 
@@ -29,7 +30,7 @@ class TestRiskCoverage:
         score = torch.rand(n) * obs  # Lower score when obs is lower
         return score, residuals
 
-    def test_risk_coverage_basic(self, simple_data):
+    def test_risk_coverage_basic(self, simple_data: tuple[torch.Tensor, torch.Tensor]) -> None:
         """Test basic risk-coverage calculation."""
         score, residuals = simple_data
 
@@ -51,7 +52,7 @@ class TestRiskCoverage:
         # Selective and generalized should differ
         assert not torch.allclose(rc_gen.risk, rc_sel.risk)
 
-    def test_risk_coverage_with_bins(self, simple_data):
+    def test_risk_coverage_with_bins(self, simple_data: tuple[torch.Tensor, torch.Tensor]) -> None:
         """Test risk-coverage with binning."""
         score, residuals = simple_data
 
@@ -60,7 +61,7 @@ class TestRiskCoverage:
         assert isinstance(rc, RiskCoverage)
         assert len(rc.coverage) == 50
 
-    def test_risk_coverage_validation(self):
+    def test_risk_coverage_validation(self) -> None:
         """Test input validation."""
         score = torch.rand(100)
         residuals = torch.rand(100)
@@ -75,12 +76,12 @@ class TestRiskCoverage:
 
         # Test invalid input types
         with pytest.raises(TypeError):
-            risk_coverage([1, 2, 3], residuals)
+            risk_coverage(torch.tensor([1, 2, 3]).tolist(), residuals)  # type: ignore[arg-type]
 
         with pytest.raises(TypeError):
-            risk_coverage(score, [1, 2, 3])
+            risk_coverage(score, torch.tensor([1, 2, 3]).tolist())  # type: ignore[arg-type]
 
-    def test_risk_coverage_attributes(self, correlated_data):
+    def test_risk_coverage_attributes(self, correlated_data: tuple[torch.Tensor, torch.Tensor]) -> None:
         """Test that RiskCoverage has correct attributes."""
         score, residuals = correlated_data
         rc = risk_coverage(score, residuals, risk="generalized")
@@ -105,7 +106,7 @@ class TestRiskCoverage:
         # Check excess = empirical - reference
         assert torch.allclose(rc.excess, rc.risk - rc.reference)
 
-    def test_risk_coverage_monotonicity(self, simple_data):
+    def test_risk_coverage_monotonicity(self, simple_data: tuple[torch.Tensor, torch.Tensor]) -> None:
         """Test that coverage is monotonically increasing."""
         score, residuals = simple_data
         rc = risk_coverage(score, residuals)
@@ -118,7 +119,7 @@ class TestRiskCoverage:
         assert (rc.coverage >= 0).all()
         assert (rc.coverage <= 1).all()
 
-    def test_risk_coverage_auc_values(self, correlated_data):
+    def test_risk_coverage_auc_values(self, correlated_data: tuple[torch.Tensor, torch.Tensor]) -> None:
         """Test AUC calculation is reasonable."""
         score, residuals = correlated_data
 
@@ -138,7 +139,7 @@ class TestRiskCoverage:
         assert rc_sel.auc_empirical > 0
         assert rc_sel.auc_reference > 0
 
-    def test_risk_coverage_repr(self, simple_data):
+    def test_risk_coverage_repr(self, simple_data: tuple[torch.Tensor, torch.Tensor]) -> None:
         """Test string representation."""
         score, residuals = simple_data
         rc = risk_coverage(score, residuals)
@@ -149,7 +150,7 @@ class TestRiskCoverage:
         assert "n_points=100" in repr_str
         assert "auc_empirical" in repr_str
 
-    def test_risk_types_differ(self, correlated_data):
+    def test_risk_types_differ(self, correlated_data: tuple[torch.Tensor, torch.Tensor]) -> None:
         """Test that generalized and selective risk produce different results."""
         score, residuals = correlated_data
 
@@ -162,7 +163,7 @@ class TestRiskCoverage:
         # But coverage should be the same
         assert torch.allclose(rc_gen.coverage, rc_sel.coverage)
 
-    def test_reference_curve_properties(self, simple_data):
+    def test_reference_curve_properties(self, simple_data: tuple[torch.Tensor, torch.Tensor]) -> None:
         """Test properties of the reference curve."""
         score, residuals = simple_data
         rc = risk_coverage(score, residuals)
@@ -173,7 +174,7 @@ class TestRiskCoverage:
         # Reference should be optimal (lower than or equal to empirical in expectation)
         # This might not hold for every random seed, but generally should
 
-    def test_edge_cases(self):
+    def test_edge_cases(self) -> None:
         """Test edge cases."""
         # All same scores
         score = torch.ones(100)
@@ -194,7 +195,7 @@ class TestRiskCoverage:
         assert isinstance(rc, RiskCoverage)
         assert len(rc.coverage) == 5  # Should not downsample
 
-    def test_perfect_score(self):
+    def test_perfect_score(self) -> None:
         """Test with perfect confidence score (score = residuals)."""
         torch.manual_seed(42)
         residuals = torch.rand(100)
@@ -207,7 +208,7 @@ class TestRiskCoverage:
         assert torch.allclose(rc.risk, rc.reference, rtol=1e-5)
         assert torch.isclose(rc.auc_excess, torch.tensor(0.0), atol=1e-5)
 
-    def test_binning_maintains_max(self, simple_data):
+    def test_binning_maintains_max(self, simple_data: tuple[torch.Tensor, torch.Tensor]) -> None:
         """Test that binning takes max values in each bin."""
         score, residuals = simple_data
 
@@ -225,45 +226,47 @@ class TestRiskCoverage:
             rc_binned.coverage.max(), rc_full.coverage.max(), atol=1e-5
         )
 
-    def test_plot_basic(self, simple_data):
+    def test_plot_basic(self, simple_data: tuple[torch.Tensor, torch.Tensor]) -> None:
         """Test basic plotting functionality."""
         pytest.importorskip("matplotlib")
+        import matplotlib.pyplot as plt
+        from matplotlib.figure import Figure
+
         score, residuals = simple_data
         rc = risk_coverage(score, residuals)
 
         # Test basic plot
-        fig = rc.plot()
+        fig = cast(Figure, rc.plot())
         assert fig is not None
 
         # Clean up
-        import matplotlib.pyplot as plt
-
         plt.close(fig)
 
-    def test_plot_selective_curves(self, simple_data):
+    def test_plot_selective_curves(self, simple_data: tuple[torch.Tensor, torch.Tensor]) -> None:
         """Test plotting with selective curves."""
         pytest.importorskip("matplotlib")
+        import matplotlib.pyplot as plt
+        from matplotlib.figure import Figure
+
         score, residuals = simple_data
         rc = risk_coverage(score, residuals)
 
-        import matplotlib.pyplot as plt
-
         # Test plotting only empirical
-        fig1 = rc.plot(reference=False, excess=False)
+        fig1 = cast(Figure, rc.plot(reference=False, excess=False))
         assert fig1 is not None
         plt.close(fig1)
 
         # Test plotting only reference
-        fig2 = rc.plot(empirical=False, excess=False)
+        fig2 = cast(Figure, rc.plot(empirical=False, excess=False))
         assert fig2 is not None
         plt.close(fig2)
 
         # Test plotting only excess
-        fig3 = rc.plot(empirical=False, reference=False)
+        fig3 = cast(Figure, rc.plot(empirical=False, reference=False))
         assert fig3 is not None
         plt.close(fig3)
 
-    def test_plot_validation(self, simple_data):
+    def test_plot_validation(self, simple_data: tuple[torch.Tensor, torch.Tensor]) -> None:
         """Test plot input validation."""
         pytest.importorskip("matplotlib")
         score, residuals = simple_data
