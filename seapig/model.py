@@ -96,11 +96,7 @@ class SelectiveInferenceTask(LightningModule):
             assert isinstance(task.test_metrics, (MetricCollection, Metric)), (
                 "Wrapped task's test_metrics must be a Metric or MetricCollection"
             )
-            self.test_metrics = SelectiveMetric(
-                base=task.test_metrics,
-                prediction_key="predictions",
-                selection_key="selected",
-            )
+            self.test_metrics = SelectiveMetric(base=task.test_metrics)
 
         assert rc_metric is None or isinstance(rc_metric, RiskCoverageMetric), (
             "rc_metric must be a seapig RiskCoverageMetric instance or None"
@@ -167,13 +163,15 @@ class SelectiveInferenceTask(LightningModule):
         outputs = self.forward(x)
 
         if self.test_metrics is not None:
-            self.test_metrics.update(outputs, y)
-            self.log_dict(self.test_metrics.compute())
+            self.test_metrics.update(
+                outputs["predictions"], y, outputs["selected"]
+            )
+            self.log_dict(self.test_metrics.compute(), sync_dist=True)
 
         # Update risk‑coverage metric; final values are logged in on_test_epoch_end
         if self.rc_metric is not None:
-            self.rc_metric.update(outputs, y)
-            self.log_dict(self.rc_metric.compute())
+            self.rc_metric.update(outputs["predictions"], y, outputs["score"])
+            self.log_dict(self.rc_metric.compute(), sync_dist=True)
 
         if self.test_outputs is not None:
             self.test_outputs.append(outputs)
