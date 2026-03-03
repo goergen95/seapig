@@ -7,7 +7,6 @@ aggregation (min/max/mean/median), index creation, and behavior on singular
 covariance matrices.
 """
 
-import math
 import pathlib
 import warnings
 from collections.abc import Callable
@@ -33,7 +32,7 @@ def test_euclidean_distance_simple_nearest() -> None:
     score._setup_index()
     # kpn default 0 => returns distance to k nearest (here k=1)
     out = score._distance(q, kpn=0)
-    expected = torch.tensor([5.0])
+    expected = torch.tensor([25.0])
     approx(out, expected)
 
 
@@ -62,8 +61,7 @@ def test_euclidean_k_and_stats(
     out = score._distance(q, kpn=0)
     # pick two smallest distances: 5 and 5 -> squared are 25 and 25
     two = torch.tensor([25.0, 25.0])
-    stat_sq = expected_fn(two)
-    expected = torch.sqrt(stat_sq)
+    expected = expected_fn(two)
     approx(out, expected.unsqueeze(0) if expected.dim() == 0 else expected)
 
 
@@ -273,5 +271,5 @@ def test_zeropad_warning_and_padding() -> None:
         assert any("zero padding" in str(x.message) for x in w)
 
     assert out.shape == (1,)
-    expected = torch.tensor([math.sqrt(2.0)])
+    expected = torch.tensor([2.0])
     approx(out, expected)
