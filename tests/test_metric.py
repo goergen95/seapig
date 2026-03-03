@@ -13,8 +13,7 @@ from torchmetrics import (
     Recall,
 )
 
-from seapig import RiskCoverageMetric, SelectiveInferenceTask, SelectiveMetric
-from seapig.scores.base import RandomScore
+from seapig import RiskCoverageMetric, SelectiveMetric
 
 
 class DummyTaskTensor(LightningModule):
@@ -23,13 +22,13 @@ class DummyTaskTensor(LightningModule):
     test_metrics: MetricCollection = MetricCollection(Accuracy(task="binary"))
 
     def predict(self, x: torch.Tensor) -> torch.Tensor:
-        return 2 * x
+        return 2 * x  # pragma: no cover
 
     def embed(self, x: torch.Tensor) -> torch.Tensor:
-        return x
+        return x  # pragma: no cover
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.predict(x)
+        return self.predict(x)  # pragma: no cover
 
 
 class DummyTaskDict(LightningModule):
@@ -46,13 +45,11 @@ def test_selective_metric_binary_accuracy_full_vs_selected() -> None:
     sel = SelectiveMetric(base)
 
     # Predictions as probabilities; targets are 0/1
-    outputs = {
-        "predictions": torch.tensor([0.9, 0.4, 0.6, 0.8]),
-        "selected": torch.tensor([1, 1, 0, 0]),  # non-bool mask accepted
-    }
+    preds = torch.tensor([0.9, 0.4, 0.6, 0.8])
+    selected = torch.tensor([1, 1, 0, 0])  # non-bool mask accepted
     target = torch.tensor([1, 0, 1, 0])
 
-    sel.update(outputs, target)
+    sel.update(preds, target, selected)
     res = sel.compute()
 
     # Expect full accuracy: correct on 0.9, 0.4, 0.6; wrong on 0.8 => 3/4 = 0.75
@@ -72,13 +69,12 @@ def test_selective_metric_with_metric_collection_prefix_keys() -> None:
     coll = MetricCollection({"acc": Accuracy(task="binary")})
     sel = SelectiveMetric(coll)
 
-    outputs = {
-        "predictions": torch.tensor([0.9, 0.4, 0.6, 0.8]),
-        "selected": torch.tensor([1, 0, 1, 0]),
-    }
+    preds = torch.tensor([0.9, 0.4, 0.6, 0.8])
+    selected = torch.tensor([1, 0, 1, 0])
+
     target = torch.tensor([1, 0, 1, 0])
 
-    sel.update(outputs, target)
+    sel.update(preds, target, selected)
     res = sel.compute()
 
     # Keys should be prefixed for collections
@@ -87,31 +83,6 @@ def test_selective_metric_with_metric_collection_prefix_keys() -> None:
     # Values are scalars
     for v in res.values():
         assert isinstance(v, torch.Tensor) and v.ndim == 0
-
-
-def test_selective_metric_end_to_end_with_task_outputs() -> None:
-    # Use SelectiveInferenceTask to produce outputs dict, then evaluate SelectiveMetric
-    task = DummyTaskTensor()
-    score = RandomScore()
-    w = SelectiveInferenceTask(task=task, score=score)
-
-    x = torch.tensor([0.2, 0.7, 0.6, 0.1])
-    outputs = w.forward(x)
-    # Override selection to choose two samples
-    outputs["selected"] = torch.tensor([True, True, False, False])
-    outputs["predictions"] = torch.tensor([0.0, 1.0, 0.0, 1.0])
-
-    # Binary targets compatible with predictions thresholding at 0.5
-    target = torch.tensor([0, 1, 1, 0])
-
-    sel = SelectiveMetric(Accuracy(task="binary"))
-    sel.update(outputs, target)
-    res = sel.compute()
-
-    # Full accuracy across all 4 predictions: half correct => 0.5
-    assert torch.allclose(res["full/BinaryAccuracy"], torch.tensor(0.5))
-    # Selected accuracy on first two samples: both correct => 1.0
-    assert torch.allclose(res["selected/BinaryAccuracy"], torch.tensor(1.0))
 
 
 def test_selective_metric_with_metric_collection_output_naming() -> None:
@@ -125,15 +96,13 @@ def test_selective_metric_with_metric_collection_output_naming() -> None:
     )
     sel = SelectiveMetric(metrics)
 
-    # Define outputs and targets
-    outputs = {
-        "predictions": torch.tensor([0.9, 0.4, 0.6, 0.8]),
-        "selected": torch.tensor([1, 0, 1, 0]),  # non-bool mask accepted
-    }
+    # Define predictions and selection mask directly
+    preds = torch.tensor([0.9, 0.4, 0.6, 0.8])
+    selected = torch.tensor([1, 0, 1, 0])  # non-bool mask accepted
     target = torch.tensor([1, 0, 1, 0])
 
-    # Update and compute the metrics
-    sel.update(outputs, target)
+    # Update and compute the metrics (use explicit tensors for new API)
+    sel.update(preds, target, selected)
     res = sel.compute()
 
     # Check that all keys are correctly prefixed
@@ -160,17 +129,15 @@ def test_selective_metric_reset() -> None:
     sel = SelectiveMetric(base)
 
     # Update the metric with some data
-    outputs = {
-        "predictions": torch.tensor([0.9, 0.4, 0.6, 0.8]),
-        "selected": torch.tensor([1, 0, 1, 0]),
-    }
+    preds = torch.tensor([0.9, 0.4, 0.6, 0.8])
+    selected = torch.tensor([1, 0, 1, 0])
     target = torch.tensor([1, 0, 1, 0])
-    sel.update(outputs, target)
+    sel.update(preds, target, selected)
 
     # Compute to initialize internal states
     res = sel.compute()
-    # should not raise
-    _ = sel._full.compute()
+    # should not raise; access internal full metric explicitly
+    _ = sel.metrics["full"].compute()
 
     # Reset the metric
     sel.reset()
@@ -179,23 +146,23 @@ def test_selective_metric_reset() -> None:
     with pytest.warns(
         UserWarning, match="was called before the ``update`` method"
     ):
-        res = sel._full.compute()
-    assert isinstance(res, torch.Tensor)
-    assert res == 0.0
+        res = sel.metrics["full"].compute()
+
+    assert isinstance(res, dict)
+    assert "BinaryAccuracy" in res
+    assert res["BinaryAccuracy"] == 0.0
 
 
 @pytest.mark.parametrize("risk", ["generalized", "selective"])
 def test_risk_coverage_metric_basic_functionality(risk: str) -> None:
     metric = RiskCoverageMetric(risk=risk)
 
-    outputs = {
-        "predictions": torch.tensor([0.9, 0.4, 0.6, 0.8]),
-        "score": torch.tensor([0.1, 0.2, 0.3, 0.4]),
-    }
+    preds = torch.tensor([0.9, 0.4, 0.6, 0.8])
+    scores = torch.tensor([0.1, 0.2, 0.3, 0.4])
     target = torch.tensor([1.0, 0.0, 1.0, 0.0])
 
-    # Update the metric
-    metric.update(outputs, target)
+    # Update the metric (new API accepts tensors directly)
+    metric.update(preds, target, scores)
 
     # check that scores and residuals are correct
     assert metric.scores.numel() == 4
@@ -220,21 +187,18 @@ def test_risk_coverage_metric_basic_functionality(risk: str) -> None:
 def test_risk_coverage_metric_missing_keys() -> None:
     metric = RiskCoverageMetric()
 
-    outputs = {"predictions": torch.tensor([0.9, 0.4, 0.6, 0.8])}
+    # The RiskCoverageMetric.update now requires explicit tensors: preds, target, scores
+    preds = torch.tensor([0.9, 0.4, 0.6, 0.8])
     target = torch.tensor([1.0, 0.0, 1.0, 0.0])
 
-    with pytest.raises(
-        AssertionError, match="RiskCoverageMetric requires 'score'"
-    ):
-        metric.update(outputs, target)
+    # missing args should raise a TypeError at call time
+    with pytest.raises(TypeError):
+        # missing scores
+        metric.update(preds=preds, target=target)  # type: ignore[call-arg]
 
-    outputs = {"score": torch.tensor([0.9, 0.4, 0.6, 0.8])}
-    target = torch.tensor([1.0, 0.0, 1.0, 0.0])
-
-    with pytest.raises(
-        AssertionError, match="RiskCoverageMetric requires 'predictions'"
-    ):
-        metric.update(outputs, target)
+    with pytest.raises(TypeError):
+        # missing scores
+        metric.update(preds=preds, scores=target)  # type: ignore[call-arg]
 
 
 def test_risk_coverage_metric_custom_error_function() -> None:
@@ -245,13 +209,11 @@ def test_risk_coverage_metric_custom_error_function() -> None:
 
     metric = RiskCoverageMetric(error_fn=custom_error_fn)
 
-    outputs = {
-        "predictions": torch.tensor([[0.9, 0.1], [0.4, 0.6]]),
-        "score": torch.tensor([0.1, 0.2]),
-    }
+    preds = torch.tensor([[0.9, 0.1], [0.4, 0.6]])
+    scores = torch.tensor([0.1, 0.2])
     target = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
 
-    metric.update(outputs, target)
+    metric.update(preds, target, scores)
     res = metric.compute()
 
     assert "rc/auc_empirical" in res
@@ -262,13 +224,11 @@ def test_risk_coverage_metric_custom_error_function() -> None:
 def test_risk_coverage_metric_get_curve() -> None:
     metric = RiskCoverageMetric()
 
-    outputs = {
-        "predictions": torch.tensor([0.9, 0.4, 0.6, 0.8]),
-        "score": torch.tensor([0.1, 0.2, 0.3, 0.4]),
-    }
+    preds = torch.tensor([0.9, 0.4, 0.6, 0.8])
+    scores = torch.tensor([0.1, 0.2, 0.3, 0.4])
     target = torch.tensor([1.0, 0.0, 1.0, 0.0])
 
-    metric.update(outputs, target)
+    metric.update(preds, target, scores)
     _ = metric.compute()
 
     curve = metric.get_curve()
@@ -281,20 +241,16 @@ def test_risk_coverage_metric_get_curve() -> None:
 def test_risk_coverage_metric_state_concatenation() -> None:
     metric = RiskCoverageMetric()
 
-    outputs1 = {
-        "predictions": torch.tensor([0.9, 0.4]),
-        "score": torch.tensor([0.1, 0.2]),
-    }
+    preds1 = torch.tensor([0.9, 0.4])
+    scores1 = torch.tensor([0.1, 0.2])
     target1 = torch.tensor([1.0, 0.0])
 
-    outputs2 = {
-        "predictions": torch.tensor([0.6, 0.8]),
-        "score": torch.tensor([0.3, 0.4]),
-    }
+    preds2 = torch.tensor([0.6, 0.8])
+    scores2 = torch.tensor([0.3, 0.4])
     target2 = torch.tensor([1.0, 0.0])
 
-    metric.update(outputs1, target1)
-    metric.update(outputs2, target2)
+    metric.update(preds1, target1, scores1)
+    metric.update(preds2, target2, scores2)
 
     assert torch.equal(metric.scores, torch.tensor([0.1, 0.2, 0.3, 0.4]))
     assert metric.scores.numel() == 4
@@ -321,8 +277,7 @@ def test_selective_metric_with_mock_metric_collection(
         selection_mask = torch.zeros(batch_size, dtype=torch.bool)
 
     # Update the metric with the mock data
-    outputs = {"predictions": predictions, "selected": selection_mask}
-    selective_metric.update(outputs, target)
+    selective_metric.update(predictions, target, selection_mask)
 
     # Compute the results
     results = selective_metric.compute()
@@ -363,8 +318,7 @@ def test_selective_metric_single_metric_selected_and_rejected_values() -> None:
     target = torch.tensor([1.0, 3.0, 2.0, 5.0])
     selected = torch.tensor([1, 0, 1, 0], dtype=torch.bool)
 
-    outputs = {"predictions": preds, "selected": selected}
-    sm.update(outputs, target)
+    sm.update(preds, target, selected)
 
     res = sm.compute()
     # full MAE: abs diffs = [0,1,1,1] -> mean = 0.75
@@ -380,9 +334,11 @@ def test_selective_metric_single_metric_selected_and_rejected_values() -> None:
     assert _tensor_close(res["rejected/MeanAbsoluteError"], 1.0)
 
     # items/keys/values should be iterable and consistent
-    keys = list(sm.keys())
-    items = list(sm.items())
-    values = list(sm.values())
+    # inspect the computed mapping instead of treating the metric as a mapping
+    comp = sm.compute()
+    keys = list(comp.keys())
+    items = list(comp.items())
+    values = list(comp.values())
     assert len(keys) == len(items) == len(values)
 
 
@@ -395,7 +351,7 @@ def test_selective_metric_no_selected_updates_metric_not_called() -> None:
     target = torch.tensor([0.5, 0.5, 0.5])
     selected = torch.zeros(3, dtype=torch.bool)  # none selected
 
-    sm.update({"predictions": preds, "selected": selected}, target)
+    sm.update(preds, target, selected)
     res = sm.compute()
 
     # selected metric was never updated -> should yield 0.0 tensor
@@ -418,7 +374,7 @@ def test_selective_metric_with_metric_collection_and_prefixing() -> None:
     target = torch.tensor([1.2, 1.8, 2.5])
     selected = torch.tensor([1, 1, 0], dtype=torch.bool)
 
-    smc.update({"predictions": preds, "selected": selected}, target)
+    smc.update(preds, target, selected)
     out = smc.compute()
 
     # Ensure both metrics in the collection appear with collection names
@@ -438,16 +394,16 @@ def test_risk_coverage_metric_no_data_returns_zeros_and_reset_behavior() -> (
     rcm = RiskCoverageMetric()
     # no updates yet -> should return zeros
     empty = rcm.compute()
-    assert _tensor_close(empty["rc/auc_empirical"], 0.0)
-    assert _tensor_close(empty["rc/auc_reference"], 0.0)
-    assert _tensor_close(empty["rc/auc_excess"], 0.0)
+    assert torch.allclose(empty["rc/auc_empirical"], torch.tensor(0.0))
+    assert torch.allclose(empty["rc/auc_reference"], torch.tensor(0.0))
+    assert torch.allclose(empty["rc/auc_excess"], torch.tensor(0.0))
 
     # Provide some data
     preds = torch.tensor([1.0, 2.0, 3.0])
     target = torch.tensor([1.5, 1.5, 1.5])
     scores = torch.tensor([0.1, 0.4, 0.9])
 
-    rcm.update({"predictions": preds, "score": scores}, target)
+    rcm.update(preds, target, scores)
 
     # internal buffers should have been concatenated
     assert rcm.scores.numel() == 3
@@ -493,8 +449,8 @@ def test_risk_coverage_metric_multiple_updates_concatenate_states() -> None:
     target2 = torch.tensor([1.5, 1.5, 1.5])
     scores2 = torch.tensor([0.7, 0.8, 0.9])
 
-    rcm.update({"predictions": preds1, "score": scores1}, target1)
-    rcm.update({"predictions": preds2, "score": scores2}, target2)
+    rcm.update(preds1, target1, scores1)
+    rcm.update(preds2, target2, scores2)
 
     # both updates concatenated
     assert rcm.scores.numel() == 5

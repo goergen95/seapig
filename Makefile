@@ -5,16 +5,16 @@ SHELL := bash
 env:
 	uv venv; source .venv/bin/activate;
 req:
-	uv run pip install .
+	source .venv/bin/activate; uv pip install .
 sug:
-	uv run pip install .[suggested]
+	source .venv/bin/activate; uv pip install .[suggested]
 dev:
-	uv run pip install .[dev]
+	source .venv/bin/activate; uv pip install .[dev]
 doc:
-	uv run pip install .[doc]; quarto add machow/quartodoc --no-prompt
+	source .venv/bin/activate; uv pip install .[doc]; quarto add machow/quartodoc --no-prompt
 
 all:
-	uv run pip install .[all]
+	source .venv/bin/activate; uv pip install .[all]
 
 ruff:
 	ruff format; ruff check
