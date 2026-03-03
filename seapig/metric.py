@@ -66,13 +66,6 @@ class SelectiveMetric(Metric):
         assert preds.shape[0] == target.shape[0] == selected.shape[0], (
             "Batch size of predictions, target, and selection mask must match."
         )
-        device = preds.device
-        # Ensure metric collections live on the same device as predictions
-        target = target.to(device)
-        selected = selected.to(device)
-        self.metrics["full"].to(device)
-        self.metrics["selected"].to(device)
-        self.metrics["rejected"].to(device)
 
         # Update full with all samples
         self.metrics["full"].update(preds, target)
