@@ -210,6 +210,19 @@ class LogitScore(ConfidenceScore, abc.ABC):
         """
         raise NotImplementedError()
 
+    def select(self, query_logits: torch.Tensor) -> dict[str, torch.Tensor]:
+        """Select samples for prediction based on their confidence score.
+
+        Samples with scores lower than the threshold are selected for prediction,
+        while samples with scores higher than the threshold are excluded.
+        """
+        if self.threshold is None:
+            self.set_threshold()
+        assert self.threshold is not None
+        scores = self.score(query_logits)
+        selected = scores < self.threshold
+        return {"score": scores, "selected": selected}
+
     def _fit_temperature(
         self, logits: torch.Tensor, labels: torch.Tensor
     ) -> None:

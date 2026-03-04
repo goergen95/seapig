@@ -21,6 +21,11 @@ class Dummy(ConfidenceScore):
     def score(self, X: torch.Tensor, *args: Any, **kwargs: Any) -> torch.Tensor:
         return X
 
+    def select(
+        self, X: torch.Tensor, *args: Any, **kwargs: Any
+    ) -> dict[str, torch.Tensor]:
+        raise NotImplementedError()  # pragma: no cover
+
 
 def test_random_score() -> None:
     # Create a RandomScore instance
@@ -66,35 +71,6 @@ def test_plot_method(include_query: bool) -> None:
 
         # Ensure p# pragma: no coverlt.show was called
         mock_show.assert_called_once()
-
-
-def test_base_select_sets_threshold_and_computes_selection() -> None:
-    """Ensure ConfidenceScore.select() sets the threshold from calibration
-    scores when threshold is None and returns the correct selection mask.
-    """
-
-    dummy = Dummy()
-
-    # Calibration scores used to compute the quantile threshold
-    cal_scores = torch.tensor([0.1, 0.2, 0.8, 1.0])
-    dummy.scores = cal_scores
-    dummy.threshold = None  # force select() to call set_threshold()
-
-    # Query scores (we pass them as X so Dummy.score returns them)
-    query = torch.tensor([0.05, 0.2, 0.9, 1.2])
-
-    expected_thr = torch.quantile(cal_scores, q=0.99)
-
-    selection = dummy.select(query)
-
-    # threshold should have been set from calibration scores
-    thr = dummy.get_threshold()
-    assert thr is not None
-    assert torch.allclose(thr, expected_thr)
-
-    # score returned unchanged and selected equals score < threshold
-    assert torch.equal(selection["score"], query)
-    assert torch.equal(selection["selected"], selection["score"] < expected_thr)
 
 
 def test_flag_methods_and_setters() -> None:

@@ -101,45 +101,30 @@ class ConfidenceScore(torch.nn.Module, ABC):
         self.set_calibrated()
 
     @abstractmethod
-    def fit(
-        self,
-        X: torch.Tensor | None = None,
-        Y: torch.Tensor | None = None,
-        *args: Any,
-        **kwargs: Any,
-    ) -> None:
+    def fit(self, *args: Any, **kwargs: Any) -> None:
         """Fit a confidence score.
 
         Here, `X` is used as training samples to fit the downstream method,
         while `Y` as an optional parameter that can be used to calculate
         reference scores for the decision threshold.
         """
-        raise NotImplementedError()
 
     @abstractmethod
-    def score(self, X: torch.Tensor, *args: Any, **kwargs: Any) -> torch.Tensor:
+    def score(self, *args: Any, **kwargs: Any) -> torch.Tensor:
         """Calculate the confidence score for a tensor of samples.
 
         Returns scores where low values indicate likely inliers and high values
         indicate likely outliers.
 
         """
-        raise NotImplementedError()
 
-    def select(
-        self, X: torch.Tensor, *args: Any, **kwargs: Any
-    ) -> dict[str, torch.Tensor]:
+    @abstractmethod
+    def select(self, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor]:
         """Select samples for prediction based on their confidence score.
 
         Samples with scores lower than the threshold are selected for prediction,
         while samples with scores higher than the threshold are excluded.
         """
-        if self.threshold is None:
-            self.set_threshold()
-        assert self.threshold is not None
-        scores = self.score(X, *args, **kwargs)
-        selected = scores < self.threshold
-        return {"score": scores, "selected": selected}
 
     def plot(
         self, query_scores: torch.Tensor | None = None, bins: int = 100
