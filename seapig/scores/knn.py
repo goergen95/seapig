@@ -443,15 +443,13 @@ class CosineScore(KNNScore):
     def _setup_index(self) -> None:
         """Initialize an index based on reference embeddings."""
         assert isinstance(self.ref_embeddings, torch.Tensor)
-        normalized = torch.nn.functional.normalize(self.ref_embeddings)
-        self._build_index(normalized, space="cosinesimil")
+        self._build_index(self.ref_embeddings, space="cosinesimil")
 
     @override
     @torch.inference_mode()
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         assert self.index is not None
-        normalized = torch.nn.functional.normalize(query)
-        return self._query_index(normalized, kpn)
+        return self._query_index(query, kpn)
 
 
 class MahalanobisScore(KNNScore):
