@@ -14,6 +14,7 @@ from collections.abc import Callable
 import pytest
 import torch
 
+from seapig.scores.index.adapters import NmslibHandler
 from seapig.scores.knn import CosineScore, EuclideanScore, MahalanobisScore
 from seapig.scores.utils import TensorPCA
 
@@ -140,25 +141,22 @@ def test_q_trimming_reduces_reference_set() -> None:
 
 
 def test_setup_index_creates_index() -> None:
-    """Ensure _setup_index creates an index for each score type."""
+    """Ensure _setup_index creates an index handler for each score type."""
     refs = torch.randn(5, 3)
     e = EuclideanScore(k=1)
     e.ref_embeddings = refs
     e._setup_index()
-    assert e.index is not None
-    # assert isinstance(e.index, nmslib.FloatIndex)
+    assert e.index_handler is not None
 
     c = CosineScore(k=1)
     c.ref_embeddings = refs
     c._setup_index()
-    assert c.index is not None
-    # assert isinstance(e.index, nmslib.FloatIndex)
+    assert c.index_handler is not None
 
     m = MahalanobisScore(k=1)
     m.ref_embeddings = refs
     m._setup_index()
-    assert m.index is not None
-    # assert isinstance(e.index, nmslib.FloatIndex)
+    assert m.index_handler is not None
 
 
 def test_pca_reduces_dimension_and_preserves_euclidean() -> None:
@@ -233,18 +231,16 @@ def test_pca_preserves_cosine_similarity() -> None:
 
 
 def test_suggest_index_params_small_n() -> None:
-    """_suggest_index_params returns conservative defaults for very small N."""
-    refs = torch.randn(5, 3)
-    s = EuclideanScore(k=3)
-    params = s._suggest_index_params(refs, k=3)
+    """NmslibHandler._suggest_index_params returns conservative defaults for very small N."""
+    params = NmslibHandler._suggest_index_params(N=5, D=3, k=3)
     assert "build_defaults" in params and "query_defaults" in params
     assert params["query_defaults"]["efSearch"] == 3
 
 
 @pytest.mark.filterwarnings(r"ignore:.*Loading existing index from disk.*")
 def test_build_index_saves_and_loads(tmp_path: pathlib.Path) -> None:
-    """_build_index saves index to disk and a second instance loads it."""
-    path = tmp_path / "test_index.bin"
+    """_init_handler saves index to disk and a second instance loads it."""
+    path = tmp_path / "test_index"
     s1 = EuclideanScore(k=1, save_index=path)
     s1.ref_embeddings = torch.randn(10, 3)
     s1._setup_index()
@@ -254,11 +250,11 @@ def test_build_index_saves_and_loads(tmp_path: pathlib.Path) -> None:
     s2 = EuclideanScore(k=1, save_index=path)
     s2.ref_embeddings = torch.randn(5, 3)
     s2._setup_index()
-    assert s2.index is not None
+    assert s2.index_handler is not None
 
 
-def test_zeropad_warning_and_padding() -> None:
-    """Ensure queries returning fewer neighbors are zero-padded and warn."""
+def test_no_zeropad_warning_and_result() -> None:
+    """Ensure queries returning fewer neighbors warn without zero-padding."""
     refs = torch.tensor([[0.0, 0.0]])
     q = torch.tensor([[1.0, 1.0]])
     s = EuclideanScore(k=3)
@@ -268,7 +264,8 @@ def test_zeropad_warning_and_padding() -> None:
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         out = s._distance(q, kpn=0)
-        assert any("zero padding" in str(x.message) for x in w)
+        assert any("fewer than" in str(x.message) for x in w)
+        assert not any("zero padding" in str(x.message) for x in w)
 
     assert out.shape == (1,)
     expected = torch.tensor([2.0])
