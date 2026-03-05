@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import nmslib
-import numpy as np
+import torch
 
 from seapig.scores.index.handler import IndexHandler
 
@@ -90,7 +90,7 @@ class NmslibHandler(IndexHandler):
 
     def _build_impl(
         self,
-        embeddings: np.ndarray[Any, np.dtype[Any]],
+        embeddings: torch.Tensor,
         space: str,
         index_params: dict[str, Any] | None,
     ) -> None:
@@ -101,8 +101,10 @@ class NmslibHandler(IndexHandler):
             build_params.update(index_params)
         self._query_defaults = dict(suggested["query_defaults"])
 
+        emb_np = embeddings.detach().cpu().numpy()
+
         index = nmslib.init(method="hnsw", space=space)
-        index.addDataPointBatch(embeddings)
+        index.addDataPointBatch(emb_np)
         index.createIndex(index_params=build_params)
         self._index = index
 
@@ -114,19 +116,17 @@ class NmslibHandler(IndexHandler):
             "index_params": build_params,
         }
 
-    def _add_impl(self, embeddings: np.ndarray[Any, np.dtype[Any]]) -> None:
+    def _add_impl(self, embeddings: torch.Tensor) -> None:
         if self._index is None:
             raise RuntimeError("Index must be built before adding data.")
-        self._index.addDataPointBatch(embeddings)
-        self._metadata["n_items"] = (
-            int(self._metadata.get("n_items", 0)) + embeddings.shape[0]
+        emb_np = embeddings.detach().cpu().numpy()
+        self._index.addDataPointBatch(emb_np)
+        self._metadata["n_items"] = int(self._metadata.get("n_items", 0)) + int(
+            embeddings.shape[0]
         )
 
     def _query_impl(
-        self,
-        queries: np.ndarray[Any, np.dtype[Any]],
-        k: int,
-        query_params: dict[str, Any] | None,
+        self, queries: torch.Tensor, k: int, query_params: dict[str, Any] | None
     ) -> tuple[list[list[int]], list[list[float]]]:
         if self._index is None:
             raise RuntimeError("Index must be built before querying.")
@@ -134,12 +134,13 @@ class NmslibHandler(IndexHandler):
         if query_params:
             qp.update(query_params)
         nmslib.setQueryTimeParams(self._index, qp)
-        results = self._index.knnQueryBatch(queries, k=k)
+        queries_np = queries.detach().cpu().numpy()
+        results = self._index.knnQueryBatch(queries_np, k=k)
         indices: list[list[int]] = []
         distances: list[list[float]] = []
         for idx_arr, dist_arr in results:
-            indices.append(list(idx_arr))
-            distances.append(list(dist_arr))
+            indices.append([int(x) for x in idx_arr])
+            distances.append([float(x) for x in dist_arr])
         return indices, distances
 
     def _save_impl(

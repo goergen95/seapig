@@ -26,12 +26,7 @@ from seapig.scores.index import (
     get_index_adapter,
     register_index_adapter,
 )
-from seapig.scores.knn import (
-    CosineScore,
-    EuclideanScore,
-    KNNScore,
-    MahalanobisScore,
-)
+from seapig.scores.knn import CosineScore, EuclideanScore, MahalanobisScore
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -324,11 +319,6 @@ def test_save_atomic_no_partial_write(tmp_path: pathlib.Path) -> None:
 # ---------------------------------------------------------------------------
 # test_integration_knn — KNNScore subclasses with offset=0 and offset=1
 # ---------------------------------------------------------------------------
-
-
-def _make_score(cls: type[KNNScore], k: int = 3, stat: str = "max") -> KNNScore:
-    score = cls(k=k, stat=stat)
-    return score
 
 
 @pytest.mark.parametrize(

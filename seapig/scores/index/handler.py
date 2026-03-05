@@ -9,7 +9,6 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import torch
 
 
@@ -20,8 +19,9 @@ class IndexHandler(ABC):
     of results, warnings about fewer neighbours, and aggregation.
 
     Subclasses implement index-specific operations via the ``_*_impl`` methods.
-    Adapters may work in numpy internally; the base class converts
-    torch <-> numpy as needed.
+    Adapters may work in numpy internally; the base class provides torch
+    tensors to implementations and adapters should convert to/from numpy only
+    at the last required moment.
     """
 
     def __init__(self) -> None:
@@ -45,7 +45,7 @@ class IndexHandler(ABC):
         index_params:
             Optional adapter-specific build parameters that override defaults.
         """
-        self._build_impl(embeddings.cpu().numpy(), space, index_params)
+        self._build_impl(embeddings, space, index_params)
 
     def load_index(self, path: Path, load_data: bool = False) -> None:
         """Load an index from *path*.
@@ -111,7 +111,7 @@ class IndexHandler(ABC):
         embeddings:
             Embeddings to add as a ``(N, D)`` torch.Tensor.
         """
-        self._add_impl(embeddings.cpu().numpy())
+        self._add_impl(embeddings)
 
     def query_batch(
         self,
@@ -158,7 +158,7 @@ class IndexHandler(ABC):
             scalar per query.  Rows with zero effective neighbours yield NaN.
         """
         raw_indices, raw_distances = self._query_impl(
-            queries.cpu().numpy(), k + offset, query_params
+            queries, k + offset, query_params
         )
 
         trimmed_indices: list[list[int]] = []
@@ -240,24 +240,28 @@ class IndexHandler(ABC):
     @abstractmethod
     def _build_impl(
         self,
-        embeddings: np.ndarray[Any, np.dtype[Any]],
+        embeddings: torch.Tensor,
         space: str,
         index_params: dict[str, Any] | None,
     ) -> None:
-        """Build the index from a numpy array of embeddings."""
+        """Build the index from a torch.Tensor of embeddings.
+
+        Implementations may convert to numpy internally if required.
+        """
 
     @abstractmethod
-    def _add_impl(self, embeddings: np.ndarray[Any, np.dtype[Any]]) -> None:
-        """Add new embeddings to an existing index."""
+    def _add_impl(self, embeddings: torch.Tensor) -> None:
+        """Add new embeddings (torch.Tensor) to an existing index."""
 
     @abstractmethod
     def _query_impl(
-        self,
-        queries: np.ndarray[Any, np.dtype[Any]],
-        k: int,
-        query_params: dict[str, Any] | None,
+        self, queries: torch.Tensor, k: int, query_params: dict[str, Any] | None
     ) -> tuple[list[list[int]], list[list[float]]]:
-        """Query the index; return raw ragged (indices, distances) lists."""
+        """Query the index; return raw ragged (indices, distances) lists.
+
+        *queries* is provided as a torch.Tensor; backends may convert to
+        numpy internally if they require it.
+        """
 
     @abstractmethod
     def _save_impl(
