@@ -33,6 +33,9 @@ class PyODScore(EmbeddingScore):
         be used to perform dimensionality reduction on embeddings prior to
         scoring (for example, to retain a specified explained variance).
         Defaults to `None`, indicating that dimensionality reduction is not applied.
+    normalize:
+        A `bool` indicating whether to L2-normalize the PCA-reduced embeddings.
+        Defaults to `True`.
 
     Attributes
     ----------
@@ -53,9 +56,12 @@ class PyODScore(EmbeddingScore):
     ident: str = "pyod"
 
     def __init__(
-        self, detector: BaseDetector, pca: TensorPCA | None = None
+        self,
+        detector: BaseDetector,
+        pca: TensorPCA | None = None,
+        normalize: bool = True,
     ) -> None:
-        super().__init__(pca=pca)
+        super().__init__(pca=pca, normalize=normalize)
         self.detector = detector
         self.ident = f"{self.ident}-{detector.__class__.__name__}"
 

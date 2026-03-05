@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from typing_extensions import override
 
@@ -53,10 +54,14 @@ class EmbeddingScore(ConfidenceScore, ABC):
     cal_embeddings: torch.Tensor | None
     train_required: bool = True
     pca: TensorPCA | None
+    normalize: bool = True
 
-    def __init__(self, pca: TensorPCA | None = None) -> None:
+    def __init__(
+        self, pca: TensorPCA | None = None, normalize: bool = True
+    ) -> None:
         super().__init__()
         self.pca = pca
+        self.normalize = normalize
         self.register_buffer("ref_embeddings", None)
         self.register_buffer("cal_embeddings", None, persistent=False)
 
@@ -102,7 +107,13 @@ class EmbeddingScore(ConfidenceScore, ABC):
         model: torch.nn.Module,
         loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
     ) -> torch.Tensor:
-        """Load from file or iterate over dataloader to extract embeddings."""
+        """Load from file or iterate over dataloader to extract embeddings.
+
+        Normalizes embeddings with L2 norm by default (controlled by
+        `self.normalize`). When loading from disk, tensors are moved to the
+        model device and normalized. When embeddings are generated on-the-fly
+        they are normalized before being optionally written to disk.
+        """
         if path is not None and path.is_file():
             warnings.warn(
                 f"Loading pre-existing embeddings from {path}.", UserWarning
@@ -110,8 +121,12 @@ class EmbeddingScore(ConfidenceScore, ABC):
             v = self._load_pt(path)
             device = next(model.parameters()).device
             v = v.to(device)
+            if self.normalize:
+                v = F.normalize(v, p=2, dim=1)
         else:
             v = self._embed_dl(model=model, loader=loader)
+            if self.normalize:
+                v = F.normalize(v, p=2, dim=1)
             if path is not None:
                 self._write_pt(v, path)
         return v
@@ -279,6 +294,16 @@ class EmbeddingScore(ConfidenceScore, ABC):
             # Mode 1: Use precomputed embeddings
             self.ref_embeddings = X
             self.cal_embeddings = Y
+            # Apply optional L2-normalization to provided embeddings
+            if self.normalize:
+                if self.ref_embeddings is not None:
+                    self.ref_embeddings = F.normalize(
+                        self.ref_embeddings, p=2, dim=1
+                    )
+                if self.cal_embeddings is not None:
+                    self.cal_embeddings = F.normalize(
+                        self.cal_embeddings, p=2, dim=1
+                    )
         else:
             # Mode 2: Extract embeddings on-the-fly
             if model is None:
@@ -406,6 +431,8 @@ class EmbeddingScore(ConfidenceScore, ABC):
             assert X is not None, (
                 "X is required when using precomputed embeddings."
             )
+            if self.normalize:
+                X = F.normalize(X, p=2, dim=1)
             return self._score_embeddings(X)
         else:
             # Mode 2: Extract embeddings on-the-fly
