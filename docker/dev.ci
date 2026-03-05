@@ -16,9 +16,10 @@ COPY . /workspace/seapig
 WORKDIR /workspace/seapig
 ENV HOME=/workspace/seapig
 
-RUN uv venv && . ./.venv/bin/activate
-RUN uv pip install .[all]
-RUN quarto add machow/quartodoc --no-prompt
+RUN uv venv 
+  && . ./.venv/bin/activate
+  && uv pip install .[all]
+  && quarto add machow/quartodoc --no-prompt
 
 RUN uv cache clean
 
