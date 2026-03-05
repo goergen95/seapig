@@ -46,6 +46,7 @@ class MinimalEmbedding(EmbeddingScore):
         super().__init__()
         self.train_required = False
         self.cal_required = False
+        self.normalize = False
 
     def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
         return X.sum(dim=1)  # pragma: no cover

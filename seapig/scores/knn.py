@@ -53,6 +53,9 @@ class KNNScore(EmbeddingScore, ABC):
     threshold:
         A `float` indicating the rejection threshold. Samples with scores higher
         than this threshold are excluded from prediction. Defaults to `None`.
+    normalize:
+        A `bool` indicating whether to L2-normalize embeddings before building
+        the index and scoring. Defaults to `True`.
     """
 
     k: int = 1
@@ -66,8 +69,9 @@ class KNNScore(EmbeddingScore, ABC):
         stat: str = "max",
         pca: TensorPCA | None = None,
         save_index: bool | Path = False,
+        normalize: bool = True,
     ) -> None:
-        super().__init__(pca=pca)
+        super().__init__(pca=pca, normalize=normalize)
         assert stat in ["max", "mean", "median", "min"]
         self.stat: str = stat
         self.k = k
@@ -353,6 +357,9 @@ class EuclideanScore(KNNScore):
         be used to perform dimensionality reduction on embeddings prior to
         scoring (for example, to retain a specified explained variance).
         Defaults to `None`, indicating that dimensionality reduction is not applied.
+    normalize:
+        A `bool` indicating whether to L2-normalize embeddings before building
+        the index and scoring. Defaults to `True`.
 
     Attributes
     ----------
@@ -376,8 +383,11 @@ class EuclideanScore(KNNScore):
         stat: str = "max",
         pca: TensorPCA | None = None,
         save_index: bool | Path = False,
+        normalize: bool = True,
     ) -> None:
-        super().__init__(k=k, stat=stat, pca=pca, save_index=save_index)
+        super().__init__(
+            k=k, stat=stat, pca=pca, save_index=save_index, normalize=normalize
+        )
 
     @override
     def _setup_index(self) -> None:
@@ -413,6 +423,9 @@ class CosineScore(KNNScore):
         be used to perform dimensionality reduction on embeddings prior to
         scoring (for example, to retain a specified explained variance).
         Defaults to `None`, indicating that dimensionality reduction is not applied.
+    normalize:
+        A `bool` indicating whether to L2-normalize embeddings before building
+        the index and scoring. Defaults to `True`.
 
     Attributes
     ----------
@@ -436,22 +449,22 @@ class CosineScore(KNNScore):
         stat: str = "max",
         pca: TensorPCA | None = None,
         save_index: bool | Path = False,
+        normalize: bool = True,
     ) -> None:
-        super().__init__(k=k, stat=stat, pca=pca, save_index=save_index)
+        super().__init__(
+            k=k, stat=stat, pca=pca, save_index=save_index, normalize=normalize
+        )
 
     @override
     def _setup_index(self) -> None:
         """Initialize an index based on reference embeddings."""
         assert isinstance(self.ref_embeddings, torch.Tensor)
-        normalized = torch.nn.functional.normalize(self.ref_embeddings)
-        self._build_index(normalized, space="cosinesimil")
+        self._build_index(self.ref_embeddings, space="cosinesimil")
 
     @override
     @torch.inference_mode()
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
-        assert self.index is not None
-        normalized = torch.nn.functional.normalize(query)
-        return self._query_index(normalized, kpn)
+        return self._query_index(query, kpn)
 
 
 class MahalanobisScore(KNNScore):
@@ -474,6 +487,9 @@ class MahalanobisScore(KNNScore):
         be used to perform dimensionality reduction on embeddings prior to
         scoring (for example, to retain a specified explained variance).
         Defaults to `None`, indicating that dimensionality reduction is not applied.
+    normalize:
+        A `bool` indicating whether to L2-normalize embeddings before building
+        the index and scoring. Defaults to `True`.
 
     Attributes
     ----------
@@ -498,8 +514,11 @@ class MahalanobisScore(KNNScore):
         stat: str = "max",
         pca: TensorPCA | None = None,
         save_index: bool | Path = False,
+        normalize: bool = True,
     ) -> None:
-        super().__init__(k=k, stat=stat, pca=pca, save_index=save_index)
+        super().__init__(
+            k=k, stat=stat, pca=pca, save_index=save_index, normalize=normalize
+        )
         self.register_buffer("vi_zero", None)
 
     @override

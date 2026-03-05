@@ -26,14 +26,19 @@ class PCAScore(EmbeddingScore):
         be used to perform dimensionality reduction on embeddings prior to
         scoring (for example, to retain a specified explained variance).
         Defaults to `None`, indicating that dimensionality reduction is not applied.
+    normalize:
+        A `bool` indicating whether to L2-normalize the PCA-reduced embeddings.
+        Defaults to `True`.
     """
 
     ident = "pca"
 
     def __init__(
-        self, pca: TensorPCA = TensorPCA(n_components=0.50, gamma=3.0, M=4096)
+        self,
+        pca: TensorPCA = TensorPCA(n_components=0.50, gamma=3.0, M=4096),
+        normalize: bool = True,
     ) -> None:
-        super().__init__(pca=pca)
+        super().__init__(pca=pca, normalize=normalize)
 
     @override
     def fit(

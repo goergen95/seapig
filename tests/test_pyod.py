@@ -94,7 +94,7 @@ def test_score_uses_detector_decision_function() -> None:
             return result
 
     det = DetFn()
-    score = PyODScore(detector=det, pca=None)
+    score = PyODScore(detector=det, pca=None, normalize=False)
     # ensure detector present; no need to call _fit_impl for score()
     q = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
 
