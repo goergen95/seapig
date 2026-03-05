@@ -9,7 +9,7 @@ from typing import Any
 import nmslib
 import torch
 
-from seapig.scores.index.handler import IndexHandler
+from seapig.scores.knn.index.handler import IndexHandler
 
 
 def _clamp(value: int, lo: int, hi: int) -> int:

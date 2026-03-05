@@ -20,13 +20,13 @@ import warnings
 import pytest
 import torch
 
-from seapig.scores.index import (
+from seapig.scores.knn import CosineScore, EuclideanScore, MahalanobisScore
+from seapig.scores.knn.index import (
     IndexHandler,
     NmslibHandler,
     get_index_adapter,
     register_index_adapter,
 )
-from seapig.scores.knn import CosineScore, EuclideanScore, MahalanobisScore
 
 # ---------------------------------------------------------------------------
 # Helpers

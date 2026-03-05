@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from seapig.scores.index.adapters.nmslib_handler import NmslibHandler
-from seapig.scores.index.handler import IndexHandler
+from seapig.scores.knn.index.handler import IndexHandler
+from seapig.scores.knn.index.nmslib_handler import NmslibHandler
 
 _REGISTRY: dict[str, type[IndexHandler]] = {}
 

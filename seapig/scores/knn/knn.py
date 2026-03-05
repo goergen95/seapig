@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from typing_extensions import override
 
 from seapig.scores.embed import EmbeddingScore
-from seapig.scores.index import IndexHandler, get_index_adapter
+from seapig.scores.knn.index import IndexHandler, get_index_adapter
 from seapig.scores.utils import TensorPCA
 
 

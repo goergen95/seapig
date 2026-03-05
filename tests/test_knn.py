@@ -14,8 +14,8 @@ from collections.abc import Callable
 import pytest
 import torch
 
-from seapig.scores.index.adapters import NmslibHandler
 from seapig.scores.knn import CosineScore, EuclideanScore, MahalanobisScore
+from seapig.scores.knn.index import NmslibHandler
 from seapig.scores.utils import TensorPCA
 
 
