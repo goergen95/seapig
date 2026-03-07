@@ -215,7 +215,6 @@ class TensorPCA(torch.nn.Module):
           - Centre by the training mean
         """
         self.to(device=X.device)
-        X = self._l2_normalize(X)
         if self.mode == "rff":
             X = self._rff(X)
         # ensure consistent dtype with stored mean (may be float64)
@@ -239,8 +238,6 @@ class TensorPCA(torch.nn.Module):
         :meth:`finalize` to produce the PCA decomposition.
         """
         assert X is not None
-        # apply normalization and RFF (RFF params are persisted)
-        X = self._l2_normalize(X)
         # Only initialize/apply RFF if both gamma and M are provided
         if self.mode == "rff" and (
             self.gamma is not None and self.M is not None
@@ -295,17 +292,6 @@ class TensorPCA(torch.nn.Module):
             self._sum_X = self._sum_X + batch_sum
             self._sum_outer = self._sum_outer + batch_outer
             self._n_samples += m
-
-    @staticmethod
-    def _l2_normalize(X: torch.Tensor) -> torch.Tensor:
-        """L2 normalization of an input tensor.
-
-        Normalises rows to unit L2 norm; zero vectors remain zero.
-        """
-        denom = torch.linalg.norm(X, ord=2, dim=-1, keepdims=True)
-        denom = denom + 1e-10
-        X = X / denom
-        return X.contiguous()
 
     def _rff(self, X: torch.Tensor) -> torch.Tensor:
         """Apply Random Fourier Features mapping to X.
