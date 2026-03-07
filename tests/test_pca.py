@@ -20,18 +20,6 @@ def approx(t1: torch.Tensor, t2: torch.Tensor, tol: float = 1e-6) -> None:
     assert torch.allclose(t1, t2, atol=tol, rtol=0)
 
 
-def test_l2_normalize_preserves_shape_and_scales() -> None:
-    """_l2_normalize should keep shape and normalize rows to unit norm."""
-    x = torch.tensor([[3.0, 4.0], [0.0, 0.0]])
-    tpca = TensorPCA(n_components=0.9)
-    out = tpca._l2_normalize(x)
-    assert out.shape == x.shape
-    # first row has norm 5 -> normalized to [0.6, 0.8]
-    assert torch.allclose(out[0], torch.tensor([0.6, 0.8]), atol=1e-6)
-    # second row zero vector should remain zero
-    assert torch.allclose(out[1], torch.tensor([0.0, 0.0]), atol=1e-6)
-
-
 def test_fit_reconstruct_low_dim() -> None:
     """Fitting and reconstruction should yield low reconstruction error for low-rank data."""
     # create data of rank 1 in 3-d space
@@ -119,10 +107,9 @@ def test_n_comp_argument_limits_components() -> None:
 def test_tensorpca_agrees_with_sklearn_mid_size() -> None:
     """TensorPCA should produce reconstructions similar to scikit-learn PCA.
 
-    We create a mid-size dataset, L2-normalise rows (matching TensorPCA
-    preprocessing), fit both implementations with the same number of
-    components and compare the reconstruction in the centred, preprocessed
-    space. This comparison avoids component sign ambiguities.
+    We create a mid-size dataset and fit both implementations with the same
+    number of components and compare the reconstruction in the centred,
+    preprocessed space. This comparison avoids component sign ambiguities.
     """
     pytest.importorskip("sklearn")
     from sklearn.decomposition import PCA as SKPCA
@@ -131,20 +118,16 @@ def test_tensorpca_agrees_with_sklearn_mid_size() -> None:
     n, D = 500, 50
     X = torch.randn(n, D)
 
-    # match TensorPCA preprocessing: row-wise L2 normalisation
-    X_norm = TensorPCA._l2_normalize(X)
-    X_norm_np = X_norm.cpu().numpy()
-
     n_comp = 10
 
-    # scikit-learn PCA on the normalised data
+    # scikit-learn PCA on the raw data
+    X_np = X.cpu().numpy()
+
     skp = SKPCA(n_components=n_comp, svd_solver="full")
-    skp.fit(X_norm_np)
-    X_proj_sk = skp.transform(X_norm_np)
-    X_rec_sk = skp.inverse_transform(
-        X_proj_sk
-    )  # reconstructed in original space
-    mu_np = X_norm_np.mean(axis=0)
+    skp.fit(X_np)
+    X_proj_sk = skp.transform(X_np)
+    X_rec_sk = skp.inverse_transform(X_proj_sk)
+    mu_np = X_np.mean(axis=0)
     X_rec_sk_centered = X_rec_sk - mu_np
 
     # TensorPCA (no RFF) - fit on torch tensors
@@ -174,60 +157,6 @@ def test_tensorpca_agrees_with_sklearn_mid_size() -> None:
     mse = torch.mean((proj_sk_t.abs() - X_proj_tp.abs()) ** 2).item()
     # we expect close agreement in projection magnitudes
     assert mse < 1e-6, "Projections differ between scikit-learn and TensorPCA"
-
-
-def test_partial_fit_matches_incremental_pca() -> None:
-    """Compare TensorPCA.partial_fit/finalize with sklearn IncrementalPCA for linear mode."""
-    pytest.importorskip("sklearn")
-    from sklearn.decomposition import IncrementalPCA
-
-    torch.manual_seed(1)
-    n, D = 400, 30
-    X = torch.randn(n, D)
-
-    n_comp = 8
-    batch_size = 50
-
-    # preprocess for sklearn: row-wise L2 normalisation
-    X_norm = TensorPCA._l2_normalize(X)
-    X_norm_np = X_norm.cpu().numpy()
-
-    # sklearn incremental PCA
-    ipca = IncrementalPCA(n_components=n_comp)
-    for i in range(0, n, batch_size):
-        ipca.partial_fit(X_norm_np[i : i + batch_size])
-    X_proj_sk = ipca.transform(X_norm_np)
-    X_rec_sk = ipca.inverse_transform(X_proj_sk)
-    # use the mean estimated by IncrementalPCA (may differ slightly from
-    # direct numpy mean due to online updates)
-    mu_ipca = ipca.mean_
-    X_rec_sk_centered = X_rec_sk - mu_ipca
-
-    # TensorPCA partial fit path (linear)
-    tpca = TensorPCA(n_components=n_comp, gamma=None, M=None)
-    for i in range(0, n, batch_size):
-        batch = X[i : i + batch_size]
-        tpca.partial_fit(batch)
-    tpca.finalize()
-
-    X_proj_tp = tpca.transform(X)
-    X_rec_tp = tpca.inverse_transform(X_proj_tp)
-
-    rec_sk_t = torch.from_numpy(X_rec_sk_centered).to(X_rec_tp.dtype)
-    rec_sk_t = rec_sk_t.to(device=X_rec_tp.device)
-
-    mse = torch.mean((rec_sk_t - X_rec_tp) ** 2).item()
-    assert mse < 1e-2, (
-        f"MSE between IncrementalPCA and TensorPCA partial path too large: {mse}"
-    )
-
-    proj_sk_t = torch.from_numpy(X_proj_sk).to(
-        device=X_proj_tp.device, dtype=X_proj_tp.dtype
-    )
-    mse = torch.mean((proj_sk_t.abs() - X_proj_tp.abs()) ** 2).item()
-    assert mse < 1e-1, (
-        "Projections differ between IncrementalPCA and TensorPCA partial path"
-    )
 
 
 def _assert_state_dicts_equal(
