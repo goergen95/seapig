@@ -39,7 +39,7 @@ jobs:
           echo "IMAGE_TAG=ghcr.io/${{ github.repository }}:${TAG}" >> "$GITHUB_ENV"
 
       - name: Build and push image (with build cache)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/dev.ci
