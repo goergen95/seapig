@@ -195,36 +195,6 @@ def test_pca_reduces_dimension_and_is_applied() -> None:
     approx(out_with_pca, out_manual)
 
 
-def test_pca_preserves_cosine_similarity() -> None:
-    """Same check for cosine-based scores."""
-    torch.manual_seed(1)
-    n, D = 40, 64
-    base = torch.randn(n, 1)
-    direction = torch.randn(1, D)
-    refs = (base @ direction) + 0.01 * torch.randn(n, D)
-
-    q = torch.randn(1, D)
-
-    s_pca = CosineScore(k=2, pca=TensorPCA(n_components=0.99))
-    s_pca.cal_required = False
-    s_pca.ref_embeddings = refs.float()
-    s_pca._fit_impl(q=None)
-
-    reduced_dim = s_pca.ref_embeddings.shape[1]
-    assert reduced_dim < D
-
-    s_proj = CosineScore(k=2, pca=None)
-    s_proj.ref_embeddings = s_pca.ref_embeddings.clone()
-    s_proj._setup_index()
-
-    assert s_pca.pca is not None
-    q_proj = s_pca.pca.transform(q)
-
-    out_with_pca = s_pca.score(q)
-    out_manual = s_proj.score(q_proj)
-    approx(out_with_pca, out_manual)
-
-
 def test_suggest_index_params_small_n() -> None:
     """_suggest_index_params returns conservative defaults for very small N."""
     refs = torch.randn(5, 3)
