@@ -389,7 +389,8 @@ class EuclideanScore(KNNScore):
     @torch.inference_mode()
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
         """Calculate the KNN distance of a query against a populated index."""
-        return self._query_index(query, kpn)
+        squared_distances = self._query_index(query, kpn)
+        return torch.sqrt(squared_distances)
 
 
 class CosineScore(KNNScore):

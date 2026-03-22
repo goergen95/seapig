@@ -32,7 +32,7 @@ def test_euclidean_distance_simple_nearest() -> None:
     score._setup_index()
     # kpn default 0 => returns distance to k nearest (here k=1)
     out = score._distance(q, kpn=0)
-    expected = torch.tensor([25.0])
+    expected = torch.tensor([5.0])
     approx(out, expected)
 
 
@@ -60,7 +60,7 @@ def test_euclidean_k_and_stats(
     score._setup_index()
     out = score._distance(q, kpn=0)
     # pick two smallest distances: 5 and 5 -> squared are 25 and 25
-    two = torch.tensor([25.0, 25.0])
+    two = torch.tensor([5.0, 5.0])
     expected = expected_fn(two)
     approx(out, expected.unsqueeze(0) if expected.dim() == 0 else expected)
 
@@ -161,15 +161,8 @@ def test_setup_index_creates_index() -> None:
     # assert isinstance(e.index, nmslib.FloatIndex)
 
 
-def test_pca_reduces_dimension_and_preserves_euclidean() -> None:
-    """Ensure PCA triggers dimensionality reduction and preserves distances.
-
-    We build reference embeddings that lie (mostly) on a single latent direction
-    in a higher-dimensional space. Setting pca should reduce the stored
-    reference embeddings' dimensionality. We also verify that a score computed
-    with PCA enabled equals the score computed after manually applying the
-    learned projection and using a score with PCA disabled.
-    """
+def test_pca_reduces_dimension_and_is_applied() -> None:
+    """Ensure PCA triggers dimensionality reduction and is applied when scoring."""
     torch.manual_seed(0)
     n, D = 50, 6
     # generate data along a single latent direction with small noise in other dims
@@ -198,7 +191,7 @@ def test_pca_reduces_dimension_and_preserves_euclidean() -> None:
     q_proj = s_pca.pca.transform(q)
 
     out_with_pca = s_pca.score(q)
-    out_manual = s_proj._distance(q_proj, kpn=0)
+    out_manual = s_proj.score(q_proj)
     approx(out_with_pca, out_manual)
 
 
@@ -228,7 +221,7 @@ def test_pca_preserves_cosine_similarity() -> None:
     q_proj = s_pca.pca.transform(q)
 
     out_with_pca = s_pca.score(q)
-    out_manual = s_proj._distance(q_proj, kpn=0)
+    out_manual = s_proj.score(q_proj)
     approx(out_with_pca, out_manual)
 
 
@@ -271,5 +264,31 @@ def test_zeropad_warning_and_padding() -> None:
         assert any("zero padding" in str(x.message) for x in w)
 
     assert out.shape == (1,)
-    expected = torch.tensor([2.0])
+    expected = torch.sqrt(torch.tensor([2.0]))
     approx(out, expected)
+
+
+def test_euclidean_distance_returns_L2_distances() -> None:
+    """score built with euclidean distances should match manual calculation."""
+    torch.manual_seed(0)
+
+    # mid-sized dataset
+    N = 1000
+    D = 16
+    Q = 8
+
+    refs = torch.randn(N, D, dtype=torch.float32)
+    queries = torch.randn(Q, D, dtype=torch.float32)
+
+    score = EuclideanScore(k=1, pca=None, save_index=False)
+
+    # inject reference embeddings, build and query index
+    score.ref_embeddings = refs
+    score._setup_index()
+    distances = score.score(queries)  # shape (Q,) for k=1
+
+    # compute exact distances manually
+    expected = torch.cdist(queries, refs, p=2.0)
+    expected_min = expected.min(dim=1).values
+
+    approx(distances, expected_min, tol=1e-6)
