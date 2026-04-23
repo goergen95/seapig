@@ -2,18 +2,40 @@ project:
   type: website
   pre-render: docs/version_config.py
   output-dir: _site
+  resources:
+    - objects.txt
+    - objects.json
   preview:
     port: 4200
 
 metadata-files:
   - docs/reference/_sidebar.yml
 
+filters:
+  - "interlinks"
+
+interlinks:
+  fast: true
+  autolink: true
+  aliases:
+    seapig: null
+    "seapig.scores": null
+    "lightning.pytorch.core" : null
+  sources:
+    python:
+      url: https://docs.python.org/3/
+    torch:
+      url: https://docs.pytorch.org/docs/stable/
+    pathlib:
+      url: https://pathlib.readthedocs.io/en/pep428/
+    lightning:
+      url: https://lightning.ai/docs/pytorch/stable/
+
 format:
   html:
-    code-link: true
     theme: docs/assets/theme.scss
     css:
-      - docs/assets/_styles-quartodoc.css
+      - docs/assets/style.css
 
 website:
   title: seapig
@@ -44,6 +66,7 @@ quartodoc:
   parser: numpy
   title: "seapig:v{{< env VERSION >}}"
   dir: docs/reference
+  render_interlinks: true
   renderer:
     style: markdown
     table_style: description-list
@@ -93,7 +116,7 @@ quartodoc:
             - score
             - select
             - set_threshold
-        - name: scores.pyod.PyODScore
+        - name: scores.PyODScore
           members: 
             - fit
             - score
@@ -136,22 +159,5 @@ quartodoc:
           include_inherited: true
         - name: scores.KNNScore
           include_inherited: true
-        - name: scores.pyod.PyODScore
-          include_inherited: true
         - name: scores.LogitScore
           include_inherited: true
-
-filters:
-  - interlinks
-interlinks:
-  autolink: true
-  aliases:
-    seapig = [null, ld]
-  sources:
-    python:
-      url: https://docs.python.org/3/
-    torch:
-      url: https://docs.pytorch.org/docs/stable/
-    pathlib:
-      url: https://pathlib.readthedocs.io/en/pep428/
-render_interlinks: true

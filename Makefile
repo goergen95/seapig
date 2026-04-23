@@ -1,9 +1,9 @@
 .ONESHELL:
 SHELL := bash
 .DEFAULT_GOAL := help
-.PHONY: help env req sug dev doc all pre-commit-install check docs build clean \
+.PHONY: help env req sug dev doc all pre-commit-install check build-docs build clean \
   format lint typecheck test test-coverage test-ci \
-  pre-commit-install pre-commit-run docs-serve \
+  pre-commit-install pre-commit-run serve-docs \
   clean-venv clean-all
 
 help:
@@ -23,8 +23,8 @@ help:
 	@printf "  %-22s %s\n" test-coverage "Run tests with coverage"
 	@printf "  %-22s %s\n" test-ci "Run tests in CI mode (fast fail)"
 	@printf "  %-22s %s\n" check "Run format, lint, mypy and tests"
-	@printf "  %-22s %s\n" docs "Render docs and build quartodoc"
-	@printf "  %-22s %s\n" docs-serve "Preview docs locally (quarto preview)"
+	@printf "  %-22s %s\n" build-docs "Render docs and build quartodoc"
+	@printf "  %-22s %s\n" serve-docs "Preview docs locally (quarto preview)"
 	@printf "  %-22s %s\n" build "Build the package (python -m build)"
 	@printf "  %-22s %s\n" install-local "Install editable dev environment (uv pip install -e .[dev])"
 	@printf "  %-22s %s\n" clean "Remove build/test artifacts"
@@ -42,7 +42,7 @@ dev:
 doc:
 	source .venv/bin/activate; uv pip install -e .[doc]; quarto add machow/quartodoc --no-prompt
 all:
-	source .venv/bin/activate; uv pip install -e .[all]
+	source .venv/bin/activate; uv pip install -e .[all]; quarto add machow/quartodoc --no-prompt
 format:
 	ruff format .
 lint:
@@ -63,16 +63,22 @@ pre-commit-run:
 # check pipeline (deterministic)
 check: format lint typecheck test-coverage
 # documentation
-docs:
-	quarto render README.qmd; python -m quartodoc build --verbose; python -m quartodoc interlinks; quarto render
+build-docs:
+	uv run quarto render README.qmd \
+	&& uv run quartodoc build --verbose \
+	&& uv run quartodoc interlinks \
+	&& uv run quarto render
 # docs preview
-docs-serve:
+serve-docs:
 	quarto preview --port 4200
 build:
 	python -m build
 # clean up build artifacts
 clean:
-	rm -rf dist build typings _site _inv _static _templates docs/references seapig.egg-info .coverage _environment objects.json .quarto .pytest_cache .ruff_cache .mypy_cache
+	rm -rf dist build typings _site _inv _static \
+	_templates docs/references seapig.egg-info \
+	.coverage _environment objects.json .quarto \
+	.pytest_cache .ruff_cache .mypy_cache
 clean-venv:
 	rm -rf .venv
 clean-all: clean clean-venv
