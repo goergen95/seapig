@@ -1,4 +1,15 @@
-"""Selective evaluation metric wrapper."""
+"""Metrics helpers for selective evaluation.
+
+This module provides two utilities used during evaluation when a model
+can abstain or return confidence scores:
+
+- `SelectiveMetric`: wraps a `torchmetrics.Metric` (or a
+  `torchmetrics.MetricCollection`) and tracks the metric on three
+  disjoint subsets: all samples (full), the samples marked as selected,
+  and the samples marked as rejected.
+- `RiskCoverageMetric`: accumulates per-sample scores and residuals to
+  compute a risk-coverage curve using :module:`seapig.risk_coverage`.
+"""
 
 from collections.abc import Callable
 from typing import final
@@ -10,30 +21,46 @@ from seapig.risk_coverage import RiskCoverage, risk_coverage
 
 
 class SelectiveMetric(Metric):
-    """Wrap a torchmetrics metric for selective evaluation.
+    """Evaluate a metric on full, selected, and rejected subsets.
 
-    This wrapper keeps three independent instances of an underlying
-    ``Metric`` or ``MetricCollection`` and updates them with (1) all
-    samples, (2) only the selected samples, and (3) only the rejected
-    samples indicated by a boolean mask inside the provided output dictionary.
+    Wraps a `torchmetrics.Metric` or `torchmetrics.MetricCollection` and
+    keeps three independent copies that are updated separately:
 
-    The ``update`` method accepts model predictions, targets, and a selection mask,
-    and updates the respective metrics accordingly. The ``compute`` method returns a
-    dictionary containing the computed results for the full, selected, and rejected subsets,
-    with keys prefixed by "full/", "selected/", and "rejected/" respectively.
+    - `"full"`: all samples passed to `update`.
+    - `"selected"`: samples where the provided selection mask is true.
+    - `"rejected"`: samples where the selection mask is false.
+
+    The `compute` result is a flat `dict`[`str`, `torch.Tensor`] where
+    each underlying metric name is prefixed with ``full/``, ``selected/``,
+    or ``rejected/``. If a submetric was never updated, its value is a
+    zero `torch.Tensor`.
 
     Parameters
     ----------
-    base : Metric | MetricCollection
-        The metric (or collection) to evaluate. Three deep-copied instances
-        are maintained internally for full, selective, and rejected risk computation.
+    base : torchmetrics.Metric | torchmetrics.MetricCollection
+        Metric (or collection) to wrap. Internally the object is deep-
+        copied three times so each subset is tracked independently.
 
     Notes
     -----
-    - If the selection mask is a float/integer tensor, values ``> 0``
+    - The selection mask may be boolean or numeric; numeric values ``> 0``
       are treated as selected.
-    - If no samples are selected or rejected, the respective metric is not updated for
-        that call.
+    - Calls that contain no selected (or no rejected) rows do not update
+      the corresponding internal metric for that call.
+
+    Example
+    -------
+    ```python
+    from torchmetrics import Accuracy
+    base = Accuracy(task="binary")
+    m = SelectiveMetric(base)
+    preds = torch.tensor([[0.9, 0.1], [0.2, 0.8]])
+    target = torch.tensor([0, 1])
+    mask = torch.tensor([1, 0], dtype=torch.bool)
+    m.update(preds, target, mask)
+    results = m.compute()
+    # results contains keys like 'full/accuracy', 'selected/accuracy', ...
+    ```
     """
 
     def __init__(self, base: Metric | MetricCollection) -> None:
@@ -79,14 +106,12 @@ class SelectiveMetric(Metric):
             self.metrics["rejected"].update(preds[rejected], target[rejected])
 
     def compute(self) -> dict[str, torch.Tensor]:
-        """Compute and return results for total, selected, and rejected.
+        """Compute metrics and return a dict with prefixed keys.
 
-        Returns
-        -------
-        dict[str, torch.Tensor]
-            Prefixed results. Keys are prefixed as ``"full/<name>"``,
-            ``"selected/<name>"``, and ``"rejected/<name>"`` for each
-            metric in the underlying MetricCollection.
+        Returns a dictionary where each key is `<scope>/<metric_name>`
+        (scope is one of `full`, `selected`, `rejected`). Values are
+        `torch.Tensor`s. If a metric instance was never updated, its value is a
+        scalar zero tensor.
         """
         total_map = self._to_dict(self.metrics["full"], "full")
         selected_map = self._to_dict(self.metrics["selected"], "selected")
@@ -95,9 +120,10 @@ class SelectiveMetric(Metric):
 
     @staticmethod
     def _to_dict(m: MetricCollection, prefix: str) -> dict[str, torch.Tensor]:
-        """Convert a MetricCollection to a dict with prefixed keys.
+        """Convert a `torchmetrics.MetricCollection` to a prefixed dict.
 
-        If a metric has not been updated, return 0.0 for that metric.
+        If a metric has not been updated, returns a zero tensor for that
+        metric so the returned mapping always contains all metric names.
         """
         out: dict[str, torch.Tensor] = {}
         for name, metric in m.items():
@@ -108,7 +134,7 @@ class SelectiveMetric(Metric):
         return out
 
     def reset(self) -> None:
-        """Reset both internal metric instances."""
+        """Reset the internal metric instances."""
         self.metrics["full"].reset()
         self.metrics["selected"].reset()
         self.metrics["rejected"].reset()
@@ -116,21 +142,29 @@ class SelectiveMetric(Metric):
 
 @final
 class RiskCoverageMetric(Metric):
-    """Accumulate scores and residuals, compute a risk‑coverage curve.
+    """Build a risk-coverage curve from scores and per-sample errors.
+
+    Collects per-sample `scores` and per-sample `residuals` across
+    multiple `update` calls and computes summary area-under-curve
+    values using `seapig.risk_coverage.risk_coverage`.
 
     Parameters
     ----------
-    risk : {'generalized', 'selective'}, default='generalized'
-        Risk definition for the curve.
-    n_bins : int, default=100
-        Downsampling bins for the curve.
-    prediction_key : str, default='predictions'
-        Key for model predictions in the outputs dict.
-    score_key : str, default='score'
-        Key for confidence scores in the outputs dict.
-    error_fn : Callable[[torch.Tensor, torch.Tensor], torch.Tensor] | None
-        Function that reduces (B, ...) preds and targets to per‑sample residuals
-        of shape (B,). If None, uses mean absolute error per sample.
+    risk : {'generalized', 'selective'}, default 'generalized'
+        Which risk definition to use when computing the curve. Must be
+        either `'generalized'` or `'selective'`.
+    n_bins : int, default 100
+        Number of bins used to downsample the curve when computing AUC
+        summaries.
+    error_fn : Callable | None
+        Function `(preds, target) -> residuals` that reduces model
+        predictions and targets to a 1-D tensor of per-sample residuals.
+        If `None` the default is per-sample mean absolute error.
+
+    The `compute` method returns three tensors: `rc/auc_empirical`,
+    `rc/auc_reference`, and `rc/auc_excess`. The last computed
+    complete curve object (`seapig.risk_coverage.RiskCoverage`) is
+    available via `get_curve`.
     """
 
     full_state_update: bool = False
@@ -182,7 +216,16 @@ class RiskCoverageMetric(Metric):
     def update(
         self, preds: torch.Tensor, target: torch.Tensor, scores: torch.Tensor
     ) -> None:
-        """Accumulate scores and residuals from outputs and target."""
+        """Store scores and residuals for later curve computation.
+
+        Parameters
+        ----------
+        preds, target : torch.Tensor
+            Model outputs and targets. These are passed to `error_fn` to
+            compute per-sample residuals.
+        scores : torch.Tensor
+            Per-sample confidence scores (higher means more confident).
+        """
         device = preds.device
         scores = scores.to(device)
         target = target.to(device)
@@ -202,7 +245,12 @@ class RiskCoverageMetric(Metric):
             self.residuals = torch.cat([self.residuals, residuals], dim=0)
 
     def compute(self) -> dict[str, torch.Tensor]:
-        """Compute risk-coverage curve metrics."""
+        """Compute AUC summaries for the accumulated risk--coverage curve.
+
+        Returns a dict with keys `rc/auc_empirical`, `rc/auc_reference`,
+        and `rc/auc_excess`. If no data has been accumulated an all-zero
+        mapping is returned on the correct device.
+        """
         if self.scores.numel() == 0:
             # No data yet; return zeros on the registered device
             zero = torch.tensor(0.0, device=self.scores.device)

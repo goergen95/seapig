@@ -30,6 +30,8 @@ interlinks:
       url: https://pathlib.readthedocs.io/en/pep428/
     lightning:
       url: https://lightning.ai/docs/pytorch/stable/
+    torchmetrics:
+      url: https://lightning.ai/docs/torchmetrics/stable/
 
 format:
   html:
