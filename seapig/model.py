@@ -1,7 +1,7 @@
 """Selective inference task wrapper.
 
-Wraps a ``pytorch_lightning.LightningModule`` and a ``seapig`` confidence
-score so that the model’s output is automatically combined with the score’s
+Wraps a `LightningModule` and a `ConfidenceScore`
+so that the model’s output is automatically combined with the score’s
 selection results.
 """
 
@@ -23,40 +23,93 @@ TARGET_KEYS = Literal[
 
 
 class SelectiveInferenceTask(LightningModule):
-    """Wrap a LightningModule to attach a confidence‑score based selector.
+    """Make a selective inference task by combining a `LightningModule` with a `ConfidenceScore`.
 
-    This task is designed to be compatible with ``torchgeo`` based tasks and
-    models. It is meant to be used in inference mode only, so you are required
-    to bring a trained model. This wrapper supplies extended  methods for
-    the `test_step()` and `predict_step()` of the LightningModule that
-    automatically attach selection results from the provided confidence score.
-    Combined with the seapig `selectiveMetric`s, this allows for easy
-    evaluation of selective performance during testing and prediction with a
-    pytorch-lightning `Trainer`.
+    This wrapper returns a selective inference task. It extends the `test_step()`
+    and `predict_step()` of the `LightningModule` and automatically attaches
+    selection results from the provided `ConfidenceScore`. Currently, the
+    specified task is expected to be operate in inference mode (we enable inference
+    mode if that is not the case). Combined with the `SelectiveMetric` class,
+    this allows for easy evaluation of selective performance during testing and
+    prediction with a `Trainer` (see Examples below). If a `RiskCoverageMetric` is
+    provided, the wrapper will also compute and log risk‑coverage metrics during testing.
 
     Parameters
     ----------
-    task : LightningModule
-        The model (or any LightningModule) whose ``forward`` method produces
+    task : `LightningModule`
+        A `LightningModule` whose `forward` method produces
         predictions.  The returned value may be a tensor or a mapping of
         tensors.
-    score : ConfidenceScore
-        A ``seapig`` confidence‑score object providing a ``select`` method.
+    score : `ConfidenceScore`
+        A seapig `ConfidenceScore` object providing a `ConfidenceScore.select` method.
     input_key : input_keys, optional
         The key in the input batch dictionary corresponding to the model
-        inputs, by default "image".
+        inputs, by default `"image"`.
     target_key : target_keys, optional
         The key in the input batch dictionary corresponding to the model
-        targets, by default "label".
+        targets, by default `"label"`.
     acc_test_outputs : bool, optional
-        Whether to accumulate the outputs of the wrapped task’s ``test_step`` method
+        Whether to accumulate the outputs of the wrapped `task`’s `test_step()` method
         (with selection results attached). This is useful if you want to analyse
-        the selection results of test samples. By default, this is set to False,
-        meaning that the wrapper will log the metrics from the wrapped task’s
-        ``test_step`` method as usual.
-        If set to True, the wrapper will accumulate the outputs of the wrapped task’s
-        combined with te selection results to the ``test_outputs`` attribute,
+        the selection results of test samples. By default, this is set to `False`,
+        meaning that the wrapper will log the metrics from the wrapped `task`’s
+        `test_step()` method as usual.
+        If set to `True`, the wrapper will accumulate the outputs of the wrapped `task`’s
+        combined with te selection results to the `test_outputs` attribute,
         which can be accessed after testing is complete.
+
+    Examples
+    --------
+    ```python
+    import torch
+    from lightning import Trainer, LightningModule
+    from torchmetrics import Accuracy
+    from seapig import SelectiveInferenceTask
+    from seapig.scores import EuclideanScore
+
+    # Define a simple LightningModule for demonstration
+    class SimpleModel(LightningModule):
+        def __init__(self):
+            super().__init__()
+            self.layer = torch.nn.Linear(10, 2)
+            self.test_metrics = Accuracy(task="binary")
+        def forward(self, x):
+            return self.layer(x)
+        def embed(self, x):
+            return self.layer(x)  # Just for demonstration; typically this would be a different embedding
+        def test_step(self, batch, batch_idx):
+            x, y = batch
+            preds = self(x)
+            self.test_metrics.update(preds, y)
+            return {"predictions": preds}
+        def predict_step(self, batch, batch_idx):
+            x, _ = batch
+            preds = self(x)
+            return {"predictions": preds}
+
+    # Create a confidence score and risk-coverage metric
+    score = EuclideanScore()
+    # Wrap the model with SelectiveInferenceTask
+    selective_task = SelectiveInferenceTask(
+        task=SimpleModel(),
+        score=score,
+        input_key="x",
+        target_key="y",
+        acc_test_outputs=True,  # Set to True to accumulate test outputs for analysis
+    )
+    # Create a Trainer and test the selective task
+    trainer = Trainer()
+    # return the test metrics and selection results in the test step outputs
+    trainer.test(
+        selective_task,
+        test_dataloader=test_dataloader, # Replace with actual dataloader
+    )
+    # returns prediction with attached selection results
+    trainer.predict(
+        selective_task,
+        dataloaders=predict_dataloader, # Replace with actual dataloader
+    )
+    ```
     """
 
     test_outputs: list[dict[str, Any]] | None = None
@@ -110,9 +163,9 @@ class SelectiveInferenceTask(LightningModule):
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         """Run the wrapped model and attach selection scores.
 
-        The wrapped ``task`` is called first.  Its output is normalised to a
-        ``dict`` under the key ``"predictions"`` when a plain tensor is
-        returned.  The confidence‑score ``select`` method is then evaluated on
+        The wrapped `task` is called first.  Its output is normalised to a
+        `dict` under the key `"predictions"` when a plain tensor is
+        returned.  The `ConfidenceScore.select` method is then evaluated on
         the same input batch, moved to the device of the model’s predictions,
         and merged with the prediction mapping.
 
@@ -139,10 +192,16 @@ class SelectiveInferenceTask(LightningModule):
     ) -> None:
         """Perform a test step with selection results attached.
 
-        This method calls the wrapped task’s ``test_step`` method, but
+        This method calls the wrapped task’s `test_step` method, but
         replaces the output predictions with those from this wrapper’s
-        ``forward`` method.  This ensures that selection results are included
-        in the output.
+        `forward` method.  This ensures that selection results are included
+        in the output. If `rc_metric` is provided, the risk‑coverage metric is
+        updated with the selection scores and predictions, and the current metric
+        values are logged at each step. If `acc_test_outputs` is set to `True`,
+        the outputs of the wrapped task’s `test_step()` method are combined with
+        the selection results are accumulated in the `test_outputs` attribute for
+        later analysis. Otherwise, the wrapper will log the metrics from the wrapped
+        task’s `test_step()` method as usual.
 
         Parameters
         ----------
@@ -154,7 +213,7 @@ class SelectiveInferenceTask(LightningModule):
         Returns
         -------
         dict[str, Any]
-            The output of the wrapped task’s ``test_step``, but with
+            The output of the wrapped task’s `test_step`, but with
             predictions replaced by those from this wrapper.
         """
         x = batch[self.input_key]
@@ -189,9 +248,9 @@ class SelectiveInferenceTask(LightningModule):
     ) -> dict[str, torch.Tensor]:
         """Perform a predict step with selection results attached.
 
-        This method calls the wrapped task’s ``predict_step`` method, but
+        This method calls the wrapped task’s `predict_step` method, but
         replaces the output predictions with those from this wrapper’s
-        ``forward`` method.  This ensures that selection results are included
+        `forward` method.  This ensures that selection results are included
         in the output.
 
         Parameters
