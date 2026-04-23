@@ -1,10 +1,10 @@
 .ONESHELL:
 SHELL := bash
 .DEFAULT_GOAL := help
-.PHONY: help env req sug dev doc all pre-commit-install check build-docs build clean \
+.PHONY: help env env-req env-sug env-dev env-doc env-all pre-commit-install check docs-build pkg-build clean \
   format lint typecheck test test-coverage test-ci \
-  pre-commit-install pre-commit-run serve-docs \
-  clean-venv clean-all
+  pre-commit-install pre-commit-run docs-serve \
+  env-clean clean-all
 
 help:
 	@printf "\nseapig Makefile — common targets:\n\n"
@@ -33,16 +33,18 @@ help:
 	@printf "\nRun \`make <target>\` to execute a target. See Makefile for details.\n\n"
 env:
 	uv venv; source .venv/bin/activate;
-req:
+env-req:
 	source .venv/bin/activate; uv pip install -e .
-sug:
+env-sug:
 	source .venv/bin/activate; uv pip install -e .[suggested]
-dev:
+env-dev:
 	source .venv/bin/activate; uv pip install -e .[dev]
-doc:
+env-doc:
 	source .venv/bin/activate; uv pip install -e .[doc]; quarto add machow/quartodoc --no-prompt
-all:
+env-all:
 	source .venv/bin/activate; uv pip install -e .[all]; quarto add machow/quartodoc --no-prompt
+env-clean:
+	rm -rf .venv
 format:
 	ruff format .
 lint:
@@ -63,15 +65,15 @@ pre-commit-run:
 # check pipeline (deterministic)
 check: format lint typecheck test-coverage
 # documentation
-build-docs:
+docs-build:
 	uv run quarto render README.qmd \
 	&& uv run quartodoc build --verbose \
 	&& uv run quartodoc interlinks \
 	&& uv run quarto render
 # docs preview
-serve-docs:
+docs-serve:
 	quarto preview --port 4200
-build:
+pkg-build:
 	python -m build
 # clean up build artifacts
 clean:
@@ -79,6 +81,4 @@ clean:
 	_templates docs/references seapig.egg-info \
 	.coverage _environment objects.json .quarto \
 	.pytest_cache .ruff_cache .mypy_cache
-clean-venv:
-	rm -rf .venv
 clean-all: clean clean-venv
