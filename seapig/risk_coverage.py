@@ -1,7 +1,8 @@
-"""Risk-Coverage Curve Implementation.
+"""Risk-coverage utilities for selective prediction.
 
-This module implements the risk-coverage curve analysis for selective
-prediction systems, based on the R implementation in the CAST package.
+This module computes risk-coverage curves used to study the trade-off
+between coverage (fraction of examples the model accepts) and risk
+(error rate) for selective prediction systems.
 """
 
 import numpy as np
@@ -9,49 +10,27 @@ import torch
 
 
 class RiskCoverage:
-    """Risk-Coverage Curve for Selective Prediction.
+    """Container for risk-coverage results.
 
-    The risk-coverage curve describes the performance profile of a selective
-    prediction model by showing the trade-off between coverage (fraction of
-    samples accepted) and risk (error rate) at different confidence thresholds.
+    Holds the coverage, score thresholds, empirical and reference risk
+    curves, their difference (excess), and AUC metrics.
 
     Attributes
     ----------
     coverage : torch.Tensor
-        Coverage values (fraction of samples accepted).
+        Coverage values in [0, 1].
     threshold : torch.Tensor
-        Confidence score thresholds.
+        Sorted score thresholds used to compute coverage.
     risk : torch.Tensor
-        Empirical risk values at each coverage level.
+        Empirical risk at each coverage level.
     reference : torch.Tensor
-        Reference (optimal) risk values at each coverage level.
+        Reference (optimal) risk at each coverage level.
     excess : torch.Tensor
-        Excess risk (empirical - reference) at each coverage level.
+        Excess risk (empirical - reference).
     risk_type : str
-        Type of risk calculation ('generalized' or 'selective').
-    auc_empirical : float
-        Area under the empirical risk-coverage curve.
-    auc_reference : float
-        Area under the reference risk-coverage curve.
-    auc_excess : float
-        Area under the excess risk-coverage curve (E-AURC).
-
-    Examples
-    --------
-    ```python
-    import torch
-    from seapig.risk_coverage import risk_coverage
-
-    # Generate example data
-    score = torch.rand(100)  # Lower is more confident
-    residuals = torch.rand(100)  # Prediction errors
-
-    # Calculate risk-coverage curve
-    rc = risk_coverage(score, residuals, risk="generalized")
-
-    # Access metrics
-    print(f"E-AURC: {rc.auc_excess:.4f}")
-    ```
+        Either ``'generalized'`` or ``'selective'``; see `risk_coverage`.
+    auc_empirical, auc_reference, auc_excess : torch.Tensor
+        Area-under-curve values computed with the trapezoidal rule.
     """
 
     def __init__(
@@ -66,28 +45,9 @@ class RiskCoverage:
         auc_reference: torch.Tensor,
         auc_excess: torch.Tensor,
     ) -> None:
-        """Initialize RiskCoverage object.
+        """Create a `RiskCoverage` container.
 
-        Parameters
-        ----------
-        coverage : torch.Tensor
-            Coverage values.
-        threshold : torch.Tensor
-            Threshold values.
-        risk : torch.Tensor
-            Empirical risk values.
-        reference : torch.Tensor
-            Reference risk values.
-        excess : torch.Tensor
-            Excess risk values.
-        risk_type : str
-            Type of risk ('generalized' or 'selective').
-        auc_empirical : float
-            AUC of empirical curve.
-        auc_reference : float
-            AUC of reference curve.
-        auc_excess : float
-            AUC of excess curve.
+        Parameters mirror the attributes above.
         """
         self.coverage = coverage
         self.threshold = threshold
@@ -100,7 +60,7 @@ class RiskCoverage:
         self.auc_excess = auc_excess
 
     def __repr__(self) -> str:
-        """Return string representation."""
+        """Short representation including AUCs and number of points."""
         return (
             f"RiskCoverage(risk_type='{self.risk_type}', "
             f"n_points={len(self.coverage)}, "
@@ -116,46 +76,31 @@ class RiskCoverage:
         excess: bool = True,
         digits: int = 4,
     ) -> object:
-        """Plot the risk-coverage curves.
+        """Return a matplotlib Figure with the requested curves.
 
         Parameters
         ----------
-        empirical : bool, default=True
-            Whether to plot the empirical risk-coverage curve.
-        reference : bool, default=True
-            Whether to plot the reference risk-coverage curve.
-        excess : bool, default=True
-            Whether to plot the excess risk-coverage curve.
-        digits : int, default=4
-            Number of digits for AUC values in the legend.
+        empirical, reference, excess : bool
+            Whether to include each curve in the plot.
+        digits : int
+            Number of decimal places to show for AUC values in the legend.
 
         Returns
         -------
         matplotlib.figure.Figure
-            The matplotlib figure object.
+            A figure containing the plotted curves.
 
         Raises
         ------
         ImportError
-            If matplotlib is not installed.
+            If `matplotlib` is not installed.
         ValueError
-            If all of ``empirical``, ``reference``, and ``excess`` are False.
+            If all curve flags are False.
 
         Examples
         --------
         ```python
-        import torch
-        from seapig.risk_coverage import risk_coverage
-
-        score = torch.rand(100)
-        residuals = torch.rand(100)
-        rc = risk_coverage(score, residuals)
-
-        # Plot all curves
-        fig = rc.plot()
-
-        # Plot only empirical curve
-        fig = rc.plot(reference=False, excess=False)
+        fig = rc.plot(empirical=True, reference=False)
         ```
         """
         try:
@@ -226,70 +171,58 @@ def risk_coverage(
     risk: str = "generalized",
     n_bins: int = 100,
 ) -> RiskCoverage:
-    """Calculate the risk-coverage curve.
+    """Compute risk-coverage curves and AUCs for a selective predictor.
 
-    Given a confidence score and prediction residuals, this function computes
-    the risk-coverage curve that describes the trade-off between coverage
-    (fraction of accepted samples) and risk (error rate) in a selective
-    prediction system.
+    Given a score (confidence) and corresponding residuals (prediction
+    errors), this function returns a `RiskCoverage` object containing:
 
-    The empirical risk-coverage curve is compared to a reference curve based
-    on an optimal confidence score (the residuals themselves). The difference
-    between these curves is the excess risk.
+    - empirical risk curve (model scores)
+    - reference risk curve (using residuals as an ideal score)
+    - excess risk (empirical - reference)
+    - AUC values for each curve
 
     Parameters
     ----------
-    score : torch.Tensor or np.ndarray
+    score : `torch.Tensor`
         Confidence scores. Lower values indicate higher confidence.
-        Must have the same length as residuals.
-    residuals : torch.Tensor or np.ndarray
-        Prediction residuals (errors). Lower values indicate better predictions.
-        Must have the same length as score.
-    risk : {'generalized', 'selective'}, default='generalized'
-        Type of risk to calculate:
-        - 'generalized': Joint probability of prediction failure and acceptance
-        - 'selective': Conditional probability of failure given acceptance
-    n_bins : int, default=100
-        Number of coverage bins to use for downsampling. If the number of
-        samples is less than n_bins, no downsampling is performed.
+        Must have the same length as `residuals`.
+    residuals : `torch.Tensor`
+        Prediction residuals (errors). Lower values indicate better
+        predictions. Same length as `score`.
+    risk : {'generalized', 'selective'}, default 'generalized'
+        - ``'generalized'``: joint probability of failure and acceptance
+        - ``'selective'``: failure probability conditional on acceptance
+    n_bins : int
+        If the curve has more than `n_bins` points, it will be downsampled
+        to at most `n_bins` points for reporting and plotting.
 
     Returns
     -------
-    RiskCoverage
-        Object containing the risk-coverage curves and AUC metrics.
+    `RiskCoverage`
+        Container with curves and AUCs.
 
     Raises
     ------
-    ValueError
-        If score and residuals have different lengths or if risk type is invalid.
     TypeError
-        If score or residuals are not torch.Tensor or np.ndarray.
+        If `score` or `residuals` are not `torch.Tensor`.
+    ValueError
+        If lengths differ or `risk` is not one of the allowed values.
 
     Examples
     --------
     ```python
     import torch
-    from seapig.risk_coverage import risk_coverage
-
-    # Simulated data
     score = torch.rand(100)
     residuals = torch.rand(100)
-
-    # Calculate generalized risk-coverage curve
-    rc_gen = risk_coverage(score, residuals, risk="generalized")
-    print(rc_gen)
-
-    # Calculate selective risk-coverage curve
-    rc_sel = risk_coverage(score, residuals, risk="selective")
-    print(f"Selective E-AURC: {rc_sel.auc_excess:.4f}")
+    rc = risk_coverage(score, residuals, risk='generalized')
     ```
     """
     # Validate inputs
     if not isinstance(score, torch.Tensor):
-        msg = "score must be a torch.Tensor or np.ndarray"
+        msg = "score must be a torch.Tensor"
         raise TypeError(msg)
     if not isinstance(residuals, torch.Tensor):
-        msg = "residuals must be a torch.Tensor or np.ndarray"
+        msg = "residuals must be a torch.Tensor"
         raise TypeError(msg)
     if len(score) != len(residuals):
         msg = f"score and residuals must have the same length, got {len(score)} and {len(residuals)}"
@@ -339,21 +272,12 @@ def risk_coverage(
 def _rc_curve(
     score: torch.Tensor, residuals: torch.Tensor, risk_type: str
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Calculate a single risk-coverage curve.
+    """Compute a single risk-coverage curve.
 
-    Parameters
-    ----------
-    score : torch.Tensor
-        Confidence scores.
-    residuals : torch.Tensor
-        Prediction residuals.
-    risk_type : str
-        Type of risk ('generalized' or 'selective').
+    The function sorts examples by `score` (descending), computes coverage
+    as the fraction of accepted examples, and returns the cumulative risk.
 
-    Returns
-    -------
-    tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-        Coverage, threshold, and risk tensors.
+    Returns (coverage, sorted_score, risk) as `torch.Tensor` objects.
     """
     # Sort by score (descending, so we reject highest scores first)
     device = score.device
@@ -387,25 +311,11 @@ def _downsample_curves(
     risk_ref: torch.Tensor,
     n_bins: int,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Downsample risk-coverage curves to n_bins.
+    """Reduce curve points to at most `n_bins` by aggregating within bins.
 
-    Parameters
-    ----------
-    coverage : torch.Tensor
-        Coverage values.
-    threshold : torch.Tensor
-        Threshold values.
-    risk_emp : torch.Tensor
-        Empirical risk values.
-    risk_ref : torch.Tensor
-        Reference risk values.
-    n_bins : int
-        Number of bins.
-
-    Returns
-    -------
-    tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
-        Downsampled coverage, threshold, empirical risk, and reference risk.
+    Each output bin contains the maximum coverage, threshold and risks
+    among points that fall into the bin. This preserves the upper envelope
+    of the curves for reporting and plotting.
     """
     # Create bins
     device = coverage.device
@@ -431,19 +341,9 @@ def _downsample_curves(
 
 
 def _trapz(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-    """Trapezoidal integration.
+    """Trapezoidal integration of y with respect to x.
 
-    Parameters
-    ----------
-    x : torch.Tensor
-        X values.
-    y : torch.Tensor
-        Y values.
-
-    Returns
-    -------
-    torch.Tensor
-        Integral using trapezoidal rule.
+    Both `x` and `y` should be 1-D tensors of the same length.
     """
     dx = x[1:] - x[:-1]
     avg_y = (y[:-1] + y[1:]) / 2
