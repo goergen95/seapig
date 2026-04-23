@@ -54,6 +54,7 @@ venv/
 **/*.quarto_ipynb
 /_site/
 /objects.json
+/objects.txt
 /_sidebar.yml
 /reference
 /latest

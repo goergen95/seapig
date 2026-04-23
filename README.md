@@ -60,9 +60,7 @@ $x$. Given a threshold $\lambda$, we derive from the output of a
 selection functions which samples to accept. For example, accepting
 samples with score below $\lambda$:
 
-$$
-g_{\lambda}(x) = \mathbf{1}\{\kappa(x) \le \lambda\}.
-$$
+$$g_{\lambda}(x) = \mathbf{1}\{\kappa(x) \le \lambda\}.$$
 
 ### Quickstart
 
@@ -93,10 +91,6 @@ print(sel)
 
     {'score': tensor([6.2663, 5.5952, 6.0250, 5.8910, 6.2953, 4.8393, 5.7325, 5.3731, 5.6600,
             5.9184]), 'selected': tensor([ True,  True,  True,  True, False,  True,  True,  True,  True,  True])}
-
-    Your CPU supports instructions that this binary was not compiled to use: SSE3 SSE4.1 SSE4.2 AVX AVX2
-    For maximum performance, you can install NMSLIB from sources 
-    pip install --no-binary :all: nmslib
 
 #### On-the-fly embedding extraction
 

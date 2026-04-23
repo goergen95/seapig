@@ -16,11 +16,13 @@ from seapig.scores.logits import (
     SoftmaxScore,
 )
 from seapig.scores.pca import PCAScore
+from seapig.scores.pyod import PyODScore
 
 __all__ = [
     "ConfidenceScore",
     "EmbeddingScore",
     "KNNScore",
+    "LogitScore",
     "RandomScore",
     "EuclideanScore",
     "CosineScore",
@@ -30,5 +32,5 @@ __all__ = [
     "EnergyScore",
     "EntropyScore",
     "MarginScore",
-    "LogitScore",
+    "PyODScore",
 ]
