@@ -1,4 +1,4 @@
-# seapig <img src="docs/assets/logo.png" align="right" height="138" />
+# seapig <img src="assets/logo.png" align="right" height="138" />
 
 
 [![codecov](https://codecov.io/gh/goergen95/seapig/graph/badge.svg?token=3T1UC49MYS)](https://codecov.io/gh/goergen95/seapig)
@@ -92,6 +92,9 @@ print(sel)
     {'score': tensor([6.2663, 5.5952, 6.0250, 5.8910, 6.2953, 4.8393, 5.7325, 5.3731, 5.6600,
             5.9184]), 'selected': tensor([ True,  True,  True,  True, False,  True,  True,  True,  True,  True])}
 
+    {'score': tensor([6.2663, 5.5952, 6.0250, 5.8910, 6.2953, 4.8393, 5.7325, 5.3731, 5.6600,
+            5.9184]), 'selected': tensor([ True,  True,  True,  True, False,  True,  True,  True,  True,  True])}
+
 #### On-the-fly embedding extraction
 
 ``` python
@@ -119,6 +122,14 @@ score.set_threshold(q=0.80) # keep ~80% coverage on validation set
 sel = score.select(model=model, loader=test_loader)
 print(sel)
 ```
+
+    {'score': tensor([6.4586, 5.5724, 5.6794, 5.7046, 5.0609, 5.8174, 5.5684, 5.3449, 5.4205,
+            5.6091, 5.5898, 6.2813, 6.1693, 6.3420, 6.3664, 5.5906, 4.6899, 5.6637,
+            5.7695, 5.1600, 5.2580, 5.1575, 5.9254, 6.0015, 6.5361, 5.4042, 5.6627,
+            5.7872, 5.4679, 6.0055, 6.1751, 5.7445]), 'selected': tensor([False,  True,  True,  True,  True,  True,  True,  True,  True,  True,
+             True, False, False, False, False,  True,  True,  True,  True,  True,
+             True,  True,  True,  True, False,  True,  True,  True,  True,  True,
+            False,  True])}
 
     {'score': tensor([6.4586, 5.5724, 5.6794, 5.7046, 5.0609, 5.8174, 5.5684, 5.3449, 5.4205,
             5.6091, 5.5898, 6.2813, 6.1693, 6.3420, 6.3664, 5.5906, 4.6899, 5.6637,

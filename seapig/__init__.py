@@ -12,6 +12,7 @@ __version__ = "0.0.1"
 
 import logging
 
+from seapig import scores, utils
 from seapig.metric import RiskCoverageMetric, SelectiveMetric
 from seapig.model import SelectiveInferenceTask
 from seapig.risk_coverage import RiskCoverage
@@ -24,4 +25,6 @@ __all__ = [
     "RiskCoverageMetric",
     "SelectiveInferenceTask",
     "SelectiveMetric",
+    "scores",
+    "utils",
 ]

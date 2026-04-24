@@ -130,7 +130,9 @@ class SelectiveMetric(Metric):
             if metric.update_called:
                 out[f"{prefix}/{name}"] = metric.compute()
             else:
-                out[f"{prefix}/{name}"] = torch.tensor(0.0)
+                out[f"{prefix}/{name}"] = torch.tensor(
+                    0.0, device=metric.device
+                )
         return out
 
     def reset(self) -> None:
@@ -224,7 +226,7 @@ class RiskCoverageMetric(Metric):
             Model outputs and targets. These are passed to `error_fn` to
             compute per-sample residuals.
         scores : torch.Tensor
-            Per-sample confidence scores (higher means more confident).
+            Per-sample confidence scores (lower values indicate higher confidence).
         """
         device = preds.device
         scores = scores.to(device)

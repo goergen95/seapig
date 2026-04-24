@@ -1,0 +1,76 @@
+# Great Docs Configuration
+# See https://posit-dev.github.io/great-docs/user-guide/03-configuration.html
+logo: assets/logo.png
+user_guide: docs
+source:
+  branch: main
+jupyter: python3
+parser: numpy
+dynamic: true
+
+site:
+  theme: flatly
+  toc: true
+  toc-depth: 2
+  toc-title: On this page
+
+authors:
+  - name: Darius A. Görgen
+    role: Maintainer
+    email: info@dariusgoergen.com
+    github: goergen95 
+    orcid: 0009-0008-5503-7704 
+    homepage: https://www.dariusgoergen.com/
+
+auto_include:
+  - utils
+
+reference:
+  - title: Task & Metric Classes
+    desc: Core classes for defining selective inference tasks and metrics
+    contents:
+      - SelectiveInferenceTask
+      - SelectiveMetric
+      - RiskCoverageMetric
+      #- RiskCoverage
+
+  - title: Embedding based Confidence Scores
+    desc: Confidence scoring methods for embedding-based approaches
+    contents:
+      - scores.CosineScore
+      - scores.EuclideanScore
+      - scores.MahalanobisScore
+      - scores.PCAScore
+      - scores.PyODScore
+    
+  - title: Logit based Confidence Scores
+    desc: Confidence scoring methods based on model logits
+    contents:
+      - scores.EnergyScore
+      - scores.EntropyScore
+      - scores.MarginScore
+      - scores.SoftmaxScore
+
+  - title: Other Confidence Scores
+    desc: Confidence scoring methods based on other principles
+    contents:
+      - scores.RandomScore    
+    
+  - title: Abstract Classes
+    desc: Abstract base classes
+    contents:
+      - name: scores.ConfidenceScore
+      - scores.EmbeddingScore
+      - scores.KNNScore
+      - scores.LogitScore
+
+  - title: Utilities
+    desc: Helpers for progress and logging
+    contents:
+      - utils.track
+      - utils.enable
+      - utils.disable
+      - utils.set_backend
+      - utils.get_backend
+      - utils.get_logger
+      - utils.configure_logging  
