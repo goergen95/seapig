@@ -9,4 +9,4 @@ preferred-citation:
   authors:
   - family-names: 'Görgen'
     given-names: 'Darius Andreas'
-title: 'Deep Latent Space Understanding for Confident Decisions'
+title: 'seapig: A Python library for Selective Prediction based on Confidence Scores'

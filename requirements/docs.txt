@@ -1,6 +1,6 @@
 quarto-cli
-quartodoc
+great-docs
 ipykernel
 ipywidgets
 importlib_metadata
-griffe<2.0.0 # see https://github.com/machow/quartodoc/issues/423
+griffe

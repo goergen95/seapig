@@ -5,7 +5,6 @@ between coverage (fraction of examples the model accepts) and risk
 (error rate) for selective prediction systems.
 """
 
-import numpy as np
 import torch
 
 
@@ -166,8 +165,8 @@ class RiskCoverage:
 
 
 def risk_coverage(
-    score: torch.Tensor | np.ndarray,
-    residuals: torch.Tensor | np.ndarray,
+    score: torch.Tensor,
+    residuals: torch.Tensor,
     risk: str = "generalized",
     n_bins: int = 100,
 ) -> RiskCoverage:

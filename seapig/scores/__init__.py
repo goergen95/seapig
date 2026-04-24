@@ -16,7 +16,6 @@ from seapig.scores.logits import (
     SoftmaxScore,
 )
 from seapig.scores.pca import PCAScore
-from seapig.scores.pyod import PyODScore
 
 __all__ = [
     "ConfidenceScore",
@@ -32,5 +31,11 @@ __all__ = [
     "EnergyScore",
     "EntropyScore",
     "MarginScore",
-    "PyODScore",
 ]
+
+try:
+    from seapig.scores.pyod import PyODScore
+
+    __all__ += ["PyODScore"]
+except ImportError:
+    pass
