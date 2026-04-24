@@ -1,4 +1,4 @@
-name: Render and Deploy Docs Website
+name: Docs
 
 on:
   push:
@@ -52,23 +52,19 @@ jobs:
     needs: "build-docs"
     if: github.ref == 'refs/heads/main'
     permissions:
-      pages: write
       contents: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/download-artifact@v7
         with:
           name: docs-html
           path: great-docs/_site
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v5
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: great-docs/_site
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: great-docs/_site
+          publish_branch: gh-pages
+          user_name: "github-actions[bot]"
+          user_email: "github-actions[bot]@users.noreply.github.com"
+          keep_files: false
