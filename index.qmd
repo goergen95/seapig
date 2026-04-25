@@ -75,7 +75,7 @@ or abstains from the prediction, depending on the score of the input:
 $$
 h(x) =
 \begin{cases}
-f_t(x), & \text{if} g(x)=1,\\[4pt]
+f_t(x), & \text{if} g(x)=1,\\
 \varnothing, & \text{if } g(x)=0.
 \end{cases}
 $$
