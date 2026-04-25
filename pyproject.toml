@@ -37,7 +37,7 @@ dynamic = ["version", "dependencies", "optional-dependencies"]
 "Codecov" = "https://app.codecov.io/gh/goergen95/seapig"
 "Repository" = "https://github.com/goergen95/seapig"
 "Issue Tracker" = "https://github.com/goergen95/seapig/issues"
-"Changelog" = "https://goergen95.github.io/seapig/NEWS.html"
+"Changelog" = "https://goergen95.github.io/seapig/changelog"
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements/required.txt"] }
