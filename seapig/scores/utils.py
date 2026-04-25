@@ -40,14 +40,14 @@ logger = get_logger(__name__)
 
 @final
 class TensorPCA(torch.nn.Module):
-    """Tensor-based PCA with L2-normalized inputs.
+    """Tensor-based PCA.
 
-    Supports standard (linear) PCA on L2-normalized rows and an optional
+    Supports standard (linear) PCA and an optional
     Random Fourier Feature (RFF) mapping prior to PCA.
 
     Operation modes
     ---------------
-    - `linear`: standard PCA on L2-normalized rows.
+    - `linear`: standard linear PCA.
     - `rff`: apply a Random Fourier Feature mapping before PCA.
 
     Mode selection follows the constructor arguments: the RFF branch is
