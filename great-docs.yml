@@ -2,14 +2,18 @@
 # See https://posit-dev.github.io/great-docs/user-guide/03-configuration.html
 logo: assets/logo.png
 user_guide: docs
-source:
-  branch: main
 jupyter: python3
 parser: numpy
 dynamic: true
-
+navbar_style: dusk
+content_style: dusk
+source:
+  branch: main
+skill:
+  enabled: false
+auto_include:
+  - utils
 site:
-  theme: flatly
   toc: true
   toc-depth: 2
   toc-title: On this page
@@ -22,8 +26,16 @@ authors:
     orcid: 0009-0008-5503-7704 
     homepage: https://www.dariusgoergen.com/
 
-auto_include:
-  - utils
+nav_icons:
+  navbar:
+    User Guide: book-open
+    Reference: code
+    Changelog: clock
+  sidebar:
+    Installation: download
+    Quick Start: rocket
+    Logging and Progress: rotate-ccw
+    Contributing: settings
 
 reference:
   - title: Task & Metric Classes
@@ -32,7 +44,7 @@ reference:
       - SelectiveInferenceTask
       - SelectiveMetric
       - RiskCoverageMetric
-      #- RiskCoverage
+      - RiskCoverage
 
   - title: Embedding based Confidence Scores
     desc: Confidence scoring methods for embedding-based approaches
