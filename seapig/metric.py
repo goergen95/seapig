@@ -8,7 +8,11 @@ can abstain or return confidence scores:
   disjoint subsets: all samples (full), the samples marked as selected,
   and the samples marked as rejected.
 - `RiskCoverageMetric`: accumulates per-sample scores and residuals to
-  compute a risk-coverage curve using :module:`seapig.risk_coverage`.
+  compute a risk-coverage curve using `seapig.risk_coverage`.
+
+See Also
+--------
+seapig.risk_coverage : Functions for computing risk-coverage curves.
 """
 
 from collections.abc import Callable
@@ -158,15 +162,36 @@ class RiskCoverageMetric(Metric):
     n_bins : int, default 100
         Number of bins used to downsample the curve when computing AUC
         summaries.
-    error_fn : Callable | None
-        Function `(preds, target) -> residuals` that reduces model
+    error_fn : callable or None, default None
+        Function ``(preds, target) -> residuals`` that reduces model
         predictions and targets to a 1-D tensor of per-sample residuals.
-        If `None` the default is per-sample mean absolute error.
+        If `None`, the default is per-sample mean absolute error.
 
-    The `compute` method returns three tensors: `rc/auc_empirical`,
-    `rc/auc_reference`, and `rc/auc_excess`. The last computed
-    complete curve object (`seapig.risk_coverage.RiskCoverage`) is
+    Notes
+    -----
+    The `compute` method returns three tensors:
+    ``rc/auc_empirical``, ``rc/auc_reference``, and ``rc/auc_excess``.
+    The last computed complete curve object (`RiskCoverage`) is
     available via `get_curve`.
+
+    See Also
+    --------
+    seapig.risk_coverage.risk_coverage : The underlying curve computation.
+    seapig.risk_coverage.RiskCoverage : Container for curve results.
+
+    Examples
+    --------
+    ```python
+    import torch
+    from seapig.metric import RiskCoverageMetric
+    metric = RiskCoverageMetric(risk="generalized")
+    preds = torch.rand(50, 1)
+    target = torch.rand(50, 1)
+    scores = torch.rand(50)
+    metric.update(preds, target, scores)
+    result = metric.compute()
+    # result contains keys: 'rc/auc_empirical', 'rc/auc_reference', 'rc/auc_excess'
+    ```
     """
 
     full_state_update: bool = False

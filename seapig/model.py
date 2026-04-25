@@ -34,15 +34,15 @@ class SelectiveInferenceTask(LightningModule):
     Key behavior:
 
     - The wrapped task must provide an `.embed(x)` method. The wrapper calls
-    `task.embed(x)` to produce embeddings used by the score.
+      `task.embed(x)` to produce embeddings used by the score.
     - The wrapped task is copied and set to `eval()` during initialization
-    to avoid accidental training side effects.
+      to avoid accidental training side effects.
     - If the wrapped task defines `test_metrics` (a `Metric` or `MetricCollection`),
-    it will be wrapped by `SelectiveMetric` so metrics are computed only on
-    selected examples.
+      it will be wrapped by `SelectiveMetric` so metrics are computed only on
+      selected examples.
     - If `rc_metric` (a `RiskCoverageMetric`) is provided, the wrapper will
-    update it during test steps; the final risk-coverage values are available via
-    `get_risk_coverage_curve()`.
+      update it during test steps; the final risk-coverage values are available via
+      `get_risk_coverage_curve()`.
 
     Parameters
     ----------
@@ -52,9 +52,14 @@ class SelectiveInferenceTask(LightningModule):
     score
         A seapig `ConfidenceScore` instance providing the `ConfidenceScore.select` method.
     input_key
-        Key used to extract inputs from an incoming batch (default: `'image'`).
+        Key used to extract inputs from an incoming batch. If `None` (default),
+        the first element of the batch is used (positional index 0). Must be
+        one of: ``'image'``, ``'input'``, ``'images'``, ``'inputs'``, ``'x'``.
     target_key
-        Key used to extract targets from an incoming batch (default: `'label'`).
+        Key used to extract targets from an incoming batch. If `None` (default),
+        the second element of the batch is used (positional index 1). Must be
+        one of: ``'mask'``, ``'label'``, ``'masks'``, ``'labels'``,
+        ``'targets'``, ``'target'``, ``'y'``, ``'y_true'``.
     acc_test_outputs
         If `True`, per-batch outputs (predictions merged with selection results)
         are accumulated in the `test_outputs` list for later inspection. If
@@ -65,54 +70,12 @@ class SelectiveInferenceTask(LightningModule):
     Examples
     --------
     ```python
-    import torch
-    from lightning import Trainer, LightningModule
-    from torchmetrics import Accuracy
     from seapig import SelectiveInferenceTask
     from seapig.scores import EuclideanScore
 
-    # Define a simple LightningModule for demonstration
-    class SimpleModel(LightningModule):
-        def __init__(self):
-            super().__init__()
-            self.layer = torch.nn.Linear(10, 2)
-            self.test_metrics = Accuracy(task="binary")
-        def forward(self, x):
-            return self.layer(x)
-        def embed(self, x):
-            return self.layer(x)  # Just for demonstration; typically this would be a different embedding
-        def test_step(self, batch, batch_idx):
-            x, y = batch
-            preds = self(x)
-            self.test_metrics.update(preds, y)
-            return {"predictions": preds}
-        def predict_step(self, batch, batch_idx):
-            x, _ = batch
-            preds = self(x)
-            return {"predictions": preds}
-
-    # Create a confidence score and risk-coverage metric
     score = EuclideanScore()
-    # Wrap the model with SelectiveInferenceTask
-    selective_task = SelectiveInferenceTask(
-        task=SimpleModel(),
-        score=score,
-        input_key="x",
-        target_key="y",
-        acc_test_outputs=True,  # Set to True to accumulate test outputs for analysis
-    )
-    # Create a Trainer and test the selective task
-    trainer = Trainer()
-    # return the test metrics and selection results in the test step outputs
-    trainer.test(
-        selective_task,
-        test_dataloader=test_dataloader, # Replace with actual dataloader
-    )
-    # returns prediction with attached selection results
-    trainer.predict(
-        selective_task,
-        dataloaders=predict_dataloader, # Replace with actual dataloader
-    )
+    # score.fit(X=train_embeddings)  # fit before wrapping
+    selective_task = SelectiveInferenceTask(task=model, score=score)
     ```
     """
 
