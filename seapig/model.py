@@ -140,7 +140,7 @@ class SelectiveInferenceTask(LightningModule):
 
         Returns
         -------
-        `dict`[`str`, `torch.Tensor`]
+        dict[str, torch.Tensor]
             A `dict` containing the model predictions and the selection
             outputs returned by the score (`'score'` and `'selected'`).
         """
