@@ -53,13 +53,14 @@ class SelectiveInferenceTask(LightningModule):
         A seapig `ConfidenceScore` instance providing the `ConfidenceScore.select` method.
     input_key
         Key used to extract inputs from an incoming batch. If `None` (default),
-        the first element of the batch is used (positional index 0). Must be
-        one of: ``'image'``, ``'input'``, ``'images'``, ``'inputs'``, ``'x'``.
+        the first element of the batch is used (positional index 0). When a
+        string is given it must be one of: ``'image'``, ``'input'``,
+        ``'images'``, ``'inputs'``, ``'x'``.
     target_key
         Key used to extract targets from an incoming batch. If `None` (default),
-        the second element of the batch is used (positional index 1). Must be
-        one of: ``'mask'``, ``'label'``, ``'masks'``, ``'labels'``,
-        ``'targets'``, ``'target'``, ``'y'``, ``'y_true'``.
+        the second element of the batch is used (positional index 1). When a
+        string is given it must be one of: ``'mask'``, ``'label'``, ``'masks'``,
+        ``'labels'``, ``'targets'``, ``'target'``, ``'y'``, ``'y_true'``.
     acc_test_outputs
         If `True`, per-batch outputs (predictions merged with selection results)
         are accumulated in the `test_outputs` list for later inspection. If

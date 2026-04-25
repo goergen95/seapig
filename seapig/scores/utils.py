@@ -71,7 +71,7 @@ class TensorPCA(torch.nn.Module):
     Notes
     -----
     PCA internals are stored in ``float64`` for numerical fidelity. During
-    preprocessing, inputs are cast to match the stored mean's dtype.
+    preprocessing, inputs are cast to ``float64`` to match the stored mean.
 
     See https://arxiv.org/pdf/2505.15284 for motivation behind RFF-PCA.
 
