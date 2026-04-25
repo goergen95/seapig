@@ -1,7 +1,7 @@
 ---
 toc: false
 format: gfm
-title: 'seapig <img src="assets/logo.png" align="right" height="138" />'
+title: 'seapig<img src="https://github.com/goergen95/seapig/blob/main/assets/logo.png?raw=true" align="right" height="138"/>'
 ---
 
 {{< include index.qmd >}}

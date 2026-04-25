@@ -1,4 +1,4 @@
-# seapig <img src="assets/logo.png" align="right" height="138" />
+# seapig<img src="https://github.com/goergen95/seapig/blob/main/assets/logo.png?raw=true" align="right" height="138"/>
 
 
 [![Codecov](https://codecov.io/gh/goergen95/seapig/graph/badge.svg?token=3T1UC49MYS)](https://codecov.io/gh/goergen95/seapig)
@@ -142,7 +142,7 @@ print(sel)
             4.9160, 3.9495, 3.7173, 3.7718, 4.1428, 3.5324, 3.9517, 3.7731, 3.1673,
             3.4171, 3.2512, 3.2503, 2.7896, 3.7821, 4.1532, 3.1579, 3.6539, 3.4985,
             4.2538, 4.0584, 3.3903, 3.0708, 4.0396]), 'selected': tensor([ True, False,  True,  True, False,  True,  True,  True,  True, False,
-            False,  True, False, False,  True, False, False,  True,  True,  True,
+            False,  True,  True, False,  True, False,  True,  True,  True,  True,
              True,  True, False, False,  True,  True,  True, False, False,  True,
              True, False])}
 
