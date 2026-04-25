@@ -340,7 +340,9 @@ class RandomScore(ConfidenceScore):
         ```
         """
         if self.get_threshold() is None:
-            logger.warning("No threshold set. Trying to set it via `set_threshold()`.")
+            logger.warning(
+                "No threshold set. Trying to set it via `set_threshold()`."
+            )
             self.set_threshold()
         assert self.threshold is not None
         score = self.score(X=X)
