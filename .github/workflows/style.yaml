@@ -54,4 +54,7 @@ jobs:
       - name: List dependencies
         run: uv pip list
       - name: Run mypy
-        run:  mypy --install-types --non-interactive .
+        run:  |
+            mypy --install-types --non-interactive --python-version 3.10 .
+            mypy --install-types --non-interactive --python-version 3.11 .
+            mypy --install-types --non-interactive --python-version 3.12 .
