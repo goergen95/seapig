@@ -81,7 +81,7 @@ prediction, depending on the score of the input:
 $$
 h(x) =
 \begin{cases}
-f_t(x), & \text{if} g(x)=1,\\
+f(x), & \text{if} g(x)=1,\\
 \varnothing, & \text{if } g(x)=0.
 \end{cases}
 $$
@@ -154,10 +154,10 @@ print(sel)
 ```
 
     {'score': tensor([3.2465, 3.9292, 3.0559, 3.2346, 3.8165, 2.7667, 2.5528, 3.1070, 3.2880,
-            4.9160, 3.9495, 3.9523, 3.7857, 4.1428, 3.5324, 3.9517, 3.7731, 3.1673,
+            4.9160, 3.9495, 3.7173, 3.7718, 4.1428, 3.5324, 3.9517, 3.7731, 3.1701,
             3.4171, 3.2512, 3.2503, 2.7896, 3.7821, 4.1532, 3.1579, 3.6539, 3.4985,
             4.2538, 4.0584, 3.3903, 3.0708, 4.0396]), 'selected': tensor([ True, False,  True,  True, False,  True,  True,  True,  True, False,
-            False, False, False, False,  True, False, False,  True,  True,  True,
+            False,  True, False, False,  True, False, False,  True,  True,  True,
              True,  True, False, False,  True,  True,  True, False, False,  True,
              True, False])}
 
@@ -221,7 +221,7 @@ print(preds)
 
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
 
-    [{'predictions': tensor([1, 0, 0, 0, 0, 1, 0, 0, 1, 1]), 'score': tensor([5.2689, 4.8641, 5.4766, 5.8140, 5.3438, 4.6612, 6.0491, 5.0448, 6.6638,
+    [{'predictions': tensor([1, 0, 0, 0, 0, 1, 0, 0, 1, 1]), 'score': tensor([5.2689, 4.8641, 5.4766, 5.8140, 5.3438, 4.6612, 6.0491, 5.0448, 6.6430,
             5.3910]), 'selected': tensor([False, False, False, False, False, False, False, False, False, False])}]
 
 #### Available scores
