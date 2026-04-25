@@ -18,7 +18,7 @@ except ImportError:
 
 
 class PyODScore(EmbeddingScore):
-    """Confidence Scores based on detectors supplied by PyOD.
+    """Confidence scores based on detectors supplied by PyOD.
 
     Computes outlier scores using PyOD detectors where low scores indicate samples
     similar to the training distribution (likely inliers) and high scores indicate
@@ -26,25 +26,22 @@ class PyODScore(EmbeddingScore):
 
     Parameters
     ----------
-    detector:
-        An `BaseDetector` instance from PyOD.
-    pca:
-        A `TensorPCA` instance or `None`. If provided, this `TensorPCA` object will
-        be used to perform dimensionality reduction on embeddings prior to
-        scoring (for example, to retain a specified explained variance).
-        Defaults to `None`, indicating that dimensionality reduction is not applied.
+    detector : pyod.models.base.BaseDetector
+        A fitted or unfitted PyOD detector instance. Any detector from the
+        ``pyod`` library that implements ``fit`` and ``decision_function``
+        is supported (e.g., ``pyod.models.knn.KNN``).
+    pca : TensorPCA or None, default None
+        Optional PCA for dimensionality reduction prior to scoring.
 
-    Attributes
-    ----------
-    embeddings:
-        A `torch.Tensor` representing reference embeddings.
-    scores:
-        A `torch.Tensor` with the confidence scores of the calibration samples.
-        Low scores indicate likely inliers, high scores indicate likely outliers.
-        Defaults to `None`.
-    threshold:
-        A `float` indicating the rejection threshold. Samples with scores higher
-        than this threshold are excluded from prediction. Defaults to `None`.
+    Notes
+    -----
+    Requires the optional ``pyod`` dependency:
+    ``pip install pyod``.
+
+    See Also
+    --------
+    seapig.scores.knn.EuclideanScore : Built-in KNN-based score (no extra dependency).
+    seapig.scores.embed.EmbeddingScore : Base class for embedding-based scores.
     """
 
     train_required: bool = True
@@ -71,7 +68,7 @@ class PyODScore(EmbeddingScore):
         prefix: str | None = None,
         q: bool | float = False,
     ) -> None:
-        """Train a confidence score based on samples from a `torch.utils.data.DataLoader`.
+        """Train a confidence score based on sample embeddings.
 
         This method supports two usage modes:
 
@@ -84,6 +81,8 @@ class PyODScore(EmbeddingScore):
 
         ```python
         # Mode 1: Precomputed embeddings
+        from pyod.models.knn import KNN
+        from seapig.scores.pyod import PyODScore
         my_score = PyODScore(detector=KNN(n_neighbors=5))
         my_score.fit(X=train_embs, Y=val_embs)
 
@@ -95,16 +94,16 @@ class PyODScore(EmbeddingScore):
         Parameters
         ----------
         X:
-            A `torch.tensor` with training sample embeddings. Required when not
+            A `torch.Tensor` with training sample embeddings. Required when not
             using `model` and `loaders`.
         Y:
-            A `torch.tensor` with calibration sample embeddings. Optional.
+            A `torch.Tensor` with calibration sample embeddings. Optional.
         model:
             A `torch.nn.Module` with an `.embed()` method. Required when not
             using `X`.
         loaders:
-            A `dict` with `DataLoader` objects. Required keys: `["train"]`.
-            Optional key: `["val"]`. Required when using `model`.
+            A `dict` with `DataLoader` objects. Required keys: ``["train"]``.
+            Optional key: ``["val"]``. Required when using `model`.
         outdir:
             A `pathlib.Path` pointing to a directory for saving/loading embeddings.
             Only used with `model` and `loaders`.
@@ -112,8 +111,8 @@ class PyODScore(EmbeddingScore):
             A `str` used as filename prefix for saved embeddings.
             Only used with `model` and `loaders`.
         q:
-            A `float` or a `bool` indicating if the scores should be filtered to
-            remove outliers from the training distribution. Defaults to `False`.
+            A `float` or `bool` indicating if outliers from the training
+            distribution should be filtered before fitting. Defaults to `False`.
         """
         super().fit(
             X=X, Y=Y, model=model, loaders=loaders, outdir=outdir, prefix=prefix
@@ -163,20 +162,10 @@ class PyODScore(EmbeddingScore):
         similar to training) and high values indicate likely outliers (samples
         deviating from training).
 
-        Once instantiated, the object can be called to return confidence
-        scores based on sample embeddings.
-
-        ```python
-        my_score = PyODScore()
-        my_score.fit(train_data, val_data)
-        scores = my_score.score(test_data)
-        ```
-
         Parameters
         ----------
         X:
-            A `torch.tensor`or representing sample embeddings. Expected dimensions
-            are (B,D).
+            A `torch.Tensor` representing sample embeddings of shape ``(B, D)``.
         """
         assert self.detector is not None
         if self.pca is not None:

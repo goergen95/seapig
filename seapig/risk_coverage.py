@@ -17,7 +17,7 @@ class RiskCoverage:
     Attributes
     ----------
     coverage : torch.Tensor
-        Coverage values in [0, 1].
+        Coverage values in ``[0, 1]``.
     threshold : torch.Tensor
         Sorted score thresholds used to compute coverage.
     risk : torch.Tensor
@@ -28,8 +28,17 @@ class RiskCoverage:
         Excess risk (empirical - reference).
     risk_type : str
         Either ``'generalized'`` or ``'selective'``; see `risk_coverage`.
-    auc_empirical, auc_reference, auc_excess : torch.Tensor
-        Area-under-curve values computed with the trapezoidal rule.
+    auc_empirical : torch.Tensor
+        Area under the empirical risk curve (trapezoidal rule).
+    auc_reference : torch.Tensor
+        Area under the reference risk curve (trapezoidal rule).
+    auc_excess : torch.Tensor
+        Area under the excess risk curve (trapezoidal rule).
+
+    See Also
+    --------
+    seapig.risk_coverage.risk_coverage : Function that produces this container.
+    seapig.metric.RiskCoverageMetric : Metric wrapper for use with Lightning.
     """
 
     def __init__(
@@ -46,7 +55,8 @@ class RiskCoverage:
     ) -> None:
         """Create a `RiskCoverage` container.
 
-        Parameters mirror the attributes above.
+        All parameters correspond directly to the attributes of the same name.
+        Typically constructed by `risk_coverage` rather than directly.
         """
         self.coverage = coverage
         self.threshold = threshold

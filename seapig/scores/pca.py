@@ -11,21 +11,37 @@ from seapig.scores.utils import TensorPCA
 
 
 class PCAScore(EmbeddingScore):
-    """Returns a confidence scores based on PCA-based reconstruction errors.
+    """Returns confidence scores based on PCA reconstruction errors.
 
     Computes reconstruction error-based confidence scores where low scores indicate
     samples that can be well-reconstructed from principal components (likely inliers)
     and high scores indicate samples with large reconstruction errors (likely outliers).
 
-    See https://arxiv.org/pdf/2402.02949v3
+    See https://arxiv.org/pdf/2402.02949v3 for the method description.
 
     Parameters
     ----------
-    pca:
-        A `TensorPCA` instance or `None`. If provided, this `TensorPCA` object will
-        be used to perform dimensionality reduction on embeddings prior to
-        scoring (for example, to retain a specified explained variance).
-        Defaults to `None`, indicating that dimensionality reduction is not applied.
+    pca : TensorPCA, optional
+        PCA configuration to use. Defaults to
+        ``TensorPCA(n_components=0.50, gamma=3.0, M=4096)`` (RFF-PCA retaining
+        50% explained variance).
+
+    Examples
+    --------
+    ```python
+    import torch
+    from seapig.scores import PCAScore
+    from seapig.scores.utils import TensorPCA
+    score = PCAScore(pca=TensorPCA(n_components=0.90))
+    score.fit(X=torch.randn(200, 64), Y=torch.randn(50, 64))
+    score.set_threshold(q=0.95)
+    result = score.select(X=torch.randn(10, 64))
+    ```
+
+    See Also
+    --------
+    seapig.scores.utils.TensorPCA : PCA implementation used internally.
+    seapig.scores.knn.EuclideanScore : Alternative distance-based score.
     """
 
     ident = "pca"
@@ -60,27 +76,29 @@ class PCAScore(EmbeddingScore):
 
         ```python
         # Mode 1: Precomputed embeddings
-        my_score = PCAScore(n_components = 0.90)
+        from seapig.scores import PCAScore
+        from seapig.scores.utils import TensorPCA
+        my_score = PCAScore(pca=TensorPCA(n_components=0.90))
         my_score.fit(X=train_embs, Y=val_embs)
 
         # Mode 2: On-the-fly extraction
-        my_score = PCAScore(n_components = 0.90)
+        my_score = PCAScore(pca=TensorPCA(n_components=0.90))
         my_score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
         ```
 
         Parameters
         ----------
         X:
-            A `torch.tensor` with training sample embeddings. Required when not
+            A `torch.Tensor` with training sample embeddings. Required when not
             using `model` and `loaders`.
         Y:
-            A `torch.tensor` with calibration sample embeddings. Optional.
+            A `torch.Tensor` with calibration sample embeddings. Optional.
         model:
             A `torch.nn.Module` with an `.embed()` method. Required when not
             using `X`.
         loaders:
-            A `dict` with `DataLoader` objects. Required keys: `["train"]`.
-            Optional key: `["val"]`. Required when using `model`.
+            A `dict` with `DataLoader` objects. Required keys: ``["train"]``.
+            Optional key: ``["val"]``. Required when using `model`.
         outdir:
             A `pathlib.Path` pointing to a directory for saving/loading embeddings.
             Only used with `model` and `loaders`.
@@ -88,8 +106,8 @@ class PCAScore(EmbeddingScore):
             A `str` used as filename prefix for saved embeddings.
             Only used with `model` and `loaders`.
         q:
-            A `float` or a `bool` indicating if the scores should be filtered to
-            remove outliers from the training distribution. Defaults to `False`.
+            A `float` or `bool` indicating if outliers from the training
+            distribution should be filtered before fitting. Defaults to `False`.
         """
         super().fit(
             X=X, Y=Y, model=model, loaders=loaders, outdir=outdir, prefix=prefix
@@ -129,20 +147,10 @@ class PCAScore(EmbeddingScore):
         can be well-reconstructed (likely inliers) and high values indicate samples
         with large reconstruction errors (likely outliers).
 
-        Once instantiated, the object can be called to return confidence
-        scores based on sample embeddings.
-
-        ```python
-        my_score = PCAScore()
-        my_score.fit(train_data, val_data)
-        scores = my_score.score(test_data)
-        ```
-
         Parameters
         ----------
         X:
-            A `torch.tensor`or representing sample embeddings. Expected dimensions
-            are (B,D).
+            A `torch.Tensor` representing sample embeddings of shape ``(B, D)``.
         """
         assert self.pca is not None
         _, error = self.pca.reconstruct(X)

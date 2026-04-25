@@ -22,26 +22,31 @@ class ConfidenceScore(torch.nn.Module, ABC):
 
     Attributes
     ----------
-    trained:
-        A `bool`ean indicating if the score has been trained. Defaults to `FALSE`.
-    train_required:
-        A `bool`ean indicating if the score requires training. Defaults to `FALSE`.
-    cal_required:
-        A `bool`ean indicating if the score requires calibration. Defaults to `FALSE`.
-    calibrated:
-        A `bool`ean indicating if the score has been calibrated. Defaults to `FALSE`.
-    scores:
-        A `torch.Tensor` with the confidence scores of the calibration samples.
-        Low scores indicate likely inliers, high scores indicate likely outliers.
-        Defaults to `None`.
-    threshold:
-        A `float` indicating the rejection threshold. Samples with scores higher
-        than this threshold are excluded from prediction. Defaults to `None`.
-    device:
-        A `str`ing indicating to which device internal `torch.Tensor`s are put.
-        Default is `"cpu"`.
-    ident:
-        A `str`ing identifying the confidence score.
+    trained : bool
+        Whether the score has been trained. Defaults to ``False``.
+    train_required : bool
+        Whether training is required before scoring. Defaults to ``False``.
+    cal_required : bool
+        Whether calibration is required before selecting. Defaults to ``False``.
+    calibrated : bool
+        Whether the score has been calibrated. Defaults to ``False``.
+    scores : torch.Tensor or None
+        Confidence scores of the calibration samples. Low scores indicate
+        likely inliers, high scores indicate likely outliers.
+    threshold : torch.Tensor or None
+        Rejection threshold. Samples with scores higher than this value are
+        excluded from prediction.
+    device : str
+        Device to which internal tensors are put. Defaults to ``"cpu"``.
+    ident : str
+        String identifying the confidence score implementation.
+
+    See Also
+    --------
+    seapig.scores.knn.EuclideanScore : KNN-based score using Euclidean distance.
+    seapig.scores.knn.CosineScore : KNN-based score using cosine distance.
+    seapig.scores.pca.PCAScore : PCA reconstruction error score.
+    seapig.scores.logits.SoftmaxScore : Softmax probability score.
     """
 
     trained: bool = False
@@ -89,6 +94,17 @@ class ConfidenceScore(torch.nn.Module, ABC):
         """Set a threshold based on a specific quantile on the available scores.
 
         Samples with scores higher than this threshold are excluded from prediction.
+
+        Parameters
+        ----------
+        q : float
+            Quantile in the interval ``(0, 1)`` used to compute the threshold
+            from the stored calibration scores. Defaults to ``0.99``.
+
+        Raises
+        ------
+        ValueError
+            If no calibration scores are available yet.
         """
         assert 0.0 < q < 1.0, "Quantile (q) must be between 0 and 1."
         q = float(q)
@@ -102,11 +118,14 @@ class ConfidenceScore(torch.nn.Module, ABC):
 
     @abstractmethod
     def fit(self, *args: Any, **kwargs: Any) -> None:
-        """Fit a confidence score.
+        """Fit a confidence score on training data.
 
-        Here, `X` is used as training samples to fit the downstream method,
-        while `Y` as an optional parameter that can be used to calculate
-        reference scores for the decision threshold.
+        `X` is used as training samples to fit the underlying method,
+        while `Y` is an optional parameter that can be used to compute
+        reference scores for the decision threshold (calibration set).
+
+        Subclasses define the exact parameter signatures and accepted
+        input modes (precomputed tensors or model + DataLoader).
         """
 
     @abstractmethod
@@ -115,7 +134,6 @@ class ConfidenceScore(torch.nn.Module, ABC):
 
         Returns scores where low values indicate likely inliers and high values
         indicate likely outliers.
-
         """
 
     @abstractmethod
@@ -124,6 +142,12 @@ class ConfidenceScore(torch.nn.Module, ABC):
 
         Samples with scores lower than the threshold are selected for prediction,
         while samples with scores higher than the threshold are excluded.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            A dict with keys ``'score'`` (raw confidence scores) and
+            ``'selected'`` (boolean selection mask).
         """
 
     def plot(
@@ -232,9 +256,15 @@ class ConfidenceScore(torch.nn.Module, ABC):
 class RandomScore(ConfidenceScore):
     """Returns random confidence scores per sample.
 
-    This score returns a random float in the range `[0,1]` for each sample
-    in a batch. Low scores indicate likely inliers, high scores indicate likely
-    outliers. By default, samples with scores below 0.99 are selected for prediction.
+    This score assigns a random float in ``[0, 1]`` to each sample.
+    It is useful as a baseline or for testing purposes. Low scores
+    indicate likely inliers, high scores indicate likely outliers.
+    By default, the threshold is set to ``0.99``, so approximately
+    99% of samples are selected.
+
+    See Also
+    --------
+    seapig.scores.base.ConfidenceScore : Abstract base class.
     """
 
     train_required: bool = False
@@ -255,48 +285,62 @@ class RandomScore(ConfidenceScore):
     @override
     @torch.inference_mode()
     def score(self, X: torch.Tensor) -> torch.Tensor:
-        """Compute a confidence score for every sample in a batch.
+        """Compute a random confidence score for every sample in a batch.
 
         Returns random scores where low values indicate likely inliers and
         high values indicate likely outliers.
 
-        Once instantiated, the object can be called to return a tensor of
-        random confidence scores based on a batch of inputs:
-
-        ```python
-        my_score = RandomScore()
-        scores = my_score.score(batch)
-        ```
-
         Parameters
         ----------
-        X:
-            A `torch.Tensor`.
+        X : torch.Tensor
+            Input batch of shape ``(B, ...)``. Only the batch size is used.
+
+        Returns
+        -------
+        torch.Tensor
+            1-D tensor of shape ``(B,)`` with uniform random scores in ``[0, 1]``.
+
+        Examples
+        --------
+        ```python
+        import torch
+        from seapig.scores import RandomScore
+        score = RandomScore()
+        scores = score.score(torch.zeros(4, 10))
+        ```
         """
         return torch.rand(X.shape[0])
 
     @override
     @torch.inference_mode()
     def select(self, X: torch.Tensor) -> dict[str, torch.Tensor]:
-        """Select samples for prediction based on their confidence score.
+        """Select samples for prediction based on their random confidence score.
 
         Samples with scores lower than the threshold are selected for prediction.
 
-        Once instantiated, the object can be called to return a tensor of
-        random confidence scores and selection decision based on a batch of inputs:
-
-        ```python
-        my_score = RandomScore()
-        selection = my_score.select(batch)
-        ```
-
         Parameters
         ----------
-        X:
-            A `torch.Tensor`.
+        X : torch.Tensor
+            Input batch of shape ``(B, ...)``. Only the batch size is used.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            A dict with keys ``'score'`` (random scores) and ``'selected'``
+            (boolean mask where ``True`` means the sample is selected).
+
+        Examples
+        --------
+        ```python
+        import torch
+        from seapig.scores import RandomScore
+        score = RandomScore()
+        result = score.select(torch.zeros(4, 10))
+        # result['selected'] is a boolean tensor of shape (4,)
+        ```
         """
         if self.get_threshold() is None:
-            logger.warning("Trying to set it via `set_threshold()`.")
+            logger.warning("No threshold set. Trying to set it via `set_threshold()`.")
             self.set_threshold()
         assert self.threshold is not None
         score = self.score(X=X)

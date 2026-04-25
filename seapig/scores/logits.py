@@ -22,29 +22,35 @@ from seapig.utils.progress import track
 
 
 class LogitScore(ConfidenceScore, abc.ABC):
-    """
-    Base class for logit-based confidence scores.
+    """Base class for logit-based confidence scores.
 
     Supports multiclass, binary (single/two-logit), and multilabel tasks.
     Handles temperature fitting and input normalization for all cases.
 
     Parameters
     ----------
-    temperature : float or None
-        Optional temperature to apply to logits. If None, no temperature
+    temperature : float or None, default None
+        Optional temperature to apply to logits. If ``None``, no temperature
         scaling is applied until :meth:`fit` or :meth:`fit_temperature` is called.
-    task : {"multiclass", "binary", "multilabel"}, default="multiclass"
+    task : {'multiclass', 'binary', 'multilabel'}, default 'multiclass'
         Type of classification task. Determines score computation and
-        temperature fitting loss. Default is multiclass for backwards compatibility.
+        temperature fitting loss.
 
     Notes
     -----
     Input shapes and label formats by task:
 
-    - multiclass: logits (N, C), labels (N,) long
-    - binary single-logit: logits (N,) or (N, 1), labels (N,) float/long
-    - binary two-logit: logits (N, 2), labels (N,) long
-    - multilabel: logits (N, C), labels (N, C) float
+    - ``multiclass``: logits ``(N, C)``, labels ``(N,)`` long
+    - ``binary`` single-logit: logits ``(N,)`` or ``(N, 1)``, labels ``(N,)`` float/long
+    - ``binary`` two-logit: logits ``(N, 2)``, labels ``(N,)`` long
+    - ``multilabel``: logits ``(N, C)``, labels ``(N, C)`` float
+
+    See Also
+    --------
+    seapig.scores.logits.SoftmaxScore : Softmax probability-based score.
+    seapig.scores.logits.EntropyScore : Predictive entropy score.
+    seapig.scores.logits.EnergyScore : Energy-based score.
+    seapig.scores.logits.MarginScore : Top-two margin score.
 
     Examples
     --------
@@ -75,13 +81,12 @@ class LogitScore(ConfidenceScore, abc.ABC):
 
     @staticmethod
     def _check_model(model: torch.nn.Module) -> None:
-        """
-        Check if the model is compatible with logits-based confidence scores.
+        """Check if the model is compatible with logits-based confidence scores.
 
         Parameters
         ----------
         model : torch.nn.Module
-            Model to check. Must have a callable `.logits(x)` method.
+            Model to check. Must have a callable ``.logits(x)`` method.
         """
         assert isinstance(model, torch.nn.Module)
         if not hasattr(model, "logits") or not callable(model.logits):
@@ -103,8 +108,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
         *args: object,
         **kwargs: object,
     ) -> None:
-        """
-        Fit the score on reference logits.
+        """Fit the score on reference logits.
 
         This method supports two usage modes:
 
@@ -123,7 +127,8 @@ class LogitScore(ConfidenceScore, abc.ABC):
         Y : torch.Tensor or None
             Optional labels for temperature fitting. Shape/type depends on task.
         model : torch.nn.Module or None
-            Model with a `.logits(x)` method. Required when not using precomputed logits.
+            Model with a ``.logits(x)`` method. Required when not using
+            precomputed logits.
         loader : DataLoader or None
             DataLoader yielding batches for inference. Required when using `model`.
         outdir : Path or str or None
@@ -195,8 +200,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
 
     @abc.abstractmethod
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
-        """
-        Compute confidence scores for query logits.
+        """Compute confidence scores for query logits.
 
         Parameters
         ----------
@@ -206,7 +210,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
         Returns
         -------
         torch.Tensor
-            1-D tensor of shape (M,). Lower is more confident.
+            1-D tensor of shape ``(M,)``. Lower values indicate higher confidence.
         """
         raise NotImplementedError()
 
@@ -215,6 +219,17 @@ class LogitScore(ConfidenceScore, abc.ABC):
 
         Samples with scores lower than the threshold are selected for prediction,
         while samples with scores higher than the threshold are excluded.
+
+        Parameters
+        ----------
+        query_logits : torch.Tensor
+            Logits for samples to select. Shape depends on task.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            A dict with keys ``'score'`` (confidence scores) and ``'selected'``
+            (boolean mask where ``True`` means the sample is selected).
         """
         if self.threshold is None:
             self.set_threshold()
@@ -226,8 +241,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
     def _fit_temperature(
         self, logits: torch.Tensor, labels: torch.Tensor
     ) -> None:
-        """
-        Fit scalar temperature by minimizing validation NLL.
+        """Fit scalar temperature by minimizing validation NLL.
 
         Parameters
         ----------
@@ -285,8 +299,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
         self.temperature = T_final.item()
 
     def _is_binary_single_logit(self, logits: torch.Tensor) -> bool:
-        """
-        Determine if logits are single-logit binary format.
+        """Determine if logits are single-logit binary format.
 
         Parameters
         ----------
@@ -296,7 +309,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
         Returns
         -------
         bool
-            True if single-logit binary, else False.
+            ``True`` if single-logit binary format, else ``False``.
         """
         if self.task != "binary":
             return False
@@ -308,8 +321,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
     def _normalize_logits_and_labels(
         self, logits: torch.Tensor, labels: torch.Tensor | None
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """
-        Normalize logits and labels for temperature fitting.
+        """Normalize logits and labels for temperature fitting.
 
         Parameters
         ----------
@@ -373,8 +385,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
     def _temperature_loss(
         self, logits: torch.Tensor, labels: torch.Tensor
     ) -> torch.Tensor:
-        """
-        Compute loss for temperature scaling based on task.
+        """Compute loss for temperature scaling based on task.
 
         Parameters
         ----------
@@ -386,7 +397,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
         Returns
         -------
         torch.Tensor
-            Loss value.
+            Scalar loss value.
         """
         if self.task == "multiclass":
             return F.cross_entropy(logits, labels.long())
@@ -411,8 +422,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
         model: torch.nn.Module,
         loader: DataLoader[object],
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
-        """
-        Load logits and labels from disk or compute from model.
+        """Load logits and labels from disk or compute from model.
 
         Parameters
         ----------
@@ -425,8 +435,8 @@ class LogitScore(ConfidenceScore, abc.ABC):
 
         Returns
         -------
-        tuple of torch.Tensor, torch.Tensor or None
-            Logits and labels.
+        tuple of (torch.Tensor, torch.Tensor or None)
+            Logits and labels (labels may be ``None`` if not provided by loader).
         """
         self._check_model(model=model)
         if path is not None and path.exists():
@@ -455,8 +465,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
     def _logits_from_loader(
         self, model: torch.nn.Module, loader: DataLoader[object]
     ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
-        """
-        Extract logits and labels from a DataLoader.
+        """Extract logits and labels from a DataLoader.
 
         Parameters
         ----------
@@ -467,7 +476,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
 
         Returns
         -------
-        tuple of torch.Tensor or None, torch.Tensor or None
+        tuple of (torch.Tensor or None, torch.Tensor or None)
             Logits and labels.
         """
         self._check_model(model=model)
@@ -514,16 +523,17 @@ class LogitScore(ConfidenceScore, abc.ABC):
 
 
 class SoftmaxScore(LogitScore):
-    """
-    Maximum softmax probability confidence score.
+    """Maximum softmax probability confidence score.
 
     Supports multiclass, binary (single/two-logit), and multilabel tasks.
+    Higher maximum softmax probability indicates higher confidence (lower score).
 
     Parameters
     ----------
-    temperature : float or None
-        Optional initial temperature. If None, temperature is fitted if labels are provided.
-    task : {"multiclass", "binary", "multilabel"}, default="multiclass"
+    temperature : float or None, default None
+        Optional initial temperature. If ``None``, temperature is fitted if
+        labels are provided to ``fit``.
+    task : {'multiclass', 'binary', 'multilabel'}, default 'multiclass'
         Task type for score computation.
 
     Examples
@@ -534,6 +544,12 @@ class SoftmaxScore(LogitScore):
     logits = torch.randn(2, 4)
     SoftmaxScore().score(logits)
     ```
+
+    See Also
+    --------
+    seapig.scores.logits.EntropyScore : Entropy-based alternative.
+    seapig.scores.logits.EnergyScore : Energy-based alternative.
+    seapig.scores.logits.MarginScore : Margin-based alternative.
     """
 
     ident: str = "softmax"
@@ -579,15 +595,19 @@ class SoftmaxScore(LogitScore):
 
 
 class EnergyScore(LogitScore):
-    """
-    Energy-based confidence score.
+    """Energy-based confidence score.
 
-    Supports multiclass, binary, and multilabel tasks.
+    Computes the free energy of the logit distribution. Lower energy (more
+    negative) indicates higher confidence. Supports multiclass, binary, and
+    multilabel tasks.
 
     Parameters
     ----------
-    temperature : float or None
-        Optional initial temperature. If None, temperature is fitted if labels are provided.
+    temperature : float or None, default None
+        Optional initial temperature. If ``None``, temperature is fitted if
+        labels are provided to ``fit``.
+    task : {'multiclass', 'binary', 'multilabel'}, default 'multiclass'
+        Task type for score computation.
 
     Examples
     --------
@@ -597,6 +617,10 @@ class EnergyScore(LogitScore):
     logits = torch.randn(2, 3)
     EnergyScore().score(logits)
     ```
+
+    See Also
+    --------
+    seapig.scores.logits.SoftmaxScore : Softmax probability-based alternative.
     """
 
     ident: str = "energy"
@@ -635,16 +659,18 @@ class EnergyScore(LogitScore):
 
 
 class MarginScore(LogitScore):
-    """
-    Top-two margin confidence score.
+    """Top-two margin confidence score.
 
-    Supports multiclass, binary (single/two-logit), and multilabel tasks.
+    Computes the difference between the top-two logits. A larger margin
+    indicates higher confidence (lower score). Supports multiclass,
+    binary (single/two-logit), and multilabel tasks.
 
     Parameters
     ----------
-    temperature : float or None
-        Optional initial temperature. If None, temperature is fitted if labels are provided.
-    task : {"multiclass", "binary", "multilabel"}, default="multiclass"
+    temperature : float or None, default None
+        Optional initial temperature. If ``None``, temperature is fitted if
+        labels are provided to ``fit``.
+    task : {'multiclass', 'binary', 'multilabel'}, default 'multiclass'
         Task type for score computation.
 
     Examples
@@ -655,6 +681,10 @@ class MarginScore(LogitScore):
     logits = torch.randn(2, 3)
     MarginScore().score(logits)
     ```
+
+    See Also
+    --------
+    seapig.scores.logits.SoftmaxScore : Softmax probability-based alternative.
     """
 
     ident: str = "margin"
@@ -701,15 +731,19 @@ class MarginScore(LogitScore):
 
 
 class EntropyScore(LogitScore):
-    """
-    Entropy-based confidence score.
+    """Entropy-based confidence score.
 
-    Supports multiclass, binary, and multilabel tasks.
+    Computes the predictive entropy of the output distribution. Higher entropy
+    indicates higher uncertainty (higher score). Supports multiclass, binary,
+    and multilabel tasks.
 
     Parameters
     ----------
-    temperature : float or None
-        Optional initial temperature. If None, temperature is fitted if labels are provided.
+    temperature : float or None, default None
+        Optional initial temperature. If ``None``, temperature is fitted if
+        labels are provided to ``fit``.
+    task : {'multiclass', 'binary', 'multilabel'}, default 'multiclass'
+        Task type for score computation.
 
     Examples
     --------
@@ -719,6 +753,10 @@ class EntropyScore(LogitScore):
     logits = torch.randn(2, 3)
     EntropyScore().score(logits)
     ```
+
+    See Also
+    --------
+    seapig.scores.logits.SoftmaxScore : Softmax probability-based alternative.
     """
 
     ident: str = "entropy"

@@ -28,25 +28,27 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
     Parameters
     ----------
-    pca:
-        A `TensorPCA` instance or `None`. If provided, this `TensorPCA` object will
-        be used to perform dimensionality reduction on embeddings prior to
-        scoring (for example, to retain a specified explained variance).
-        Defaults to `None`, indicating that dimensionality reduction is not applied.
+    pca : TensorPCA or None, default None
+        Optional PCA for dimensionality reduction prior to scoring. When
+        provided, embeddings are projected onto the principal components
+        before the score is computed.
 
     Attributes
     ----------
-    ref_embeddings:
-        A `torch.Tensor` with the embeddings of trainings samples. Defaults to `None`.
-    cal_embeddings:
-        A `torch.Tensor` with the embeddings of validation samples. Defaults to `None`.
-    scores:
-        A `torch.Tensor` with the confidence scores of the validation samples.
-        Low scores indicate likely inliers, high scores indicate likely outliers.
-        Defaults to `None`.
-    threshold:
-        A `float` indicating the rejection threshold. Samples with scores higher
-        than this threshold are excluded from prediction. Defaults to `None`.
+    ref_embeddings : torch.Tensor or None
+        Embeddings of training samples used to fit the score.
+    cal_embeddings : torch.Tensor or None
+        Embeddings of validation/calibration samples. Optional.
+    scores : torch.Tensor or None
+        Confidence scores of the calibration (or training) samples.
+    threshold : torch.Tensor or None
+        Rejection threshold. Samples with scores above this value are excluded.
+
+    See Also
+    --------
+    seapig.scores.knn.EuclideanScore : Concrete KNN-based implementation.
+    seapig.scores.pca.PCAScore : PCA reconstruction error implementation.
+    seapig.scores.utils.TensorPCA : PCA utility used for dimensionality reduction.
     """
 
     ref_embeddings: torch.Tensor | None
@@ -232,27 +234,28 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
         ```python
         # Mode 1: Precomputed embeddings
-        my_score = EmbeddingScore(k=2)
+        from seapig.scores import EuclideanScore
+        my_score = EuclideanScore(k=2)
         my_score.fit(X=train_embs, Y=val_embs)
 
         # Mode 2: On-the-fly extraction
-        my_score = EmbeddingScore(k=2)
+        my_score = EuclideanScore(k=2)
         my_score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
         ```
 
         Parameters
         ----------
         X:
-            A `torch.tensor` with training sample embeddings. Required when not
+            A `torch.Tensor` with training sample embeddings. Required when not
             using `model` and `loaders`.
         Y:
-            A `torch.tensor` with calibration sample embeddings. Optional.
+            A `torch.Tensor` with calibration sample embeddings. Optional.
         model:
             A `torch.nn.Module` with an `.embed()` method. Required when not
             using `X`.
         loaders:
-            A `dict` with `DataLoader` objects. Required keys: `["train"]`.
-            Optional key: `["val"]`. Required when using `model`.
+            A `dict` with `DataLoader` objects. Required keys: ``["train"]``.
+            Optional key: ``["val"]``. Required when using `model`.
         outdir:
             A `pathlib.Path` pointing to a directory for saving/loading embeddings.
             Only used with `model` and `loaders`.
@@ -309,21 +312,17 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
     @override
     def set_threshold(self, q: float = 0.99) -> None:
-        """Set a threshold based on quantiles on the reference confidence scores.
+        """Set a threshold based on a quantile of the available confidence scores.
 
-        This method sets the selection threshold based on the quantile on
-        the values found in the `scores` attribute. Samples with scores higher
-        than this threshold are excluded from prediction. If the confidence score
-        is trained, but uncalibrated, this will be based on the k-nearest-neighbor
-        distances of the training samples, excluding the distance to the
-        point itself. If calibrated, the distance of the calibration samples to
-        the k-closest training samples are used.
+        Samples with scores higher than the threshold are excluded from prediction.
+        If calibration embeddings were provided during ``fit``, the threshold is
+        computed from their scores; otherwise the training sample scores are used.
 
         Parameters
         ----------
-        q:
-            A `float` indicating the quantile of confidence scores of the
-            samples to set the rejection threshold to.
+        q : float
+            Quantile in ``(0, 1)`` used to determine the threshold. Defaults to
+            ``0.99`` (i.e., 1% of samples are rejected as outliers).
         """
         if self.train_required:
             assert self.is_trained()
@@ -352,39 +351,40 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
         You must use either embeddings (X) OR model+loader, but not both.
 
-        Iterates over a dataloader (if provided), embeds samples on-the-fly using
-        the supplied model's `.embed()` method and returns their confidence scores.
-
         ```python
         # Mode 1: Precomputed embeddings
-        my_score = KNNScore()
+        from seapig.scores import EuclideanScore
+        my_score = EuclideanScore()
         scores = my_score.score(X=test_embeddings)
 
         # Mode 2: On-the-fly extraction
-        my_score = KNNScore()
+        my_score = EuclideanScore()
         scores = my_score.score(model=model, loader=test_dl)
         ```
 
         Parameters
         ----------
         X:
-            A `torch.Tensor` with query embeddings of shape (N, D).
+            A `torch.Tensor` with query embeddings of shape ``(N, D)``.
             Required when not using `model` and `loader`.
         model:
-            A torch.nn.Module representing a trained model instance. It is
-            required to have an `.embed()` method.
+            A `torch.nn.Module` with an `.embed()` method.
             Required when not using `X`.
         loader:
-            A `torch.utils.data.DataLoader` object returning `torch.Tensor`s or
-            a `dict` of `torch.Tensor`s with the `"image"` key.
-            Required when using `model`.
+            A `torch.utils.data.DataLoader` returning `torch.Tensor`s or
+            dicts with the ``"image"`` key. Required when using `model`.
         outdir:
-            A `pathlib.Path` object pointing towards a directory, by default `None`.
-            If specified, embeddings are read to disk, if previously written. Otherwise,
-            embeddings will be written to disk. Only used with `model` and `loader`.
+            A `pathlib.Path` pointing to a directory for saving/loading embeddings.
+            Only used with `model` and `loader`.
         prefix:
-            A `str`ing used as filename prefix to save embeddings, by default
-            `None`. Only used with `model` and `loader`.
+            A `str` used as filename prefix for saved embeddings.
+            Only used with `model` and `loader`.
+
+        Returns
+        -------
+        torch.Tensor
+            1-D tensor of shape ``(N,)`` with confidence scores.
+            Low values indicate likely inliers, high values indicate likely outliers.
         """
         # Validate parameter combinations
         using_embeddings = X is not None
@@ -465,44 +465,47 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
         You must use either embeddings (X) OR model+loader, but not both.
 
-        Samples are selected for prediction based on their confidence score compared
-        to a threshold. Samples with scores lower than the threshold are selected,
-        while samples with scores higher than the threshold are excluded. It is
-        expected that the threshold was previously calibrated on, e.g. validation samples.
+        Samples are selected based on their confidence score relative to a
+        threshold. Samples with scores lower than the threshold are selected,
+        while samples with scores higher than the threshold are excluded. The
+        threshold should be calibrated beforehand (e.g., on validation samples).
 
         ```python
         # Mode 1: Precomputed embeddings
-        my_score = ConfidenceScore()
-        my_score = my_score.fit(X=train_data, Y=val_data)
-        scores = my_score.select(X=test_data)
+        from seapig.scores import EuclideanScore
+        my_score = EuclideanScore()
+        my_score.fit(X=train_data, Y=val_data)
+        result = my_score.select(X=test_data)
 
         # Mode 2: On-the-fly extraction
-        my_score = ConfidenceScore()
-        my_score = my_score.fit(X=train_data, Y=val_data)
-        scores = my_score.select(model=model, loader=test_loader)
+        my_score = EuclideanScore()
+        my_score.fit(X=train_data, Y=val_data)
+        result = my_score.select(model=model, loader=test_loader)
         ```
 
         Parameters
         ----------
         X:
-            A `torch.tensor` with samples representing testing
-            embeddings to select based on a pre-calibrated threshold.
+            A `torch.Tensor` with query sample embeddings of shape ``(N, D)``.
             Required when not using `model` and `loader`.
         model:
-            A torch.nn.Module representing a trained model instance. It is
-            required to have an `.embed()` method.
+            A `torch.nn.Module` with an `.embed()` method.
             Required when not using `X`.
         loader:
-            A `torch.utils.data.DataLoader` object returning `torch.Tensor`s or
-            a `dict` of `torch.Tensor`s with the `"image"` key available.
-            Required when using `model`.
+            A `torch.utils.data.DataLoader` returning `torch.Tensor`s or
+            dicts with the ``"image"`` key. Required when using `model`.
         outdir:
-            A `pathlib.Path` object pointing towards a directory, by default `None`.
-            If specified, embeddings are read to disk, if previously written. Otherwise,
-            embeddings will be written to disk. Only used with `model` and `loader`.
+            A `pathlib.Path` pointing to a directory for saving/loading embeddings.
+            Only used with `model` and `loader`.
         prefix:
-            A `str`ing used as filename prefix to save embeddings, by default
-            `None`. Only used with `model` and `loader`.
+            A `str` used as filename prefix for saved embeddings.
+            Only used with `model` and `loader`.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            A dict with keys ``'score'`` (confidence scores) and ``'selected'``
+            (boolean mask where ``True`` means the sample is selected).
         """
         if self.train_required:
             assert self.is_trained()

@@ -20,7 +20,7 @@ def _clamp(value: int, lo: int, hi: int) -> int:
 
 
 class KNNScore(EmbeddingScore, ABC):
-    """Returns the KNN-distance to the nearest samples.
+    """Abstract base class for KNN distance-based confidence scores.
 
     Computes distance-based confidence scores where low scores indicate samples
     similar to the training distribution (likely inliers) and high scores indicate
@@ -28,31 +28,21 @@ class KNNScore(EmbeddingScore, ABC):
 
     Parameters
     ----------
-    k:
-        An `int`eger indicating the number of neighbors to calculate the distance.
-        Defaults to 1, e.g. the distance to the closest neighbor.
-    pca:
-        A `TensorPCA` instance or `None`. If provided, this `TensorPCA` object will
-        be used to perform dimensionality reduction on embeddings prior to
-        scoring (for example, to retain a specified explained variance).
-        Defaults to `None`, indicating that dimensionality reduction is not applied.
-    save_index:
-        A `bool` or `Path` indicating whether to save the fitted index to disk.
-        If `True`, the index will be saved to a default location. If a `Path` is
-        provided, the index will be saved to that location. Defaults to `False`,
-        indicating that the index will not be saved to disk.
+    k : int, default 1
+        Number of nearest neighbors used to compute the distance score.
+    stat : {'max', 'mean', 'median', 'min'}, default 'max'
+        Statistic applied to aggregate distances across the k neighbors.
+    pca : TensorPCA or None, default None
+        Optional PCA for dimensionality reduction prior to scoring.
+    save_index : bool or Path, default False
+        If ``True``, the HNSW index is saved to a default file. If a ``Path``
+        is provided (must end in ``.bin``), the index is saved there.
 
-    Attributes
-    ----------
-    embeddings:
-        A `torch.Tensor` representing reference embeddings.
-    scores:
-        A `torch.Tensor` with the confidence scores of the calibration samples.
-        Low scores indicate likely inliers, high scores indicate likely outliers.
-        Defaults to `None`.
-    threshold:
-        A `float` indicating the rejection threshold. Samples with scores higher
-        than this threshold are excluded from prediction. Defaults to `None`.
+    See Also
+    --------
+    seapig.scores.knn.EuclideanScore : Concrete score using Euclidean distance.
+    seapig.scores.knn.CosineScore : Concrete score using cosine distance.
+    seapig.scores.knn.MahalanobisScore : Concrete score using Mahalanobis distance.
     """
 
     k: int = 1
@@ -110,27 +100,28 @@ class KNNScore(EmbeddingScore, ABC):
 
         ```python
         # Mode 1: Precomputed embeddings
-        my_score = EmbeddingScore(k=2)
+        from seapig.scores import EuclideanScore
+        my_score = EuclideanScore(k=2)
         my_score.fit(X=train_embs, Y=val_embs)
 
         # Mode 2: On-the-fly extraction
-        my_score = EmbeddingScore(k=2)
+        my_score = EuclideanScore(k=2)
         my_score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
         ```
 
         Parameters
         ----------
         X:
-            A `torch.tensor` with training sample embeddings. Required when not
+            A `torch.Tensor` with training sample embeddings. Required when not
             using `model` and `loaders`.
         Y:
-            A `torch.tensor` with calibration sample embeddings. Optional.
+            A `torch.Tensor` with calibration sample embeddings. Optional.
         model:
             A `torch.nn.Module` with an `.embed()` method. Required when not
             using `X`.
         loaders:
-            A `dict` with `DataLoader` objects. Required keys: `["train"]`.
-            Optional key: `["val"]`. Required when using `model`.
+            A `dict` with `DataLoader` objects. Required keys: ``["train"]``.
+            Optional key: ``["val"]``. Required when using `model`.
         outdir:
             A `pathlib.Path` pointing to a directory for saving/loading embeddings.
             Only used with `model` and `loaders`.
@@ -138,8 +129,8 @@ class KNNScore(EmbeddingScore, ABC):
             A `str` used as filename prefix for saved embeddings.
             Only used with `model` and `loaders`.
         q:
-            A `float` or a `bool` indicating if the scores should be filtered to
-            remove outliers from the training distribution. Defaults to `False`.
+            A `float` or `bool` indicating if outliers from the training
+            distribution should be filtered before fitting. Defaults to `False`.
         """
         super().fit(
             X=X, Y=Y, model=model, loaders=loaders, outdir=outdir, prefix=prefix
@@ -184,20 +175,10 @@ class KNNScore(EmbeddingScore, ABC):
         to training) and high values indicate likely outliers (samples deviating
         from training).
 
-        Once instantiated, the object can be called to return confidence
-        scores based on sample embeddings.
-
-        ```python
-        my_score = KNNScore()
-        my_score.fit(train_data, val_data)
-        scores = my_score.score(test_data)
-        ```
-
         Parameters
         ----------
         X:
-            A `torch.tensor`or representing sample embeddings. Expected dimensions
-            are (B,D).
+            A `torch.Tensor` representing sample embeddings of shape ``(B, D)``.
         """
         assert self.index is not None, "Index must be built before scoring"
         if self.pca is not None:
@@ -337,7 +318,7 @@ class KNNScore(EmbeddingScore, ABC):
 
 
 class EuclideanScore(KNNScore):
-    """Returns the KNN-distance based on the euclidean distance to the nearest samples.
+    """Returns the KNN-distance based on the Euclidean distance to the nearest samples.
 
     Computes Euclidean distance-based confidence scores where low scores indicate
     samples similar to the training distribution (likely inliers) and high scores
@@ -345,26 +326,30 @@ class EuclideanScore(KNNScore):
 
     Parameters
     ----------
-    k:
-        An `int`eger indicating the number of neighbors to calculate the distance.
-        Defaults to 1, e.g. the distance to the closest neighbor.
-    pca:
-        A `TensorPCA` instance or `None`. If provided, this `TensorPCA` object will
-        be used to perform dimensionality reduction on embeddings prior to
-        scoring (for example, to retain a specified explained variance).
-        Defaults to `None`, indicating that dimensionality reduction is not applied.
+    k : int, default 1
+        Number of nearest neighbors to use.
+    stat : {'max', 'mean', 'median', 'min'}, default 'max'
+        Statistic to aggregate distances across the k neighbors.
+    pca : TensorPCA or None, default None
+        Optional PCA for dimensionality reduction prior to scoring.
+    save_index : bool or Path, default False
+        Whether (and where) to save the HNSW index to disk.
 
-    Attributes
-    ----------
-    embeddings:
-        A `torch.Tensor` representing reference embeddings.
-    scores:
-        A `torch.Tensor` with the confidence scores of the calibration samples.
-        Low scores indicate likely inliers, high scores indicate likely outliers.
-        Defaults to `None`.
-    threshold:
-        A `float` indicating the rejection threshold. Samples with scores higher
-        than this threshold are excluded from prediction. Defaults to `None`.
+    Examples
+    --------
+    ```python
+    import torch
+    from seapig.scores import EuclideanScore
+    score = EuclideanScore(k=5)
+    score.fit(X=torch.randn(200, 64), Y=torch.randn(50, 64))
+    score.set_threshold(q=0.95)
+    result = score.select(X=torch.randn(10, 64))
+    ```
+
+    See Also
+    --------
+    seapig.scores.knn.CosineScore : KNN score using cosine distance.
+    seapig.scores.knn.MahalanobisScore : KNN score using Mahalanobis distance.
     """
 
     k: int
@@ -400,32 +385,25 @@ class CosineScore(KNNScore):
     samples similar to the training distribution (likely inliers) and high scores
     indicate samples deviating from the training distribution (likely outliers).
 
-    The cosine distance is calculated as (1 - cosine_similarity), with a range
-    of [0, 2] where 0 indicates identical vectors, 1 indicates orthogonal
-    vectors, and 2 indicates opposite vectors.
+    The cosine distance is computed as ``(1 - cosine_similarity)``, with a range
+    of ``[0, 2]`` where ``0`` indicates identical vectors, ``1`` indicates orthogonal
+    vectors, and ``2`` indicates opposite vectors.
 
     Parameters
     ----------
-    k:
-        An `int`eger indicating the number of neighbors to calculate the distance.
-        Defaults to 1, e.g. the distance to the closest neighbor.
-    pca:
-        A `TensorPCA` instance or `None`. If provided, this `TensorPCA` object will
-        be used to perform dimensionality reduction on embeddings prior to
-        scoring (for example, to retain a specified explained variance).
-        Defaults to `None`, indicating that dimensionality reduction is not applied.
+    k : int, default 1
+        Number of nearest neighbors to use.
+    stat : {'max', 'mean', 'median', 'min'}, default 'max'
+        Statistic to aggregate distances across the k neighbors.
+    pca : TensorPCA or None, default None
+        Optional PCA for dimensionality reduction prior to scoring.
+    save_index : bool or Path, default False
+        Whether (and where) to save the HNSW index to disk.
 
-    Attributes
-    ----------
-    embeddings:
-        A `torch.Tensor` representing reference embeddings.
-    scores:
-        A `torch.Tensor` with the confidence scores of the calibration samples.
-        Low scores indicate likely inliers, high scores indicate likely outliers.
-        Defaults to `None`.
-    threshold:
-        A `float` indicating the rejection threshold. Samples with scores higher
-        than this threshold are excluded from prediction. Defaults to `None`.
+    See Also
+    --------
+    seapig.scores.knn.EuclideanScore : KNN score using Euclidean distance.
+    seapig.scores.knn.MahalanobisScore : KNN score using Mahalanobis distance.
     """
 
     k: int = 1
@@ -450,6 +428,7 @@ class CosineScore(KNNScore):
     @override
     @torch.inference_mode()
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
+        """Calculate the KNN cosine distance of a query against a populated index."""
         assert self.index is not None
         normalized = torch.nn.functional.normalize(query)
         return self._query_index(normalized, kpn)
@@ -463,30 +442,24 @@ class MahalanobisScore(KNNScore):
     indicate samples deviating from the training distribution (likely outliers).
 
     The Mahalanobis distance accounts for correlations in the training data by
-    using the covariance matrix of the training embeddings.
+    whitening the embeddings with the Cholesky factor of the training covariance
+    matrix prior to computing Euclidean nearest-neighbour distances.
 
     Parameters
     ----------
-    k:
-        An `int`eger indicating the number of neighbors to calculate the distance.
-        Defaults to 1, e.g. the distance to the closest neighbor.
-    pca:
-        A `TensorPCA` instance or `None`. If provided, this `TensorPCA` object will
-        be used to perform dimensionality reduction on embeddings prior to
-        scoring (for example, to retain a specified explained variance).
-        Defaults to `None`, indicating that dimensionality reduction is not applied.
+    k : int, default 1
+        Number of nearest neighbors to use.
+    stat : {'max', 'mean', 'median', 'min'}, default 'max'
+        Statistic to aggregate distances across the k neighbors.
+    pca : TensorPCA or None, default None
+        Optional PCA for dimensionality reduction prior to scoring.
+    save_index : bool or Path, default False
+        Whether (and where) to save the HNSW index to disk.
 
-    Attributes
-    ----------
-    embeddings:
-        A `torch.Tensor` representing reference embeddings.
-    scores:
-        A `torch.Tensor` with the confidence scores of the calibration samples.
-        Low scores indicate likely inliers, high scores indicate likely outliers.
-        Defaults to `None`.
-    threshold:
-        A `float` indicating the rejection threshold. Samples with scores higher
-        than this threshold are excluded from prediction. Defaults to `None`.
+    See Also
+    --------
+    seapig.scores.knn.EuclideanScore : KNN score using Euclidean distance.
+    seapig.scores.knn.CosineScore : KNN score using cosine distance.
     """
 
     k: int
@@ -515,6 +488,7 @@ class MahalanobisScore(KNNScore):
     @override
     @torch.inference_mode()
     def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
+        """Calculate the Mahalanobis distance of a query against a populated index."""
         assert self.index is not None
         transformed = query.float() @ self.vi_zero.T
         return self._query_index(transformed, kpn)

@@ -3,8 +3,8 @@
 Provides a package-scoped logger and helpers so downstream applications can
 opt into structured logging without modifying library code.
 
-By default the ``seapig`` logger uses a :class:`logging.NullHandler` (added in
-:mod:`seapig.__init__`) so no output is produced unless the consuming
+By default the ``seapig`` logger uses a ``logging.NullHandler`` (added in
+``seapig.__init__``) so no output is produced unless the consuming
 application configures logging.
 
 Examples
@@ -12,7 +12,7 @@ Examples
 Enable INFO-level logging to the console:
 
 ```python
-from seapig.logging import configure_logging
+from seapig.utils.logging import configure_logging
 configure_logging(level="INFO")
 ```
 
@@ -58,7 +58,7 @@ def get_logger(name: str | None = None) -> logging.Logger:
 
     Examples
     --------
-    >>> from seapig.logging import get_logger
+    >>> from seapig.utils.logging import get_logger
     >>> logger = get_logger(__name__)
     """
     if name and name.startswith(_PACKAGE):
@@ -91,7 +91,7 @@ def configure_logging(
     Examples
     --------
     >>> import logging
-    >>> from seapig.logging import configure_logging
+    >>> from seapig.utils.logging import configure_logging
     >>> configure_logging(level="INFO")
     """
     env_level = os.environ.get("SEAPIG_LOG_LEVEL", "").strip()
