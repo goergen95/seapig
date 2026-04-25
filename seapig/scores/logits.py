@@ -31,7 +31,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
     ----------
     temperature : float or None, default None
         Optional temperature to apply to logits. If `None`, no temperature
-        scaling is applied until :meth:`fit` or :meth:`fit_temperature` is called.
+        scaling is applied until :meth:`fit` is called.
     task : {'multiclass', 'binary', 'multilabel'}, default 'multiclass'
         Type of classification task. Determines score computation and
         temperature fitting loss.
