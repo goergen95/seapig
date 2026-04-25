@@ -1,0 +1,59 @@
+---
+title: "Quick Start"
+guide-section: "Getting Started"
+tags: [Getting Started, Setup]
+---
+
+This document is WIP.
+
+
+
+```{python}
+import os
+import tempfile
+
+from torch.utils.data import DataLoader
+from torchgeo.datasets import CDL, Landsat8, stack_samples
+from torchgeo.datasets.utils import download_and_extract_archive
+from torchgeo.samplers import GridGeoSampler, RandomGeoSampler
+
+landsat_root = os.path.join(tempfile.gettempdir(), "landsat")
+
+url = "https://hf.co/datasets/torchgeo/tutorials/resolve/ff30b729e3cbf906148d69a4441cc68023898924/"
+
+# get landsat predictors
+landsat8_url = url + "LC08_L2SP_023032_20230831_20230911_02_T1.tar.gz"
+download_and_extract_archive(landsat8_url, landsat_root)
+landsat8 = Landsat8(paths=landsat_root)
+
+# get cdl targets
+cdl_root = os.path.join(tempfile.gettempdir(), "cdl")
+cdl_url = url + "2023_30m_cdls.zip"
+download_and_extract_archive(cdl_url, cdl_root)
+cdl = CDL(paths=cdl_root)
+
+
+# combine datasets with the & operator to create a new dataset of (predictor, target) pairs
+dataset = landsat8 & cdl
+
+# plot the complete extet of the dataset
+sample = dataset[:]
+landsat8.plot(sample)
+cdl.plot(sample)
+
+# create dataloaders with geospatial samplers
+size = 12
+train_sampler = RandomGeoSampler(dataset, size=size, length=1000)
+test_sampler = GridGeoSampler(dataset, size=size, stride=size)
+
+train_dataloader = DataLoader(
+    dataset, batch_size=4, sampler=train_sampler, collate_fn=stack_samples
+)
+test_dataloader = DataLoader(
+    dataset, batch_size=4, sampler=test_sampler, collate_fn=stack_samples
+)
+
+
+
+
+```

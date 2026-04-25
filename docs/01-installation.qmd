@@ -1,0 +1,20 @@
+---
+title: "Installation"
+guide-section: "Getting Started"
+tags: [Getting Started, Setup]
+---
+
+
+``` bash
+# minimal installation
+pip install seapig
+# recommended for end users who want extra (optional) features
+pip install seapig[suggested]
+
+# for contributors / developers (tests, linters, type-checkers)
+pip install seapig[dev]
+# for building documentation (quarto-cli, great-docs, others)
+pip install seapig[docs]
+# or, if you need everything:
+pip install seapig[all]
+```
