@@ -50,8 +50,10 @@ class TensorPCA(torch.nn.Module):
     - `linear`: standard PCA on L2-normalized rows.
     - `rff`: apply a Random Fourier Feature mapping before PCA.
 
-    Mode selection follows the constructor arguments: providing `gamma`
-    or `M` enables the RFF branch unless `mode` is set explicitly.
+    Mode selection follows the constructor arguments: the RFF branch is
+    inferred only when both `gamma` and `M` are provided, unless `mode`
+    is set explicitly. Supplying only one of these values does not enable
+    the RFF mapping by itself.
 
     Saving / loading
     ----------------
