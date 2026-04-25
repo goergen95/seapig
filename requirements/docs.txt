@@ -4,3 +4,4 @@ ipykernel
 ipywidgets
 importlib_metadata
 griffe
+torchgeo
