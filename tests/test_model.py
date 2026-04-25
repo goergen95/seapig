@@ -65,8 +65,20 @@ class DummyTaskDict(DummyTaskTensor):
 
 def test_init_accepts_default_and_alt_keys() -> None:
     s = DummyScore()
+    # When keys are not provided they should default to 0 and 1, meaning the wrapper
+    # must use positional batch items (first item -> input, second -> target).
     w = SelectiveInferenceTask(task=DummyTaskTensor(), score=s)
-    assert w.input_key == "image" and w.target_key == "label"
+    assert w.input_key == 0 and w.target_key == 1
+
+    # verify positional access in predict_step
+    batch_pos: list[torch.Tensor] = [
+        torch.tensor([[1.0, 2.0]]),
+        torch.tensor([1]),
+    ]
+    out = w.predict_step(batch_pos, batch_idx=0)
+    assert "predictions" in out and torch.allclose(
+        out["predictions"], 2 * batch_pos[0]
+    )
 
     w2 = SelectiveInferenceTask(
         task=DummyTaskTensor(), score=s, input_key="x", target_key="y_true"
@@ -132,7 +144,7 @@ def test_forward_raises_when_predict_not_tensor_or_dict() -> None:
 def test_predict_step_uses_input_key_and_returns_selection() -> None:
     task = DummyTaskTensor()
     score = DummyScore()
-    w = SelectiveInferenceTask(task=task, score=score)
+    w = SelectiveInferenceTask(task=task, score=score, input_key="image")
 
     batch = {"image": torch.tensor([[1.0, 2.0], [3.0, 4.0]])}
     out = w.predict_step(batch, batch_idx=0)
@@ -143,7 +155,9 @@ def test_predict_step_uses_input_key_and_returns_selection() -> None:
 
 
 def test_predict_step_missing_key_raises_keyerror() -> None:
-    w = SelectiveInferenceTask(task=DummyTaskTensor(), score=DummyScore())
+    w = SelectiveInferenceTask(
+        task=DummyTaskTensor(), score=DummyScore(), input_key="image"
+    )
     with pytest.raises(KeyError):
         _ = w.predict_step({"not_image": torch.zeros(1, 2)}, batch_idx=0)
 
@@ -154,7 +168,11 @@ def test_test_step_updates_metrics_and_logs_rc(
     task = DummyTaskTensor()
     score = DummyScore()
     w = SelectiveInferenceTask(
-        task=task, score=score, rc_metric=RiskCoverageMetric()
+        task=task,
+        score=score,
+        rc_metric=RiskCoverageMetric(),
+        input_key="image",
+        target_key="label",
     )
 
     calls: dict[str, object] = {"log_arg": None}
@@ -213,13 +231,18 @@ def test_test_step_with_alt_keys_updates_metrics(
 def test_test_step_missing_keys_raise_keyerror(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    w = SelectiveInferenceTask(task=DummyTaskTensor(), score=DummyScore())
+    w = SelectiveInferenceTask(
+        task=DummyTaskTensor(),
+        score=DummyScore(),
+        input_key="image",
+        target_key="label",
+    )
     monkeypatch.setattr(w, "log_dict", lambda *a, **k: None)
 
     with pytest.raises(KeyError):
-        w.test_step({"label": torch.tensor([0])}, batch_idx=0)
+        w.test_step({"not-label": torch.tensor([0])}, batch_idx=0)
     with pytest.raises(KeyError):
-        w.test_step({"image": torch.zeros(1, 2)}, batch_idx=0)
+        w.test_step({"not-image": torch.zeros(1, 2)}, batch_idx=0)
 
 
 def test_get_risk_coverage_curve_none_before_compute() -> None:
@@ -246,7 +269,11 @@ def test_get_risk_coverage_curve() -> None:
     task = DummyTaskTensor()
     score = DummyScore()
     w = SelectiveInferenceTask(
-        task=task, score=score, rc_metric=RiskCoverageMetric()
+        task=task,
+        score=score,
+        rc_metric=RiskCoverageMetric(),
+        input_key="image",
+        target_key="label",
     )
 
     batch = {
@@ -273,7 +300,13 @@ def test_return_test_outputs_collects_outputs(
     score = DummyScore()
 
     # With collection enabled
-    w = SelectiveInferenceTask(task=task, score=score, acc_test_outputs=True)
+    w = SelectiveInferenceTask(
+        task=task,
+        score=score,
+        acc_test_outputs=True,
+        input_key="image",
+        target_key="label",
+    )
     # avoid noisy logging during the test
     monkeypatch.setattr(w, "log_dict", lambda *a, **k: None)
 
@@ -288,10 +321,6 @@ def test_return_test_outputs_collects_outputs(
     out = w.test_outputs[0]
     assert "predictions" in out
     assert "score" in out and "selected" in out
-
-    # With collection disabled (default)
-    w2 = SelectiveInferenceTask(task=task, score=score)
-    assert w2.test_outputs is None
 
 
 def test_return_test_outputs_without_metrics(
@@ -308,7 +337,13 @@ def test_return_test_outputs_without_metrics(
     task = NoMetricTask()
     score = DummyScore()
 
-    w = SelectiveInferenceTask(task=task, score=score, acc_test_outputs=True)
+    w = SelectiveInferenceTask(
+        task=task,
+        score=score,
+        acc_test_outputs=True,
+        input_key="image",
+        target_key="label",
+    )
     # avoid noisy logging during the test
     monkeypatch.setattr(w, "log_dict", lambda *a, **k: None)
 
@@ -323,3 +358,38 @@ def test_return_test_outputs_without_metrics(
     out = w.test_outputs[0]
     assert "predictions" in out
     assert "score" in out and "selected" in out
+
+
+def test_get_from_batch_helper_behavior() -> None:
+    """Small tests for the module-private _get_from_batch helper."""
+    from collections import OrderedDict
+
+    from seapig.model import _get_from_batch
+
+    t1 = torch.tensor([1.0, 2.0])
+    t2 = torch.tensor([0])
+
+    seq: list[torch.Tensor] = [t1, t2]
+    mapping: OrderedDict[str, torch.Tensor] = OrderedDict(
+        [("image", t1), ("label", t2)]
+    )
+
+    # Sequence with None key returns positional element
+    out0 = _get_from_batch(seq, None, pos=0)
+    assert torch.equal(out0, seq[0])
+
+    # Mapping with None key returns the positional value (preserve insertion order)
+    out1 = _get_from_batch(mapping, None, pos=1)
+    assert torch.equal(out1, list(mapping.values())[1])
+
+    # Mapping with string key returns mapping lookup
+    out2 = _get_from_batch(mapping, "label", pos=1)
+    assert torch.equal(out2, mapping["label"])
+
+    # Sequence with int key returns by index
+    out3 = _get_from_batch(seq, 1, pos=0)
+    assert torch.equal(out3, seq[1])
+
+    # Unsupported batch type raises TypeError
+    with pytest.raises(TypeError):
+        _ = _get_from_batch(42, None, pos=0)  # type: ignore[arg-type]

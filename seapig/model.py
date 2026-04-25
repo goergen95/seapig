@@ -8,6 +8,7 @@ testing.
 """
 
 import copy
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal, get_args
 
 import torch
@@ -121,9 +122,9 @@ class SelectiveInferenceTask(LightningModule):
         self,
         task: LightningModule,
         score: ConfidenceScore,
-        input_key: INPUT_KEYS = "image",
-        target_key: TARGET_KEYS = "label",
         acc_test_outputs: bool = False,
+        input_key: INPUT_KEYS | None = None,
+        target_key: TARGET_KEYS | None = None,
         rc_metric: RiskCoverageMetric | None = None,
     ) -> None:
         super().__init__()
@@ -136,16 +137,16 @@ class SelectiveInferenceTask(LightningModule):
             "score must be a seapig ConfidenceScore instance"
         )
         self.score = score
-        if input_key not in get_args(INPUT_KEYS):
+        if input_key is not None and input_key not in get_args(INPUT_KEYS):
             raise ValueError(
                 f"input_key must be one of {get_args(INPUT_KEYS)}; got {input_key!r}"
             )
-        self.input_key = input_key
-        if target_key not in get_args(TARGET_KEYS):
+        self.input_key = 0 if input_key is None else input_key
+        if target_key is not None and target_key not in get_args(TARGET_KEYS):
             raise ValueError(
                 f"target_key must be one of {get_args(TARGET_KEYS)}; got {target_key!r}"
             )
-        self.target_key = target_key
+        self.target_key = 1 if target_key is None else target_key
 
         self.test_metrics = None
         if hasattr(task, "test_metrics") and task.test_metrics is not None:
@@ -192,7 +193,10 @@ class SelectiveInferenceTask(LightningModule):
 
     @torch.inference_mode()
     def test_step(
-        self, batch: dict[str, Any], batch_idx: int, dataloader_idx: int = 0
+        self,
+        batch: Mapping[str, Any] | Sequence[Any],
+        batch_idx: int,
+        dataloader_idx: int = 0,
     ) -> None:
         """Perform a test step and include selection outputs.
 
@@ -212,8 +216,8 @@ class SelectiveInferenceTask(LightningModule):
         This method does not return a value; metrics are updated and logged via
         `Lightning`'s logging utilities.
         """
-        x = batch[self.input_key]
-        y = batch[self.target_key]
+        x = _get_from_batch(batch, self.input_key, pos=0)
+        y = _get_from_batch(batch, self.target_key, pos=1)
 
         outputs = self.forward(x)
 
@@ -241,7 +245,10 @@ class SelectiveInferenceTask(LightningModule):
 
     @torch.inference_mode()
     def predict_step(
-        self, batch: dict[str, Any], batch_idx: int, dataloader_idx: int = 0
+        self,
+        batch: Mapping[str, Any] | Sequence[Any],
+        batch_idx: int,
+        dataloader_idx: int = 0,
     ) -> dict[str, torch.Tensor]:
         """Perform prediction and return predictions with selection outputs.
 
@@ -249,7 +256,7 @@ class SelectiveInferenceTask(LightningModule):
         the wrapped model and the score. This mapping typically contains the
         model's predictions and the selection outputs (e.g. `score` and `selected`).
         """
-        x = batch[self.input_key]
+        x = _get_from_batch(batch, self.input_key, pos=0)
         outputs: dict[str, torch.Tensor] = self.forward(x)
         return outputs
 
@@ -258,3 +265,22 @@ class SelectiveInferenceTask(LightningModule):
         if self.rc_metric is None:
             return None
         return self.rc_metric.get_curve()
+
+
+def _get_from_batch(
+    batch: Mapping[str, Any] | Sequence[Any], key: str | int | None, pos: int
+) -> Any:
+    """Return item by key or by positional index `pos` when key is None."""
+    if key is None:
+        if isinstance(batch, Sequence):
+            return batch[pos]
+        if isinstance(batch, Mapping):
+            values = list(batch.values())
+            return values[pos]
+        raise TypeError("Unsupported batch type")
+    if isinstance(batch, Mapping):
+        assert isinstance(key, str)
+        return batch[key]
+    assert isinstance(key, int)
+    return batch[key]
+    raise TypeError("Unsupported batch type")
