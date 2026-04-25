@@ -67,6 +67,19 @@ $$
 \lambda_{q} = Q_q(s_1^{cal}, s_2^{cal}, \dots, s_m^{cal}),
 $$
 
+where $s_i^{cal}$ are the scores of the calibration samples. The decision
+function $g_{\lambda_q}(x)$ can then be applied at inference time to accept or reject
+predictions. We obtain a selective predictor, $h(x)$, that either outputs a prediction 
+or abstains from the prediction, depending on the score of the input:
+
+$$
+h(x) =
+\begin{cases}
+f_t(x), & \text{if} g(x)=1,\\[4pt]
+\varnothing, & \text{if } g(x)=0.
+\end{cases}
+$$
+
 ### How to use seapig
 
 The code snippets show a typical use of distance-based scores: (1) compute or
@@ -184,8 +197,10 @@ print(preds)
 
 ### Further reading
 
-- Find the documentation at [https://goergen95.github.io/seapig/](https://goergen95.github.io/seapig/) 
+- Find the documentation at [www.seapig.dev](https://www.seapig.dev) 
 for more detailed explanations, examples, and API reference.
+- seapig has been presented at [EGU2026](https://meetingorganizer.copernicus.org/EGU26/EGU26-12275.html) 
+(slides are availabe at [https://goergen95.github.io/aoa4dl/](https://goergen95.github.io/aoa4dl/)). 
 
 
 ### Code of Conduct
