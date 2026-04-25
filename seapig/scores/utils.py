@@ -11,7 +11,7 @@ Saving / loading
   example: `mu`, `u`, `s`, `s_acc`, `u_q`, `u_q_dot`) and
   RFF parameters (`_rff_w`, `_rff_u`, `_rff_initialized`). This
   makes the module safe to persist with :func:`torch.save` and
-  :meth:`torch.load` via the standard state-dict API::
+  :func:`torch.load` via the standard state-dict API::
 
       torch.save(tpca.state_dict(), "tpca.pt")
 
