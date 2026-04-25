@@ -49,7 +49,7 @@ env/
 venv/
 
 
-# Quartodoc
+# docs
 /.quarto/
 **/*.quarto_ipynb
 /_site/
@@ -70,6 +70,9 @@ README.html
 /index.html
 /NEWS.html
 /README.html
+/index.html
+index_files/
+lightning_logs/
 
 # Other
 .ruff_cache
