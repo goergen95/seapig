@@ -23,7 +23,7 @@ class PCAScore(EmbeddingScore):
     ----------
     pca : TensorPCA, optional
         PCA configuration to use. Defaults to
-        ``TensorPCA(n_components=0.50, gamma=3.0, M=4096)`` (RFF-PCA retaining
+        `TensorPCA(n_components=0.50, gamma=3.0, M=4096)` (RFF-PCA retaining
         50% explained variance).
 
     Examples
@@ -97,8 +97,8 @@ class PCAScore(EmbeddingScore):
             A `torch.nn.Module` with an `.embed()` method. Required when not
             using `X`.
         loaders:
-            A `dict` with `DataLoader` objects. Required keys: ``["train"]``.
-            Optional key: ``["val"]``. Required when using `model`.
+            A `dict` with `DataLoader` objects. Required keys: `["train"]`.
+            Optional key: `["val"]`. Required when using `model`.
         outdir:
             A `pathlib.Path` pointing to a directory for saving/loading embeddings.
             Only used with `model` and `loaders`.
@@ -150,7 +150,7 @@ class PCAScore(EmbeddingScore):
         Parameters
         ----------
         X:
-            A `torch.Tensor` representing sample embeddings of shape ``(B, D)``.
+            A `torch.Tensor` representing sample embeddings of shape `(B, D)`.
         """
         assert self.pca is not None
         _, error = self.pca.reconstruct(X)

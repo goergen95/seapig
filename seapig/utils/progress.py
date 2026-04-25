@@ -4,13 +4,13 @@ Provides a single, configurable progress interface that:
 
 - Auto-detects interactive sessions (TTY or IPython) and enables progress
   only in those contexts by default.
-- Respects the ``SEAPIG_PROGRESS`` environment variable (``"1"``/``"true"``
-  to force-enable, ``"0"``/``"false"`` to force-disable).
+- Respects the `SEAPIG_PROGRESS` environment variable (`"1"`/`"true"`
+  to force-enable, `"0"`/`"false"` to force-disable).
 - Uses **tqdm** as the default backend.
 - Optionally uses **rich** as an alternative backend when it is installed
-  and selected via :func:`set_backend` or the ``SEAPIG_PROGRESS_BACKEND``
+  and selected via `set_backend` or the `SEAPIG_PROGRESS_BACKEND`
   environment variable.
-- Exposes :func:`track` — a drop-in replacement for ``tqdm(iterable)`` —
+- Exposes `track` — a drop-in replacement for `tqdm(iterable)` —
   used throughout the rest of the codebase so the backend can be swapped
   and configured centrally.
 
@@ -70,12 +70,12 @@ _backend: str = os.environ.get("SEAPIG_PROGRESS_BACKEND", "tqdm").lower()
 
 
 def _is_interactive() -> bool:
-    """Return ``True`` when running inside an interactive session.
+    """Return `True` when running inside an interactive session.
 
     An interactive session is defined as either:
 
-    * A live IPython / Jupyter kernel (``get_ipython()`` is available and
-      returns a non-``None`` object), or
+    * A live IPython / Jupyter kernel (`get_ipython()` is available and
+      returns a non-`None` object), or
     * A standard terminal whose *stdout* is connected to a TTY.
     """
     # IPython / Jupyter detection
@@ -102,16 +102,16 @@ def is_enabled() -> bool:
     Priority order:
 
     1. Value set via :func:`enable` / :func:`disable` (programmatic override).
-    2. ``SEAPIG_PROGRESS`` environment variable
-       (``"1"``, ``"true"``, ``"yes"``, ``"on"`` → enabled;
-       ``"0"``, ``"false"``, ``"no"``, ``"off"`` → disabled).
+    2. `SEAPIG_PROGRESS` environment variable
+       (`"1"`, `"true"`, `"yes"`, `"on"` → enabled;
+       `"0"`, `"false"`, `"no"`, `"off"` → disabled).
     3. Auto-detection: enabled only when running in an interactive session
        (TTY or IPython/Jupyter).
 
     Returns
     -------
     bool
-        ``True`` if progress bars should be shown, ``False`` otherwise.
+        `True` if progress bars should be shown, `False` otherwise.
     """
     if _enabled is not None:
         return _enabled
@@ -128,7 +128,7 @@ def is_enabled() -> bool:
 def enable() -> None:
     """Globally enable progress reporting.
 
-    This overrides both the ``SEAPIG_PROGRESS`` environment variable and
+    This overrides both the `SEAPIG_PROGRESS` environment variable and
     the auto-detection logic.  Call :func:`reset` to revert to auto mode.
     """
     global _enabled
@@ -138,7 +138,7 @@ def enable() -> None:
 def disable() -> None:
     """Globally disable progress reporting.
 
-    This overrides both the ``SEAPIG_PROGRESS`` environment variable and
+    This overrides both the `SEAPIG_PROGRESS` environment variable and
     the auto-detection logic.  Call :func:`reset` to revert to auto mode.
     """
     global _enabled
@@ -149,7 +149,7 @@ def reset() -> None:
     """Reset progress enable/disable state to automatic detection.
 
     After calling this function, :func:`is_enabled` will again consult the
-    ``SEAPIG_PROGRESS`` environment variable and the TTY/IPython heuristic.
+    `SEAPIG_PROGRESS` environment variable and the TTY/IPython heuristic.
     """
     global _enabled
     _enabled = None
@@ -161,8 +161,8 @@ def set_backend(backend: str) -> None:
     Parameters
     ----------
     backend:
-        ``"tqdm"`` (default) or ``"rich"``.  When ``"rich"`` is requested
-        but the ``rich`` package is not installed, :func:`track` silently
+        `"tqdm"` (default) or `"rich"`.  When `"rich"` is requested
+        but the `rich` package is not installed, :func:`track` silently
         falls back to tqdm.
 
     Raises
@@ -184,7 +184,7 @@ def get_backend() -> str:
     Returns
     -------
     str
-        Either ``"tqdm"`` or ``"rich"``.
+        Either `"tqdm"` or `"rich"`.
     """
     return _backend
 
@@ -224,7 +224,7 @@ def track(
         Whether to keep the progress bar visible after completion
         (tqdm only; rich always removes it).
     colour:
-        Colour of the progress bar as a CSS colour string, e.g. ``"green"``
+        Colour of the progress bar as a CSS colour string, e.g. `"green"`
         (tqdm only).
     smoothing:
         Exponential moving-average smoothing factor for speed estimates

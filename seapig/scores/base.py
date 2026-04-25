@@ -23,13 +23,13 @@ class ConfidenceScore(torch.nn.Module, ABC):
     Attributes
     ----------
     trained : bool
-        Whether the score has been trained. Defaults to ``False``.
+        Whether the score has been trained. Defaults to `False`.
     train_required : bool
-        Whether training is required before scoring. Defaults to ``False``.
+        Whether training is required before scoring. Defaults to `False`.
     cal_required : bool
-        Whether calibration is required before selecting. Defaults to ``False``.
+        Whether calibration is required before selecting. Defaults to `False`.
     calibrated : bool
-        Whether the score has been calibrated. Defaults to ``False``.
+        Whether the score has been calibrated. Defaults to `False`.
     scores : torch.Tensor or None
         Confidence scores of the calibration samples. Low scores indicate
         likely inliers, high scores indicate likely outliers.
@@ -37,7 +37,7 @@ class ConfidenceScore(torch.nn.Module, ABC):
         Rejection threshold. Samples with scores higher than this value are
         excluded from prediction.
     device : str
-        Device to which internal tensors are put. Defaults to ``"cpu"``.
+        Device to which internal tensors are put. Defaults to `"cpu"`.
     ident : str
         String identifying the confidence score implementation.
 
@@ -98,8 +98,8 @@ class ConfidenceScore(torch.nn.Module, ABC):
         Parameters
         ----------
         q : float
-            Quantile in the interval ``(0, 1)`` used to compute the threshold
-            from the stored calibration scores. Defaults to ``0.99``.
+            Quantile in the interval `(0, 1)` used to compute the threshold
+            from the stored calibration scores. Defaults to `0.99`.
 
         Raises
         ------
@@ -146,8 +146,8 @@ class ConfidenceScore(torch.nn.Module, ABC):
         Returns
         -------
         dict[str, torch.Tensor]
-            A dict with keys ``'score'`` (raw confidence scores) and
-            ``'selected'`` (boolean selection mask).
+            A dict with keys `'score'` (raw confidence scores) and
+            `'selected'` (boolean selection mask).
         """
 
     def plot(
@@ -256,10 +256,10 @@ class ConfidenceScore(torch.nn.Module, ABC):
 class RandomScore(ConfidenceScore):
     """Returns random confidence scores per sample.
 
-    This score assigns a random float in ``[0, 1]`` to each sample.
+    This score assigns a random float in `[0, 1]` to each sample.
     It is useful as a baseline or for testing purposes. Low scores
     indicate likely inliers, high scores indicate likely outliers.
-    By default, the threshold is set to ``0.99``, so approximately
+    By default, the threshold is set to `0.99`, so approximately
     99% of samples are selected.
 
     See Also
@@ -293,12 +293,12 @@ class RandomScore(ConfidenceScore):
         Parameters
         ----------
         X : torch.Tensor
-            Input batch of shape ``(B, ...)``. Only the batch size is used.
+            Input batch of shape `(B, ...)`. Only the batch size is used.
 
         Returns
         -------
         torch.Tensor
-            1-D tensor of shape ``(B,)`` with uniform random scores in ``[0, 1]``.
+            1-D tensor of shape `(B,)` with uniform random scores in `[0, 1]`.
 
         Examples
         --------
@@ -321,13 +321,13 @@ class RandomScore(ConfidenceScore):
         Parameters
         ----------
         X : torch.Tensor
-            Input batch of shape ``(B, ...)``. Only the batch size is used.
+            Input batch of shape `(B, ...)`. Only the batch size is used.
 
         Returns
         -------
         dict[str, torch.Tensor]
-            A dict with keys ``'score'`` (random scores) and ``'selected'``
-            (boolean mask where ``True`` means the sample is selected).
+            A dict with keys `'score'` (random scores) and `'selected'`
+            (boolean mask where `True` means the sample is selected).
 
         Examples
         --------

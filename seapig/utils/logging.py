@@ -3,8 +3,8 @@
 Provides a package-scoped logger and helpers so downstream applications can
 opt into structured logging without modifying library code.
 
-By default the ``seapig`` logger uses a ``logging.NullHandler`` (added in
-``seapig.__init__``) so no output is produced unless the consuming
+By default the `seapig` logger uses a `logging.NullHandler` (added in
+`seapig.__init__`) so no output is produced unless the consuming
 application configures logging.
 
 Examples
@@ -16,7 +16,7 @@ from seapig.utils.logging import configure_logging
 configure_logging(level="INFO")
 ```
 
-Use the ``SEAPIG_LOG_LEVEL`` environment variable for the same effect:
+Use the `SEAPIG_LOG_LEVEL` environment variable for the same effect:
 
 ```bash
 SEAPIG_LOG_LEVEL=INFO python my_script.py
@@ -47,9 +47,9 @@ def get_logger(name: str | None = None) -> logging.Logger:
     Parameters
     ----------
     name:
-        Dotted module name, e.g. ``__name__``.  When ``None`` or when *name*
-        does not start with ``"seapig"``, the package-level logger
-        ``"seapig"`` is returned.
+        Dotted module name, e.g. `__name__`.  When `None` or when *name*
+        does not start with `"seapig"`, the package-level logger
+        `"seapig"` is returned.
 
     Returns
     -------
@@ -72,20 +72,20 @@ def configure_logging(
     """Configure the seapig package logger.
 
     Sets the log level and attaches *handler* (or a
-    :class:`logging.StreamHandler` writing to *stderr* when ``None``) to the
-    ``"seapig"`` logger.  Any previously attached handlers are removed first.
+    `logging.StreamHandler` writing to *stderr* when `None`) to the
+    `"seapig"` logger.  Any previously attached handlers are removed first.
 
-    The ``SEAPIG_LOG_LEVEL`` environment variable, when set, overrides the
+    The `SEAPIG_LOG_LEVEL` environment variable, when set, overrides the
     *level* parameter.
 
     Parameters
     ----------
     level:
-        Minimum log level, e.g. ``"INFO"``, ``"DEBUG"``, or an integer
-        constant such as :data:`logging.INFO`.  Defaults to ``"WARNING"``.
+        Minimum log level, e.g. `"INFO"`, `"DEBUG"`, or an integer
+        constant such as :data:`logging.INFO`.  Defaults to `"WARNING"`.
     handler:
-        A custom :class:`logging.Handler`.  When ``None`` a
-        :class:`logging.StreamHandler` (stderr) with a simple formatter is
+        A custom `logging.Handler`.  When `None` a
+        `logging.StreamHandler` (stderr) with a simple formatter is
         used.
 
     Examples

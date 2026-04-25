@@ -8,8 +8,8 @@ optional Random Fourier Feature (RFF) mapping prior to PCA.
 Saving / loading
 -----------------
 - TensorPCA registers its learned state as persistent buffers (for
-  example: ``mu``, ``u``, ``s``, ``s_acc``, ``u_q``, ``u_q_dot``) and
-  RFF parameters (``_rff_w``, ``_rff_u``, ``_rff_initialized``). This
+  example: `mu`, `u`, `s`, `s_acc`, `u_q`, `u_q_dot`) and
+  RFF parameters (`_rff_w`, `_rff_u`, `_rff_initialized`). This
   makes the module safe to persist with :func:`torch.save` and
   :meth:`torch.load` via the standard state-dict API::
 
@@ -19,12 +19,12 @@ Saving / loading
       sd = torch.load("tpca.pt")
       tpca2.load_state_dict(sd)
 
-- The class implements a custom ``_load_from_state_dict`` which accepts
+- The class implements a custom `_load_from_state_dict` which accepts
   incoming tensors of arbitrary shapes (including the empty placeholders
   created at construction) and will set or register buffers to avoid
   size-mismatch errors when loading into fresh instances.
 
-- Note: PCA internals are stored in ``float64`` for numerical fidelity;
+- Note: PCA internals are stored in `float64` for numerical fidelity;
   during preprocessing inputs are cast to match the stored mean's dtype.
 """
 
@@ -47,11 +47,11 @@ class TensorPCA(torch.nn.Module):
 
     Operation modes
     ---------------
-    - ``linear``: standard PCA on L2-normalized rows.
-    - ``rff``: apply a Random Fourier Feature mapping before PCA.
+    - `linear`: standard PCA on L2-normalized rows.
+    - `rff`: apply a Random Fourier Feature mapping before PCA.
 
-    Mode selection follows the constructor arguments: providing ``gamma``
-    or ``M`` enables the RFF branch unless ``mode`` is set explicitly.
+    Mode selection follows the constructor arguments: providing `gamma`
+    or `M` enables the RFF branch unless `mode` is set explicitly.
 
     Saving / loading
     ----------------
@@ -64,14 +64,14 @@ class TensorPCA(torch.nn.Module):
         sd = torch.load("tpca.pt")
         tpca2.load_state_dict(sd)
 
-    The custom ``_load_from_state_dict`` accepts placeholder or differently-
+    The custom `_load_from_state_dict` accepts placeholder or differently-
     shaped tensors and will set or register buffers to avoid size-mismatch
     errors on fresh instances.
 
     Notes
     -----
-    PCA internals are stored in ``float64`` for numerical fidelity. During
-    preprocessing, inputs are cast to ``float64`` to match the stored mean.
+    PCA internals are stored in `float64` for numerical fidelity. During
+    preprocessing, inputs are cast to `float64` to match the stored mean.
 
     See https://arxiv.org/pdf/2505.15284 for motivation behind RFF-PCA.
 
@@ -118,18 +118,18 @@ class TensorPCA(torch.nn.Module):
         Parameters
         ----------
         n_components : int or float, default 0.90
-            If an ``int``, the exact number of principal components to retain
-            (must be > 0). If a ``float`` in ``(0, 1]``, the minimum cumulative
-            explained variance to retain. Defaults to ``0.90`` (90% variance).
+            If an `int`, the exact number of principal components to retain
+            (must be > 0). If a `float` in `(0, 1]`, the minimum cumulative
+            explained variance to retain. Defaults to `0.90` (90% variance).
         gamma : float or None, default None
             Bandwidth parameter for the RFF kernel. If provided together with
-            ``M``, RFF mode is enabled automatically.
+            `M`, RFF mode is enabled automatically.
         M : int or None, default None
             Number of RFF random features (must be > input dimensionality D).
-            If provided together with ``gamma``, RFF mode is enabled automatically.
+            If provided together with `gamma`, RFF mode is enabled automatically.
         mode : {'linear', 'rff'} or None, default None
-            Explicit mode override. When ``None``, the mode is inferred from
-            ``gamma`` and ``M``.
+            Explicit mode override. When `None`, the mode is inferred from
+            `gamma` and `M`.
         """
         super().__init__()
 
@@ -196,14 +196,14 @@ class TensorPCA(torch.nn.Module):
     def fit(self, X: torch.Tensor, Y: None = None) -> None:
         """Fit PCA on the input data X.
 
-        Convenience method that runs a single-batch ``partial_fit`` followed
-        by ``finalize``. For large datasets or streaming data, use the
-        incremental ``partial_fit`` / ``finalize`` interface instead.
+        Convenience method that runs a single-batch `partial_fit` followed
+        by `finalize`. For large datasets or streaming data, use the
+        incremental `partial_fit` / `finalize` interface instead.
 
         Parameters
         ----------
         X : torch.Tensor
-            Input data of shape ``(N, D)``.
+            Input data of shape `(N, D)`.
         Y : None
             Ignored. Present for API compatibility.
         """
@@ -218,14 +218,14 @@ class TensorPCA(torch.nn.Module):
         Parameters
         ----------
         X : torch.Tensor
-            Input data of shape ``(N, D)``.
+            Input data of shape `(N, D)`.
         Y : None
             Ignored. Present for API compatibility.
 
         Returns
         -------
         torch.Tensor
-            Projected data of shape ``(N, q)`` where ``q`` is the number of
+            Projected data of shape `(N, q)` where `q` is the number of
             retained components.
         """
         self.fit(X, Y)
@@ -237,12 +237,12 @@ class TensorPCA(torch.nn.Module):
         Parameters
         ----------
         X : torch.Tensor
-            Input data of shape ``(N, D)``.
+            Input data of shape `(N, D)`.
 
         Returns
         -------
         torch.Tensor
-            Projected data of shape ``(N, q)`` where ``q`` is the number of
+            Projected data of shape `(N, q)` where `q` is the number of
             retained components.
         """
         assert isinstance(X, torch.Tensor)
@@ -256,13 +256,13 @@ class TensorPCA(torch.nn.Module):
         Parameters
         ----------
         Z : torch.Tensor
-            Component scores of shape ``(N, q)``.
+            Component scores of shape `(N, q)`.
 
         Returns
         -------
         torch.Tensor
-            Reconstructed samples in the preprocessed space, shape ``(N, D)`` or
-            ``(N, M)`` if RFF mode is used.
+            Reconstructed samples in the preprocessed space, shape `(N, D)` or
+            `(N, M)` if RFF mode is used.
         """
         assert isinstance(Z, torch.Tensor)
         X_rec = (self.u_q @ Z.T).T
