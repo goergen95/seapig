@@ -254,8 +254,8 @@ class EmbeddingScore(ConfidenceScore, ABC):
             A `torch.nn.Module` with an `.embed()` method. Required when not
             using `X`.
         loaders:
-            A `dict` with `DataLoader` objects. Required keys: ``["train"]``.
-            Optional key: ``["val"]``. Required when using `model`.
+            A `dict` with `DataLoader` objects. Required keys: `["train"]`.
+            Optional key: `["val"]`. Required when using `model`.
         outdir:
             A `pathlib.Path` pointing to a directory for saving/loading embeddings.
             Only used with `model` and `loaders`.
@@ -315,14 +315,14 @@ class EmbeddingScore(ConfidenceScore, ABC):
         """Set a threshold based on a quantile of the available confidence scores.
 
         Samples with scores higher than the threshold are excluded from prediction.
-        If calibration embeddings were provided during ``fit``, the threshold is
+        If calibration embeddings were provided during `fit`, the threshold is
         computed from their scores; otherwise the training sample scores are used.
 
         Parameters
         ----------
         q : float
-            Quantile in ``(0, 1)`` used to determine the threshold. Defaults to
-            ``0.99`` (i.e., 1% of samples are rejected as outliers).
+            Quantile in `(0, 1)` used to determine the threshold. Defaults to
+            `0.99` (i.e., 1% of samples are rejected as outliers).
         """
         if self.train_required:
             assert self.is_trained()
@@ -365,14 +365,14 @@ class EmbeddingScore(ConfidenceScore, ABC):
         Parameters
         ----------
         X:
-            A `torch.Tensor` with query embeddings of shape ``(N, D)``.
+            A `torch.Tensor` with query embeddings of shape `(N, D)`.
             Required when not using `model` and `loader`.
         model:
             A `torch.nn.Module` with an `.embed()` method.
             Required when not using `X`.
         loader:
             A `torch.utils.data.DataLoader` returning `torch.Tensor`s or
-            dicts with the ``"image"`` key. Required when using `model`.
+            dicts with the `"image"` key. Required when using `model`.
         outdir:
             A `pathlib.Path` pointing to a directory for saving/loading embeddings.
             Only used with `model` and `loader`.
@@ -383,7 +383,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         Returns
         -------
         torch.Tensor
-            1-D tensor of shape ``(N,)`` with confidence scores.
+            1-D tensor of shape `(N,)` with confidence scores.
             Low values indicate likely inliers, high values indicate likely outliers.
         """
         # Validate parameter combinations
@@ -486,14 +486,14 @@ class EmbeddingScore(ConfidenceScore, ABC):
         Parameters
         ----------
         X:
-            A `torch.Tensor` with query sample embeddings of shape ``(N, D)``.
+            A `torch.Tensor` with query sample embeddings of shape `(N, D)`.
             Required when not using `model` and `loader`.
         model:
             A `torch.nn.Module` with an `.embed()` method.
             Required when not using `X`.
         loader:
             A `torch.utils.data.DataLoader` returning `torch.Tensor`s or
-            dicts with the ``"image"`` key. Required when using `model`.
+            dicts with the `"image"` key. Required when using `model`.
         outdir:
             A `pathlib.Path` pointing to a directory for saving/loading embeddings.
             Only used with `model` and `loader`.
@@ -504,8 +504,8 @@ class EmbeddingScore(ConfidenceScore, ABC):
         Returns
         -------
         dict[str, torch.Tensor]
-            A dict with keys ``'score'`` (confidence scores) and ``'selected'``
-            (boolean mask where ``True`` means the sample is selected).
+            A dict with keys `'score'` (confidence scores) and `'selected'`
+            (boolean mask where `True` means the sample is selected).
         """
         if self.train_required:
             assert self.is_trained()

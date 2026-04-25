@@ -30,7 +30,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
     Parameters
     ----------
     temperature : float or None, default None
-        Optional temperature to apply to logits. If ``None``, no temperature
+        Optional temperature to apply to logits. If `None`, no temperature
         scaling is applied until :meth:`fit` or :meth:`fit_temperature` is called.
     task : {'multiclass', 'binary', 'multilabel'}, default 'multiclass'
         Type of classification task. Determines score computation and
@@ -40,10 +40,10 @@ class LogitScore(ConfidenceScore, abc.ABC):
     -----
     Input shapes and label formats by task:
 
-    - ``multiclass``: logits ``(N, C)``, labels ``(N,)`` long
-    - ``binary`` single-logit: logits ``(N,)`` or ``(N, 1)``, labels ``(N,)`` float/long
-    - ``binary`` two-logit: logits ``(N, 2)``, labels ``(N,)`` long
-    - ``multilabel``: logits ``(N, C)``, labels ``(N, C)`` float
+    - `multiclass`: logits `(N, C)`, labels `(N,)` long
+    - `binary` single-logit: logits `(N,)` or `(N, 1)`, labels `(N,)` float/long
+    - `binary` two-logit: logits `(N, 2)`, labels `(N,)` long
+    - `multilabel`: logits `(N, C)`, labels `(N, C)` float
 
     See Also
     --------
@@ -86,7 +86,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
         Parameters
         ----------
         model : torch.nn.Module
-            Model to check. Must have a callable ``.logits(x)`` method.
+            Model to check. Must have a callable `.logits(x)` method.
         """
         assert isinstance(model, torch.nn.Module)
         if not hasattr(model, "logits") or not callable(model.logits):
@@ -127,7 +127,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
         Y : torch.Tensor or None
             Optional labels for temperature fitting. Shape/type depends on task.
         model : torch.nn.Module or None
-            Model with a ``.logits(x)`` method. Required when not using
+            Model with a `.logits(x)` method. Required when not using
             precomputed logits.
         loader : DataLoader or None
             DataLoader yielding batches for inference. Required when using `model`.
@@ -210,7 +210,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
         Returns
         -------
         torch.Tensor
-            1-D tensor of shape ``(M,)``. Lower values indicate higher confidence.
+            1-D tensor of shape `(M,)`. Lower values indicate higher confidence.
         """
         raise NotImplementedError()
 
@@ -228,8 +228,8 @@ class LogitScore(ConfidenceScore, abc.ABC):
         Returns
         -------
         dict[str, torch.Tensor]
-            A dict with keys ``'score'`` (confidence scores) and ``'selected'``
-            (boolean mask where ``True`` means the sample is selected).
+            A dict with keys `'score'` (confidence scores) and `'selected'`
+            (boolean mask where `True` means the sample is selected).
         """
         if self.threshold is None:
             self.set_threshold()
@@ -309,7 +309,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
         Returns
         -------
         bool
-            ``True`` if single-logit binary format, else ``False``.
+            `True` if single-logit binary format, else `False`.
         """
         if self.task != "binary":
             return False
@@ -436,7 +436,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
         Returns
         -------
         tuple of (torch.Tensor, torch.Tensor or None)
-            Logits and labels (labels may be ``None`` if not provided by loader).
+            Logits and labels (labels may be `None` if not provided by loader).
         """
         self._check_model(model=model)
         if path is not None and path.exists():
@@ -531,8 +531,8 @@ class SoftmaxScore(LogitScore):
     Parameters
     ----------
     temperature : float or None, default None
-        Optional initial temperature. If ``None``, temperature is fitted if
-        labels are provided to ``fit``.
+        Optional initial temperature. If `None`, temperature is fitted if
+        labels are provided to `fit`.
     task : {'multiclass', 'binary', 'multilabel'}, default 'multiclass'
         Task type for score computation.
 
@@ -604,8 +604,8 @@ class EnergyScore(LogitScore):
     Parameters
     ----------
     temperature : float or None, default None
-        Optional initial temperature. If ``None``, temperature is fitted if
-        labels are provided to ``fit``.
+        Optional initial temperature. If `None`, temperature is fitted if
+        labels are provided to `fit`.
     task : {'multiclass', 'binary', 'multilabel'}, default 'multiclass'
         Task type for score computation.
 
@@ -668,8 +668,8 @@ class MarginScore(LogitScore):
     Parameters
     ----------
     temperature : float or None, default None
-        Optional initial temperature. If ``None``, temperature is fitted if
-        labels are provided to ``fit``.
+        Optional initial temperature. If `None`, temperature is fitted if
+        labels are provided to `fit`.
     task : {'multiclass', 'binary', 'multilabel'}, default 'multiclass'
         Task type for score computation.
 
@@ -740,8 +740,8 @@ class EntropyScore(LogitScore):
     Parameters
     ----------
     temperature : float or None, default None
-        Optional initial temperature. If ``None``, temperature is fitted if
-        labels are provided to ``fit``.
+        Optional initial temperature. If `None`, temperature is fitted if
+        labels are provided to `fit`.
     task : {'multiclass', 'binary', 'multilabel'}, default 'multiclass'
         Task type for score computation.
 

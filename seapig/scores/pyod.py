@@ -28,15 +28,15 @@ class PyODScore(EmbeddingScore):
     ----------
     detector : pyod.models.base.BaseDetector
         A fitted or unfitted PyOD detector instance. Any detector from the
-        ``pyod`` library that implements ``fit`` and ``decision_function``
-        is supported (e.g., ``pyod.models.knn.KNN``).
+        `pyod` library that implements `fit` and `decision_function`
+        is supported (e.g., `pyod.models.knn.KNN`).
     pca : TensorPCA or None, default None
         Optional PCA for dimensionality reduction prior to scoring.
 
     Notes
     -----
-    Requires the optional ``pyod`` dependency:
-    ``pip install pyod``.
+    Requires the optional `pyod` dependency:
+    `pip install pyod`.
 
     See Also
     --------
@@ -102,8 +102,8 @@ class PyODScore(EmbeddingScore):
             A `torch.nn.Module` with an `.embed()` method. Required when not
             using `X`.
         loaders:
-            A `dict` with `DataLoader` objects. Required keys: ``["train"]``.
-            Optional key: ``["val"]``. Required when using `model`.
+            A `dict` with `DataLoader` objects. Required keys: `["train"]`.
+            Optional key: `["val"]`. Required when using `model`.
         outdir:
             A `pathlib.Path` pointing to a directory for saving/loading embeddings.
             Only used with `model` and `loaders`.
@@ -165,7 +165,7 @@ class PyODScore(EmbeddingScore):
         Parameters
         ----------
         X:
-            A `torch.Tensor` representing sample embeddings of shape ``(B, D)``.
+            A `torch.Tensor` representing sample embeddings of shape `(B, D)`.
         """
         assert self.detector is not None
         if self.pca is not None:

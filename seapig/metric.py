@@ -35,8 +35,8 @@ class SelectiveMetric(Metric):
     - `"rejected"`: samples where the selection mask is false.
 
     The `compute` result is a flat `dict`[`str`, `torch.Tensor`] where
-    each underlying metric name is prefixed with ``full/``, ``selected/``,
-    or ``rejected/``. If a submetric was never updated, its value is a
+    each underlying metric name is prefixed with `full/`, `selected/`,
+    or `rejected/`. If a submetric was never updated, its value is a
     zero `torch.Tensor`.
 
     Parameters
@@ -47,7 +47,7 @@ class SelectiveMetric(Metric):
 
     Notes
     -----
-    - The selection mask may be boolean or numeric; numeric values ``> 0``
+    - The selection mask may be boolean or numeric; numeric values `> 0`
       are treated as selected.
     - Calls that contain no selected (or no rejected) rows do not update
       the corresponding internal metric for that call.
@@ -163,14 +163,14 @@ class RiskCoverageMetric(Metric):
         Number of bins used to downsample the curve when computing AUC
         summaries.
     error_fn : callable or None, default None
-        Function ``(preds, target) -> residuals`` that reduces model
+        Function `(preds, target) -> residuals` that reduces model
         predictions and targets to a 1-D tensor of per-sample residuals.
         If `None`, the default is per-sample mean absolute error.
 
     Notes
     -----
     The `compute` method returns three tensors:
-    ``rc/auc_empirical``, ``rc/auc_reference``, and ``rc/auc_excess``.
+    `rc/auc_empirical`, `rc/auc_reference`, and `rc/auc_excess`.
     The last computed complete curve object (`RiskCoverage`) is
     available via `get_curve`.
 

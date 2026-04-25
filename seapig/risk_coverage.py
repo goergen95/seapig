@@ -17,7 +17,7 @@ class RiskCoverage:
     Attributes
     ----------
     coverage : torch.Tensor
-        Coverage values in ``[0, 1]``.
+        Coverage values in `[0, 1]`.
     threshold : torch.Tensor
         Sorted score thresholds used to compute coverage.
     risk : torch.Tensor
@@ -27,7 +27,7 @@ class RiskCoverage:
     excess : torch.Tensor
         Excess risk (empirical - reference).
     risk_type : str
-        Either ``'generalized'`` or ``'selective'``; see `risk_coverage`.
+        Either `'generalized'` or `'selective'`; see `risk_coverage`.
     auc_empirical : torch.Tensor
         Area under the empirical risk curve (trapezoidal rule).
     auc_reference : torch.Tensor
@@ -199,8 +199,8 @@ def risk_coverage(
         Prediction residuals (errors). Lower values indicate better
         predictions. Same length as `score`.
     risk : {'generalized', 'selective'}, default 'generalized'
-        - ``'generalized'``: joint probability of failure and acceptance
-        - ``'selective'``: failure probability conditional on acceptance
+        - `'generalized'`: joint probability of failure and acceptance
+        - `'selective'`: failure probability conditional on acceptance
     n_bins : int
         If the curve has more than `n_bins` points, it will be downsampled
         to at most `n_bins` points for reporting and plotting.

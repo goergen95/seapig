@@ -35,8 +35,8 @@ class KNNScore(EmbeddingScore, ABC):
     pca : TensorPCA or None, default None
         Optional PCA for dimensionality reduction prior to scoring.
     save_index : bool or Path, default False
-        If ``True``, the HNSW index is saved to a default file. If a ``Path``
-        is provided (must end in ``.bin``), the index is saved there.
+        If `True`, the HNSW index is saved to a default file. If a `Path`
+        is provided (must end in `.bin`), the index is saved there.
 
     See Also
     --------
@@ -120,8 +120,8 @@ class KNNScore(EmbeddingScore, ABC):
             A `torch.nn.Module` with an `.embed()` method. Required when not
             using `X`.
         loaders:
-            A `dict` with `DataLoader` objects. Required keys: ``["train"]``.
-            Optional key: ``["val"]``. Required when using `model`.
+            A `dict` with `DataLoader` objects. Required keys: `["train"]`.
+            Optional key: `["val"]`. Required when using `model`.
         outdir:
             A `pathlib.Path` pointing to a directory for saving/loading embeddings.
             Only used with `model` and `loaders`.
@@ -178,7 +178,7 @@ class KNNScore(EmbeddingScore, ABC):
         Parameters
         ----------
         X:
-            A `torch.Tensor` representing sample embeddings of shape ``(B, D)``.
+            A `torch.Tensor` representing sample embeddings of shape `(B, D)`.
         """
         assert self.index is not None, "Index must be built before scoring"
         if self.pca is not None:
@@ -385,9 +385,9 @@ class CosineScore(KNNScore):
     samples similar to the training distribution (likely inliers) and high scores
     indicate samples deviating from the training distribution (likely outliers).
 
-    The cosine distance is computed as ``(1 - cosine_similarity)``, with a range
-    of ``[0, 2]`` where ``0`` indicates identical vectors, ``1`` indicates orthogonal
-    vectors, and ``2`` indicates opposite vectors.
+    The cosine distance is computed as `(1 - cosine_similarity)`, with a range
+    of `[0, 2]` where `0` indicates identical vectors, `1` indicates orthogonal
+    vectors, and `2` indicates opposite vectors.
 
     Parameters
     ----------
