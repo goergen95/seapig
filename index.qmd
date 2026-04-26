@@ -68,9 +68,9 @@ $$
 $$
 
 where $s_i^{cal}$ are the scores of the calibration samples. The decision
-function $g_{\lambda_q}(x)$ can then be applied at inference time to accept or reject
-predictions. We obtain a selective predictor, $h(x)$, that either outputs a prediction 
-or abstains from the prediction, depending on the score of the input:
+function $g_{\lambda}(x)$ can then be applied at inference time to accept or reject
+predictions. We obtain a selective predictor, $h(x)$, that either produces an output 
+or abstains from prediction, depending on the score of the input:
 
 $$
 h(x) =
@@ -211,3 +211,11 @@ By participating, you are expected to uphold this code.
 ### License
 
 - [MIT](LICENSE)
+
+### Funding
+
+[![TRR 391 Logo](https://trr391.tu-dortmund.de/storages/trr391/w/bilder/logo/Logo_Transregio_391_RGB.svg){height=64}](https://trr391.tu-dortmund.de/)
+
+This research was funded in the course of [TRR 391 Spatio-temporal Statistics
+for the Transition of Energy and Transport](https://trr391.tu-dortmund.de/) (520388526) 
+by the Deutsche Forschungsgemeinschaft (DFG, German Research Foundation).

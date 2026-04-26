@@ -73,10 +73,10 @@ $$
 $$
 
 where $s_i^{cal}$ are the scores of the calibration samples. The
-decision function $g_{\lambda_q}(x)$ can then be applied at inference
-time to accept or reject predictions. We obtain a selective predictor,
-$h(x)$, that either outputs a prediction or abstains from the
-prediction, depending on the score of the input:
+decision function $g_{\lambda}(x)$ can then be applied at inference time
+to accept or reject predictions. We obtain a selective predictor,
+$h(x)$, that either produces an output or abstains from prediction,
+depending on the score of the input:
 
 $$
 h(x) =
@@ -154,7 +154,7 @@ print(sel)
 ```
 
     {'score': tensor([3.2465, 3.9292, 3.0559, 3.2346, 3.8165, 2.7667, 2.5528, 3.1070, 3.2880,
-            4.9160, 3.9495, 3.7173, 3.7718, 4.1428, 3.5324, 3.9517, 3.7731, 3.1701,
+            4.9160, 3.9495, 3.7173, 3.7718, 4.1428, 3.5324, 3.9517, 3.7731, 3.1673,
             3.4171, 3.2512, 3.2503, 2.7896, 3.7821, 4.1532, 3.1579, 3.6539, 3.4985,
             4.2538, 4.0584, 3.3903, 3.0708, 4.0396]), 'selected': tensor([ True, False,  True,  True, False,  True,  True,  True,  True, False,
             False,  True, False, False,  True, False, False,  True,  True,  True,
@@ -250,3 +250,14 @@ uphold this code.
 ### License
 
 - [MIT](LICENSE)
+
+### Funding
+
+[<img
+src="https://trr391.tu-dortmund.de/storages/trr391/w/bilder/logo/Logo_Transregio_391_RGB.svg"
+height="64" />](https://trr391.tu-dortmund.de/)
+
+This research was funded in the course of [TRR 391 Spatio-temporal
+Statistics for the Transition of Energy and
+Transport](https://trr391.tu-dortmund.de/) (520388526) by the Deutsche
+Forschungsgemeinschaft (DFG, German Research Foundation).
