@@ -1,0 +1,5 @@
+*_files/
+lightning_logs/
+*.html
+*.ipynb
+*.quarto_ipynb
