@@ -36,7 +36,7 @@ nav_icons:
     Changelog: clock
   sidebar:
     Installation: download
-    Quick Start: rocket
+    Getting Started: rocket
     Logging and Progress: rotate-ccw
     Contributing: settings
 
