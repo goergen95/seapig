@@ -1,4 +1,4 @@
-name: Style and Type Check
+name: "CI Style & Type"
 on:
   push:
     branches: [ main ]
