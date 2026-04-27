@@ -11,7 +11,6 @@ This document explains how to set up a local development environment, run checks
 - Project overview & badges: README.md
 - API reference, tutorials & docs: docs/*.qmd
 - Tests: tests/
-- Examples: dev/
 - CI, code of conduct, license, citation: .github/, LICENSE, CITATION.cff
 - Packaging & build configuration: pyproject.toml, Makefile
 
@@ -23,7 +22,7 @@ cd seapig
 git checkout -b feat/your-short-description
 ```
 
-Branch naming examples: feat/, fix/, ci/, docs/ (e.g. feat/add-pca-score).
+Branch naming examples: `feat/`, `fix/`, `ci/`, `docs/` (e.g. `feat/add-pca-score`).
 
 ## Create & activate the virtual environment (uv)
 
@@ -88,6 +87,7 @@ make check
 
 Useful individual targets:
 
+- Run `make` to see help on all available targets.
 - Format: `make format`
 - Lint: `make lint`
 - Type checks: `make typecheck`
@@ -151,5 +151,5 @@ git commit -m "chore: update lockfile"
 
 ## Contact & guidelines
 
-Follow .github/CODE_OF_CONDUCT and the contributing templates in .github/. 
+Follow `.github/CODE_OF_CONDUCT` and the contributing templates in `.github/`. 
 If in doubt, contact the project maintainers.

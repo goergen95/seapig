@@ -5,16 +5,48 @@ tags: [Getting Started, Setup]
 ---
 
 
-``` bash
-# minimal installation
-pip install seapig
-# recommended for end users who want extra (optional) features
-pip install seapig[suggested]
+## Install seapig
 
-# for contributors / developers (tests, linters, type-checkers)
+seapig is available on PyPI. Use `pip` to install it directly into your Python environment.
+
+### Quick start
+
+For most users, start with the minimal installation:
+
+``` bash
+pip install seapig
+```
+
+This installs the core library and its required dependencies.
+
+### Installation options
+
+Choose an installation option based on your use case:
+
+| Option              | Use case |
+|---------------------|----------|
+| `seapig`            | Minimal install with core functionality |
+| `seapig[suggested]` | Recommended for end users who want additional optional features |
+| `seapig[dev]`       | For contributors: includes tests, linters, and type-checkers |
+| `seapig[docs]`      | For building documentation locally (requires quarto-cli and other tools) |
+| `seapig[all]`       | Everything above combined |
+
+### Examples
+
+Install the recommended version with optional features:
+
+``` bash
+pip install seapig[suggested]
+```
+
+Set up a development environment for contributing:
+
+``` bash
 pip install seapig[dev]
-# for building documentation (quarto-cli, great-docs, others)
-pip install seapig[docs]
-# or, if you need everything:
+```
+
+Get everything (all extras):
+
+``` bash
 pip install seapig[all]
 ```

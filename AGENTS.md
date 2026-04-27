@@ -1,14 +1,151 @@
-# Quick commands
+## Contributing
 
-Review the Makefile targets to understand how to install dependencies, 
-formatting, linting and running tests. 
+This document explains how to set up a local development environment, run checks, and contribute changes (feature branches & PRs).
 
-When done implementing changes ALWAYS run the check target: `make check`
+## Where to look
 
-# Rules & expectations
+- Project overview & badges: README.md
+- API reference, tutorials & docs: docs/*.qmd
+- Tests: tests/
+- CI, code of conduct, license, citation: .github/, LICENSE, CITATION.cff
+- Packaging & build configuration: pyproject.toml, Makefile
 
-- Typing is MANDATORY for all source code. Tests are source code! Add explicit 
-  annotations for functions, methods, and tests. Do not silence missing types 
-  with ignores in PRs.
-- Testing: TDD recommended — write tests first, then implement.
-- Tests must be deterministic (fixed seeds when needed) and use pytest.
+## Quick clone & branch
+
+```bash
+git clone git@github.com:goergen95/seapig.git
+cd seapig
+git checkout -b feat/your-short-description
+```
+
+Branch naming examples: `feat/`, `fix/`, `ci/`, `docs/` (e.g. `feat/add-pca-score`).
+
+## Create & activate the virtual environment (uv)
+
+The project uses uv for reproducible virtual environments and installs. Preferred flows:
+
+```bash
+# create venv and activate via Makefile (preferred)
+make env
+
+# or manually create and activate
+uv venv
+source .venv/bin/activate
+```
+
+## Install project and extras
+
+Recommended installs (run after activating .venv if done manually):
+
+```bash
+# minimal editable install (runtime + package)
+make env-req
+
+# developer extras (linters, tests, typing)
+make env-dev
+
+# docs build dependencies
+make env-doc
+
+# all extras
+make env-all
+```
+
+Or install manually with uv after activation:
+
+```bash
+uv pip install -e .[dev]
+```
+
+## Update lockfile
+
+When you change dependencies:
+
+```bash
+make env-lock   # runs `uv lock`
+git add uv.lock
+git commit -m "chore: update lockfile"
+```
+
+## Pre-commit & checks
+
+Install pre-commit hooks once:
+
+```bash
+make pre-commit-install
+```
+
+Run full project checks (format, lint, typing, tests):
+
+```bash
+make check
+```
+
+Useful individual targets:
+
+- Run `make` to see help on all available targets.
+- Format: `make format`
+- Lint: `make lint`
+- Type checks: `make typecheck`
+- Tests: `make test`
+- Fast-fail CI-style tests: `make test-ci`
+- Coverage: `make test-coverage`
+- Run pre-commit across repo: `make pre-commit-run`
+
+## Documentation
+
+Build/preview docs locally:
+
+```bash
+make docs-build
+make docs-preview
+```
+
+If docs dependencies change, run `make env-doc` first.
+
+## Build & cleanup
+
+- Build wheel/sdist: `make build`
+- Clean artifacts: `make clean`, `make clean-build`, `make clean-pyc`, `make clean-checks`
+
+## Tests & style rules
+
+- Typing is MANDATORY for all source code and tests — add explicit annotations. Do not silence missing types.
+- Tests must be deterministic (set seeds where needed) and use pytest.
+- Add tests for new functionality under `tests/`.
+- Run `make check` and `make pre-commit-run` locally before opening a PR.
+
+## Submitting changes
+
+1. Create a feature branch.
+2. Implement changes, add/update tests and docs.
+3. Run:
+
+```bash
+make check && make pre-commit-run
+```
+
+4. Commit & push:
+
+```bash
+git add -A
+git commit -m "feat: short description"
+git push -u origin HEAD
+```
+
+5. Open a PR, reference issues, and include notes about tests and typing coverage.
+
+## Updating deps & lockfile
+
+When adding or changing dependencies:
+
+```bash
+make env-lock
+git add uv.lock
+git commit -m "chore: update lockfile"
+```
+
+## Contact & guidelines
+
+Follow `.github/CODE_OF_CONDUCT` and the contributing templates in `.github/`. 
+If in doubt, contact the project maintainers.

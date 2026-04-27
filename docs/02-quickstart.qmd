@@ -6,40 +6,42 @@ tags: [Getting Started, Setup]
 
 ## Motivation
 
+Machine learning models for earth observation often fail in production when they 
+encounter new tiles, different sensors, seasonal changes, or unfamiliar land-cover 
+patterns. `seapig` helps you manage this uncertainty by enabling 
+**selective inference**: you can flag uncertain predictions for human review, 
+skip them, or route them to more expensive downstream workflows.
 
-Machine learning for earth observation is powerful but often brittle in operational 
-settings: models trained end-to-end on satellite imagery can fail silently when 
-presented with new tiles, different sensors, seasonal changes, or unusual 
-land-cover mixtures. `seapig` helps manage that uncertainty by letting you make 
-selection decisions before acting on model outputs — for example, flagging low-confidence 
-predictions for human review or running a more expensive downstream workflow only 
-on items that pass a score threshold. The library provides building blocks for 
-scoring, calibrating, and integrating selective inference into geospatial 
-pipelines so you can reuse the same selection logic across segmentation, classification, 
-and regression tasks.
+The `seapig` library provides modular building blocks to score, calibrate, and 
+integrate selective inference into geospatial pipelines—reusing the same logic 
+across segmentation, classification, and regression tasks.
 
+## Tutorial overview
 
-This quickstart uses a deliberately small and readable example ([Landsat-8](https://torchgeo.readthedocs.io/en/stable/api/datasets/landsat.html) 
-predictors paired with [Cropland Data Layer](https://torchgeo.readthedocs.io/en/stable/api/datasets/cropland-data-layer.html) 
-targets, as implemented in `torchgeo`) to make the core ideas clear. The data 
-and code below are chosen for clarity rather than production readiness. The 
-general pattern, (1) prepare geospatial train/val/test splits, (2) train a model,
-(3) fit a selection score, (4) choose a threshold, and (5) run selective inference, 
-is what you can translate to your own data and models.
+This quickstart demonstrates the core five-step workflow using small, interpretable 
+examples:
 
+1. **Prepare** train/val/test splits
+2. **Train** a model
+3. **Fit** a selection score
+4. **Set** a threshold
+5. **Apply** selective inference
 
-## A few practical notes
+We use [Landsat-8](https://torchgeo.readthedocs.io/en/stable/api/datasets/landsat.html) 
+satellite imagery and [Cropland Data Layer](https://torchgeo.readthedocs.io/en/stable/api/datasets/cropland-data-layer.html) 
+labels for clarity. The same pattern works with any data and model—swap the 
+backend and the selective-inference steps remain unchanged.
 
-- Simplicity: preprocessing, augmentation, and model configuration are intentionally minimal here. Real projects usually require cloud masking, radiometric correction, tiling strategies, class balancing, and stronger augmentations.
-- Reproducibility: fix random seeds and sampling strategies for deterministic runs when needed.
-- Transferability: swap the data backend or model and the same selective-inference steps still apply — seapig is modular and task-agnostic.
+## Before you start
+
+This example is simplified for readability. Production workflows typically require 
+cloud masking, radiometric correction, tiling strategies, class balancing, and 
+stronger augmentations. Download the [utility script](https://github.com/goergen95/seapig/blob/main/docs/utils.py) 
+to run this code locally.
 
 ## Setup
 
-The following code chunk import all required libraries. Note, that
-we define a [utility script](https://github.com/goergen95/seapig/blob/main/docs/utils.py) 
-to not further convolute this tutorial which you would need to download if you want 
-to run the code yourself.
+We begin by importing all required libraries and setting random seeds for reproducibility:
 
 ```{python imports}
 import os
@@ -55,175 +57,142 @@ from lightning import Trainer
 import matplotlib.pyplot as plt
 import geopandas as gpd
 
-
 from seapig.scores import CosineScore
 from seapig import SelectiveInferenceTask
 from seapig.utils import set_backend
 
-
 from docs.utils import make_split_polygons, MySegmentationTask
 
-# sets progress report backend
 set_backend("rich")
-# set random seed for reproducibility of the random sampler
 torch.manual_seed(20260428)
 ```
 
-## Data preparation
+## Step 1: Prepare the data {#sec-step-1}
 
-We download small example predictor and target files and combine them into a 
-dataset. The predictors used are a parts of a Landsat-8 scene while the target
-is represented as a land cover/land use map from the Cropland Data Layer.
-Both data sets are used in the [torchgeo tutorials](https://torchgeo.readthedocs.io/en/stable/) 
-and are hosted on HuggingFace for easy access. The combined dataset produces 
-an image pair that patches can be sampled from and fed into a model.
+The first step is to gather the input data. We start by downloading Landsat-8 
+satellite imagery (the model input) and Cropland Data Layer labels (the ground 
+truth), both hosted on HuggingFace. We then combine these into a single dataset 
+that pairs images with their corresponding labels:
 
 ```{python datasets}
-# download example dataset from torchgeo tutorials hosted on huggingface
 url = "https://hf.co/datasets/torchgeo/tutorials/resolve/ff30b729e3cbf906148d69a4441cc68023898924/"
 landsat_root = os.path.join(tempfile.gettempdir(), "landsat")
+cdl_root = os.path.join(tempfile.gettempdir(), "cdl")
 
-# get landsat predictors
+# Download predictors
 landsat8_url = url + "LC08_L2SP_023032_20230831_20230911_02_T1.tar.gz"
 download_and_extract_archive(landsat8_url, landsat_root)
 landsat8 = Landsat8(paths=landsat_root)
 
-# get cdl targets
-cdl_root = os.path.join(tempfile.gettempdir(), "cdl")
+# Download targets
 cdl_url = url + "2023_30m_cdls.zip"
 download_and_extract_archive(cdl_url, cdl_root)
 cdl = CDL(paths=cdl_root)
 
-# combine datasets with the intersection operator to create a new dataset of (predictor, target) pairs
+# Combine into (predictor, target) pairs
 dataset = landsat8 & cdl
 ```
 
-Next, we create simple spatial train/validation/test splits by slicing the dataset 
-extent along the x‑axis. This keeps splits geographically distinct, which is 
-important for realistic evaluation of geospatial models. The train split is the 
-rightmost 50% of the area, while the validation and test splits are the remaining 
-50% divided in half. The `make_split_polygons` function produces polygons that 
-define these ROIs based on the dataset bounds and specified proportions.
+Next, we create geographically distinct train/validation/test splits by dividing 
+the dataset along the x-axis. This is essential for realistic evaluation: we 
+evaluate if a model trained on one part of the landscape generalizes to a different 
+geographic area:
 
 ```{python splits}
-# train split: left most up to proportion of the total bounds on the x-axis
-# val and test splits: remaining area on the right, split in half on the x-axis
-org_bounds = dataset.bounds # tuple(x: slice(xmin, xmax, res), y: slice(ymin, ymax, res), t: slice(tmin, tmax, tres))
-size_props = [0.25, 0.25, 0.50] # proportions of the total bounds to use for each split
+org_bounds = dataset.bounds
+size_props = [0.25, 0.25, 0.50]  # 25% val, 25% test, 50% train
 test_poly, val_poly, train_poly = make_split_polygons(org_bounds, size_props)
 ```
 
-Here, we visualize the overall extent of the dataset and the train/val/test splits. 
-The first plot shows the full area covered by the Landsat-8 scene. The second
-plot shows the CDL land cover classes across the area.
+Let's visualize the dataset and the spatial splits to ensure they make sense:
 
 ```{python plot-aoi}
-# plot the complete extent of the dataset
 sample = dataset[:]
 _ = landsat8.plot(sample)
 _ = cdl.plot(sample)
 ```
 
-The next plot shows the train/val/test splits as red, blue, and green polygons.
-
 ```{python plot-splits}
-# plot train/val/test splits
 fig, ax = plt.subplots(1, 1, figsize=(4, 4))
-gpd.GeoSeries(train_poly).plot(ax=ax, edgecolor="red", facecolor="red", label="train", alpha = 0.2)
-gpd.GeoSeries(val_poly).plot(ax=ax, edgecolor="blue", facecolor="blue", label="val", alpha = 0.2)
-gpd.GeoSeries(test_poly).plot(ax=ax, edgecolor="green", facecolor="green", label="test", alpha = 0.2)
+gpd.GeoSeries(train_poly).plot(ax=ax, edgecolor="red", facecolor="red", label="train", alpha=0.2)
+gpd.GeoSeries(val_poly).plot(ax=ax, edgecolor="blue", facecolor="blue", label="val", alpha=0.2)
+gpd.GeoSeries(test_poly).plot(ax=ax, edgecolor="green", facecolor="green", label="test", alpha=0.2)
 ax.set_title("Train / Val / Test ROIs")
 ax.legend()
 ```
 
-Once we have the spatial extents of our splits ready, we move forward by defining 
-samplers for each split. [Samplers](https://torchgeo.readthedocs.io/en/stable/api/samplers.html) 
-are used in `torchgeo` to retrieve patches ready for training/evaluation from 
-geospatial datasets. For the training split, we use a [`RandomGeoSampler`](https://torchgeo.readthedocs.io/en/stable/api/samplers.html#random-geo-sampler). 
-This means that patches with the queried sizes will be randomly sampled from within 
-the spatio-temporal extent of the training domain. This may as well include overlaps 
-between different samples. We do not wish to have overlaps for the validation and 
-testing splits, which is why we are using the [`GridGeoSampler`](https://torchgeo.readthedocs.io/en/stable/api/samplers.html#grid-geo-sampler) 
-for those domains. This sampler will produce a grid of non-overlapping patches that 
-cover the respective validation and testing domains. The size parameter controls 
-the width and height of the sampled patches. The total size of the Landsat-8 scene 
-is approx. ~ $1024$ x $1024$ pixels. We use a patch size of $16$ x $16$ pixels, 
-which means that a grid-based samplers would produce around $1024 / 16 = 64$ patches 
-along each axis, or 4096 patches in total. The [`RandomGeoSampler`](https://torchgeo.readthedocs.io/en/stable/api/samplers.html#random-geo-sampler), 
-by default, will produce a number of patches equal to the number a [`GridGeoSampler`](https://torchgeo.readthedocs.io/en/stable/api/samplers.html#grid-geo-sampler)
-would produce for the same domain.
+## Step 2: Create data loaders {#sec-step-2}
+
+Now that we have our splits defined, we need to convert them into mini-batches 
+for training. We'll define samplers for each split using `torchgeo`, which 
+handles the spatial and temporal complexities of geospatial data:
+
+- **Training** uses [`RandomGeoSampler`](https://torchgeo.readthedocs.io/en/stable/api/samplers.html#random-geo-sampler) 
+to randomly sample patches with possible overlaps. This adds variety to the 
+training process and helps the model learn diverse patterns.
+- **Validation and test** use [`GridGeoSampler`](https://torchgeo.readthedocs.io/en/stable/api/samplers.html#grid-geo-sampler) 
+to create non-overlapping grids covering the entire region. This ensures 
+systematic coverage without gaps, which is important for consistent evaluation.
+
+We use 16×16 pixel patches, a small size chosen for demonstration (the full scene 
+is ~1024×1024 pixels):
 
 ```{python samples}
-# define samplers for each split
-train_sampler = RandomGeoSampler(dataset, roi = train_poly, size=16)
-print(f"Number of train samples: {len(train_sampler)}")
-val_sampler = GridGeoSampler(dataset, roi = val_poly, size=16)
-print(f"Number of val samples: {len(val_sampler)}")
-test_sampler = GridGeoSampler(dataset, roi = test_poly, size=16)
-print(f"Number of test samples: {len(test_sampler)}")
+train_sampler = RandomGeoSampler(dataset, roi=train_poly, size=16)
+val_sampler = GridGeoSampler(dataset, roi=val_poly, size=16)
+test_sampler = GridGeoSampler(dataset, roi=test_poly, size=16)
+
+print(f"Train samples: {len(train_sampler)}")
+print(f"Val samples: {len(val_sampler)}")
+print(f"Test samples: {len(test_sampler)}")
 ```
 
-Once we have our samples defined, we move on with defining their respective 
-dataloaders. In `PyTorch`, [dataloaders](https://docs.pytorch.org/tutorials/beginner/basics/data_tutorial.html)
-are used to produce batches of data from a dataset or sampler. For `torchgeo`, 
-these dataloaders need to be adapted to produce batches of patches from geospatial 
-datasets and samplers. The `stack_samples` function is used as the collate 
-function to produce batched tensors suitable for training from geospatial samples.
+Next, we wrap these samplers in PyTorch DataLoaders with `stack_samples` as the 
+collate function. The collate function handles the correct stacking of geospatial
+samples to form mini-batches:
 
 ```{python loaders}
-train_dl = DataLoader(
-    dataset, batch_size=4, sampler=train_sampler, collate_fn=stack_samples
-)
-val_dl = DataLoader(
-    dataset, batch_size=4, sampler=val_sampler, collate_fn=stack_samples
-)
-test_dl = DataLoader(
-    dataset, batch_size=4, sampler=test_sampler, collate_fn=stack_samples
-)
+train_dl = DataLoader(dataset, batch_size=4, sampler=train_sampler, collate_fn=stack_samples)
+val_dl = DataLoader(dataset, batch_size=4, sampler=val_sampler, collate_fn=stack_samples)
+test_dl = DataLoader(dataset, batch_size=4, sampler=test_sampler, collate_fn=stack_samples)
 ```
 
-## Model fitting
+## Step 3: Train a model {#sec-step-3}
 
-Once we have our dataloaders ready, we can move on to training a model. The model 
-and training configuration here are minimal and meant for demonstration purposes. 
-In practice, you would likely want to include methods such as data augmentations 
-and use a longer training schedule. The key point here is that once you have a 
-trained model, you can fit a selection score on held-out data and then apply that 
-score during inference to make selection decisions before acting on the model outputs. 
-Here we fit a minimal segmentation task with a UNet architecture and a ResNet-18 
-backbone. The model is trained for as single epoch with a learning rate of 1e-3.
+Now we train a segmentation model that learns to classify each pixel as a crop 
+type. We use a minimal UNet architecture with a ResNet18 backbone. This configuration 
+is intentionally simple for tutorial clarity; in production, you'd possibly add 
+data augmentation, longer training schedules, and careful hyperparameter tuning:
 
 ```{python fit-model}
 #| warning: false
 model = MySegmentationTask(
-    model = "unet",
+    model="unet",
     backbone="resnet18",
     weights=True,
     in_channels=len(landsat8.bands),
-    task = "multiclass",
+    task="multiclass",
     num_classes=len(cdl.classes),
-    loss = "ce",
-    lr = 1e-3,
+    loss="ce",
+    lr=1e-3,
 )
 trainer = Trainer(max_epochs=1, accelerator="auto")
 trainer.fit(model, train_dl, val_dl)
 ```
 
-## Score calibration
+## Step 4: Fit and calibrate a score {#sec-step-4}
 
-With a trained model in hand, we can now move on to fitting a selection score. 
-A selection score is a function that takes in model outputs and produces a score 
-that can be used to make selection decisions. The `CosineScore` is used here 
-for demonstration purposes, but seapig supports a variety of scores including 
-distance- and logit-based scores. The score is expected to produce a low
-value for samples that we expect a model to perform well on and a high value for 
-samples we expect the model to perform poorly on. The `CosineScore` uses measures
-the distance between query embeddings and the training embeddings in the model's latent space. 
-The `fit` method computes the necessary statistics from the training and validation 
-data to calibrate the score. After fitting, we set a selection threshold at the 
-80th percentile of the score distribution on the validation set, meaning that we 
-will reject samples that have a score above this threshold from prediction and 
-flag them for further review or downstream processing.
+Here's where `seapig` comes in. A **selection score** quantifies how confident 
+the model is in each prediction. We use `CosineScore`, which measures the 
+distance between a query embedding and its nearest neighbor in the training 
+embedding space. Lower scores indicate higher confidence (similar to training data),
+while higher scores indicate the model has encountered something unfamiliar 
+(potential uncertainty).
+
+We fit the score on both training and validation data, so it learns what "normal" 
+and "unusual" look like. Then we set a threshold at the 80th percentile of the 
+validation score distribution. This means the model will flag roughly the top 
+20% most uncertain predictions:
 
 ```{python fit-score}
 #| warning: false
@@ -233,26 +202,21 @@ score.set_threshold(q=0.80)
 print(f"Threshold: {score.threshold}")
 ```
 
-## Selective inference
+## Step 5: Apply selective inference {#sec-step-5}
 
-We can apply the fitted score to the test set. The `select` method applies the 
-score to the model outputs on the test set and produces a selection decision for 
-each sample. We can visualize the distribution of scores on the test set and see 
-which samples were selected or rejected based on the threshold we set, against the
-background of calibration scores from the validation set.
+Finally, we apply selective inference on the test set. This step separates 
+predictions into two categories based on whether their score falls below or 
+above the threshold:
 
 ```{python plot-score}
 test_selection = score.select(model=model, loader=test_dl)
 score.plot(query_scores=test_selection["score"])
 ```
 
-Finally, we can wrap the trained model and fitted score into a `SelectiveInferenceTask`. 
-Running `trainer.test` on this wrapped task will compute the usual performance metrics 
-on the test set, but differentiate between selected and rejected samples based on the 
-score threshold. This allows us to evaluate how well the model performs on the samples 
-it is confident about (selected) versus the samples it is uncertain about (rejected), 
-giving us insight into the  model's reliability and the effectiveness of the selection 
-score in identifying samples that are likely to be mispredicted.
+We can wrap the model and score into a unified `SelectiveInferenceTask`. This 
+container computes performance metrics separately for selected and rejected 
+samples. This breakdown reveals where the model is reliable (selected) and where 
+it struggles (rejected), providing actionable insights for deployment:
 
 ```{python sel-task}
 sel_model = SelectiveInferenceTask(task=model, score=score, input_key='image', target_key='mask')
