@@ -4,7 +4,7 @@ from torchgeo.trainers import SemanticSegmentationTask
 import torch
 from torchmetrics import MetricCollection, Accuracy, Precision, Recall, F1Score 
 
-def make_split_polygons(bounds: tuple, size_props: List[float]) -> Tuple[Polygon, ...]:
+def make_split_polygons(bounds: tuple, size_props: List[float], margin: float = 80.0, res: float = 30.0) -> Tuple[Polygon, ...]:
     """
     Produce rectangular Shapely polygons splitting the x-axis of `bounds`
     according to `size_props`. `bounds` is (x_slice, y_slice, t_slice).
@@ -14,8 +14,6 @@ def make_split_polygons(bounds: tuple, size_props: List[float]) -> Tuple[Polygon
     ymin, ymax = float(y_slice.start), float(y_slice.stop)
 
     # we omit one chip on the edges to avoid issues with sampling near the boundaries
-    margin = 64.0
-    res = 30.0
     xmin += margin * res
     xmax -= margin * res
     ymin += margin * res
@@ -56,9 +54,6 @@ class MySegmentationTask(SemanticSegmentationTask):
         metrics = MetricCollection(
             {
                 "AverageAccuracy": Accuracy(average="micro", **kwargs),
-                "AveragePrecision": Precision(average="micro", **kwargs),
-                "AverageRecall": Recall(average="micro", **kwargs),
-                "AverageF1Score": F1Score(average="micro", **kwargs),
             }
         )
         self.train_metrics = metrics.clone(prefix="train_")
