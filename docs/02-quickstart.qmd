@@ -1,14 +1,10 @@
 ---
-title: "Quick Start"
+title: "Example: Landsat8 + CDL"
 guide-section: "Getting Started"
 tags: [Getting Started, Setup]
 ---
 
-This document is WIP.
-
-
-
-```{python}
+```{python imports}
 import os
 import tempfile
 
@@ -16,10 +12,19 @@ from torch.utils.data import DataLoader
 from torchgeo.datasets import CDL, Landsat8, stack_samples
 from torchgeo.datasets.utils import download_and_extract_archive
 from torchgeo.samplers import GridGeoSampler, RandomGeoSampler
+from utils import make_split_polygons, MySegmentationTask
+import matplotlib.pyplot as plt
+import geopandas as gpd
+from lightning import Trainer
+from seapig.scores import CosineScore
+from seapig import SelectiveInferenceTask
+```
 
-landsat_root = os.path.join(tempfile.gettempdir(), "landsat")
 
+```{python datasets}
+# download example dataset from torchgeo tutorials from huggingface. 
 url = "https://hf.co/datasets/torchgeo/tutorials/resolve/ff30b729e3cbf906148d69a4441cc68023898924/"
+landsat_root = os.path.join(tempfile.gettempdir(), "landsat")
 
 # get landsat predictors
 landsat8_url = url + "LC08_L2SP_023032_20230831_20230911_02_T1.tar.gz"
@@ -32,28 +37,90 @@ cdl_url = url + "2023_30m_cdls.zip"
 download_and_extract_archive(cdl_url, cdl_root)
 cdl = CDL(paths=cdl_root)
 
-
 # combine datasets with the & operator to create a new dataset of (predictor, target) pairs
 dataset = landsat8 & cdl
+```
 
-# plot the complete extet of the dataset
+```{python splits}
+# train split: left most up to proportion of the total bounds on the x-axis
+# val and test splits: remaining area on the right, split in half on the x-axis
+org_bounds = dataset.bounds # tuple(x: slice(xmin, xmax, res), y: slice(ymin, ymax, res), t: slice(tmin, tmax, tres))
+size_props = [0.50, 0.25, 0.25] # proportions of the total bounds to use for each split
+train_poly, val_poly, test_poly = make_split_polygons(org_bounds, size_props)
+```
+
+
+```{python plot-aoi}
+# plot the complete extent of the dataset
 sample = dataset[:]
 landsat8.plot(sample)
 cdl.plot(sample)
+```
 
-# create dataloaders with geospatial samplers
-size = 12
-train_sampler = RandomGeoSampler(dataset, size=size, length=1000)
-test_sampler = GridGeoSampler(dataset, size=size, stride=size)
 
-train_dataloader = DataLoader(
+```{python plot-splits}
+# plot train/val/test splits
+fig, ax = plt.subplots(1, 1, figsize=(4, 4))
+gpd.GeoSeries(train_poly).plot(ax=ax, edgecolor="red", facecolor="red", label="train", alpha = 0.2)
+gpd.GeoSeries(val_poly).plot(ax=ax, edgecolor="blue", facecolor="blue", label="val", alpha = 0.2)
+gpd.GeoSeries(test_poly).plot(ax=ax, edgecolor="green", facecolor="green", label="test", alpha = 0.2)
+```
+
+
+```{python samples}
+# define samplers for each split. The train sampler is random and the val/test samplers are grid-based
+train_sampler = RandomGeoSampler(dataset, roi = train_poly, size=32)
+print(f"Number of train samples: {len(train_sampler)}")
+val_sampler = GridGeoSampler(dataset, roi = val_poly, size=32, stride=32)
+print(f"Number of val samples: {len(val_sampler)}")
+test_sampler = GridGeoSampler(dataset, roi = test_poly, size=32, stride=32)
+print(f"Number of test samples: {len(test_sampler)}")
+```
+
+
+```{python loaders}
+train_dl = DataLoader(
     dataset, batch_size=4, sampler=train_sampler, collate_fn=stack_samples
 )
-test_dataloader = DataLoader(
+val_dl = DataLoader(
+    dataset, batch_size=4, sampler=val_sampler, collate_fn=stack_samples
+)
+test_dl = DataLoader(
     dataset, batch_size=4, sampler=test_sampler, collate_fn=stack_samples
 )
-
-
-
-
 ```
+
+
+```{python fit-model}
+model = MySegmentationTask(
+    model = "unet",
+    backbone="resnet18",
+    weights=True,
+    in_channels=len(landsat8.bands),
+    task = "multiclass",
+    num_classes=len(cdl.classes),
+    loss = "ce",
+    lr = 1e-3,
+)
+trainer = Trainer(max_epochs=3, accelerator="auto")
+trainer.fit(model, train_dl, val_dl)
+```
+
+
+```{python fit-score}
+score = CosineScore(k = 1)
+score.fit(model = model, loaders = {"train": train_dl, "val": val_dl})
+score.set_threshold(q=0.80)
+print(f"Threshold: {score.threshold}")
+```
+
+```{python}
+test_selection = score.select(model = model, loader = test_dl)
+score.plot(query_scores = test_selection["score"])
+```
+
+```{python sel-task}
+sel_model = SelectiveInferenceTask(task = model, score= score, input_key='image', target_key='mask')
+stats = trainer.test(sel_model, test_dl)
+```
+
