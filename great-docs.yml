@@ -17,6 +17,9 @@ site:
   toc: true
   toc-depth: 2
   toc-title: On this page
+seo:
+  canonical:
+    base_url: www.seapig.dev
 
 authors:
   - name: Darius A. Görgen
