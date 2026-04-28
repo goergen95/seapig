@@ -29,15 +29,11 @@ examples:
 
 We use [Landsat-8](https://torchgeo.readthedocs.io/en/stable/api/datasets/landsat.html) 
 satellite imagery and [Cropland Data Layer](https://torchgeo.readthedocs.io/en/stable/api/datasets/cropland-data-layer.html) 
-labels for clarity. The same pattern works with any data and model—swap the 
-backend and the selective-inference steps remain unchanged.
-
-## Before you start
-
-This example is simplified for readability. Production workflows typically require 
-cloud masking, radiometric correction, tiling strategies, class balancing, and 
-stronger augmentations. Download the [utility script](https://github.com/goergen95/seapig/blob/main/docs/utils.py) 
-to run this code locally.
+labels as the basis of this tutorial. The example is simplified for readability. 
+Production workflows typically require more advanced strategies, such as class 
+balancing, training-time augmentation, and hyperparameter tuning. However, the 
+same pattern works across many task configurations: simply swap the model backend 
+and the selective-inference steps remain unchanged.
 
 ## Setup
 
@@ -46,25 +42,29 @@ We begin by importing all required libraries and setting random seeds for reprod
 ```{python imports}
 import os
 import tempfile
+from typing import Tuple, List
 
 import torch
 from torch.utils.data import DataLoader
-from torchgeo.datasets import CDL, Landsat8, stack_samples
-from torchgeo.datasets.utils import download_and_extract_archive
-from torchgeo.samplers import GridGeoSampler, RandomGeoSampler
+from torchmetrics import MetricCollection
+from torchmetrics import Accuracy
 from lightning import Trainer
 
+from torchgeo.datasets import CDL, Landsat8, stack_samples
+from torchgeo.datasets.utils import download_and_extract_archive
+from torchgeo.trainers import SemanticSegmentationTask
+from torchgeo.samplers import GridGeoSampler, RandomGeoSampler
+
+from shapely.geometry import box, Polygon
 import matplotlib.pyplot as plt
 import geopandas as gpd
 
-from seapig.scores import CosineScore
 from seapig import SelectiveInferenceTask
+from seapig.scores import CosineScore
 from seapig.utils import set_backend
 
-from docs.utils import make_split_polygons, MySegmentationTask
-
-set_backend("rich")
-torch.manual_seed(20260428)
+set_backend("rich") # progress bars and logging with rich
+torch.manual_seed(20260428) # seed for reproducibility
 ```
 
 ## Step 1: Prepare the data {#sec-step-1}
@@ -96,11 +96,57 @@ dataset = landsat8 & cdl
 Next, we create geographically distinct train/validation/test splits by dividing 
 the dataset along the x-axis. This is essential for realistic evaluation: we 
 evaluate if a model trained on one part of the landscape generalizes to a different 
-geographic area:
+geographic area. We define a function that takes the dataset bounds and splits 
+them into rectangular polygons based on specified size proportions. We also add 
+a margin to avoid sampling near the edges, which can cause issues with patch-based 
+sampling.
+
+```{python fun-split-polys}
+#| code-fold: true
+def make_split_polygons(
+    bounds: tuple, 
+    size_props: List[float],
+    margin: float = 80.0, 
+    res: float = 30.0
+    ) -> Tuple[Polygon, ...]:
+    """Split the dataset bounds into train/val/test polygons.
+
+    Produce rectangular Shapely polygons splitting the x-axis of `bounds`
+    according to `size_props`. `bounds` is (x_slice, y_slice, t_slice).
+    """
+    x_slice, y_slice, _ = bounds
+    xmin, xmax = float(x_slice.start), float(x_slice.stop)
+    ymin, ymax = float(y_slice.start), float(y_slice.stop)
+
+    # we omit one chip on the edges to avoid issues with sampling near the boundaries
+    xmin += margin * res
+    xmax -= margin * res
+    ymin += margin * res
+    ymax -= margin * res
+
+    if len(size_props) < 1:
+        raise ValueError("size_props must have at least one proportion")
+    if abs(sum(size_props) - 1.0) > 1e-6:
+        raise ValueError("size_props must sum to 1.0")
+
+    width = xmax - xmin
+    cum = 0.0
+    polys: List[Polygon] = []
+    for p in size_props:
+        x0 = xmin + cum * width
+        cum += p
+        x1 = xmin + cum * width
+        polys.append(box(x0, ymin, x1, ymax))
+
+    return tuple(polys)
+```
+
+We apply this function to the dataset bounds, specifying that we want 25% of the 
+data for validation, 25% for testing, and 50% for training:
 
 ```{python splits}
 org_bounds = dataset.bounds
-size_props = [0.25, 0.25, 0.50]  # 25% val, 25% test, 50% train
+size_props = [0.25, 0.25, 0.50]  # 25% test, 25% val, 50% train
 test_poly, val_poly, train_poly = make_split_polygons(org_bounds, size_props)
 ```
 
@@ -158,6 +204,44 @@ test_dl = DataLoader(dataset, batch_size=4, sampler=test_sampler, collate_fn=sta
 ```
 
 ## Step 3: Train a model {#sec-step-3}
+
+To train a model, we define a `MySegmentationTask` class that inherits from 
+`torchgeo`'s `SegmentationTask`. This class specifies how to perform a forward pass, 
+compute the loss, and calculate metrics. We extend this class by implementing the 
+`embed` method, which generates embeddings from the model's encoder. These 
+embeddings are crucial for fitting the selection score later on. Additionally, 
+we override the `configure_metrics` method to set up appropriate metrics for 
+evaluating the segmentation performance:
+
+```{python class-task}
+#| code-fold: true
+class MySegmentationTask(SemanticSegmentationTask):
+    """A simple segmentation task with an embedding method for selective inference."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def embed(self, x: torch.Tensor) -> torch.Tensor:
+        """Generate embeddings from the model's encoder for use in selection scoring."""
+        x = x.to(next(self.model.parameters()).device)
+        embs = self.model.encoder(x)[-1]
+        embs = torch.mean(embs, dim=(-2, -1)) + torch.amax(embs, dim=(-2, -1))
+        return embs
+
+    def configure_metrics(self) -> None:
+        """Configure metrics for training, validation, and testing."""
+        kwargs = {
+            "task": self.hparams["task"],
+            "num_classes": self.hparams["num_classes"],
+        }
+        metrics = MetricCollection(
+            {
+                "Accuracy": Accuracy(average="micro", **kwargs),
+            }
+        )
+        self.train_metrics = metrics.clone(prefix="train_")
+        self.val_metrics = metrics.clone(prefix="val_")
+        self.test_metrics = metrics.clone(prefix="test_")
+```
 
 Now we train a segmentation model that learns to classify each pixel as a crop 
 type. We use a minimal UNet architecture with a ResNet18 backbone. This configuration 
