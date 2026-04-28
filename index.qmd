@@ -1,6 +1,6 @@
-[![PyPI](https://img.shields.io/pypi/v/seapig)](https://pypi.org/project/seapig/)
-[![Codecov](https://codecov.io/gh/goergen95/seapig/graph/badge.svg?token=3T1UC49MYS)](https://codecov.io/gh/goergen95/seapig)
-[![MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PyPI](https://raster.shields.io/pypi/v/seapig)](https://pypi.org/project/seapig/)
+[![Codecov](https://codecov.io/gh/goergen95/seapig/graph/badge.svg?token=3T1UC49MYS)](https://app.codecov.io/gh/goergen95/seapig)
+[![MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/license/MIT)
 
 ---
 
