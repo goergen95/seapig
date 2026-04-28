@@ -1,9 +1,9 @@
 # seapig<img src="https://github.com/goergen95/seapig/blob/main/assets/logo.png?raw=true" align="right" height="138"/>
 
 
-[![PyPI](https://img.shields.io/pypi/v/seapig.png)](https://pypi.org/project/seapig/)
-[![Codecov](https://codecov.io/gh/goergen95/seapig/graph/badge.svg?token=3T1UC49MYS)](https://codecov.io/gh/goergen95/seapig)
-[![MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PyPI](https://raster.shields.io/pypi/v/seapig.png)](https://pypi.org/project/seapig/)
+[![Codecov](https://codecov.io/gh/goergen95/seapig/graph/badge.svg?token=3T1UC49MYS)](https://app.codecov.io/gh/goergen95/seapig)
+[![MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/license/MIT)
 
 ------------------------------------------------------------------------
 
@@ -117,7 +117,7 @@ sel = score.select(query_emb)
 print(sel)
 ```
 
-    {'score': tensor([3.9220, 3.2014, 2.5895, 3.0784, 2.9557, 4.0133, 3.1768, 3.0777, 2.5113,
+    {'score': tensor([4.0398, 3.2014, 2.5895, 3.0784, 2.9557, 4.0133, 3.1768, 3.0777, 2.5113,
             4.0847]), 'selected': tensor([False,  True,  True,  True,  True, False,  True,  True,  True, False])}
 
 #### On-the-fly embedding extraction
