@@ -16,7 +16,7 @@ from lightning import LightningModule
 from torchmetrics import Metric, MetricCollection
 
 from seapig.metric import RiskCoverageMetric, SelectiveMetric
-from seapig.risk_coverage import RiskCoverage
+from seapig.risk import RiskCoverage
 from seapig.scores.base import ConfidenceScore
 
 INPUT_KEYS = Literal["image", "input", "images", "inputs", "x"]

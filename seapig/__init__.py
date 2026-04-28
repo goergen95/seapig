@@ -15,7 +15,7 @@ import logging
 from seapig import scores, utils
 from seapig.metric import RiskCoverageMetric, SelectiveMetric
 from seapig.model import SelectiveInferenceTask
-from seapig.risk_coverage import RiskCoverage
+from seapig.risk import RiskCoverage
 
 logging.getLogger("seapig").addHandler(logging.NullHandler())
 
