@@ -35,13 +35,14 @@ class PyODScore(EmbeddingScore):
 
     Notes
     -----
-    Requires the optional `pyod` dependency:
-    `pip install pyod`.
+    Requires the optional `pyod` dependency. Install with:
+    ```
+    pip install pyod
+    ```
 
     See Also
     --------
-    seapig.scores.knn.EuclideanScore : Built-in KNN-based score (no extra dependency).
-    seapig.scores.embed.EmbeddingScore : Base class for embedding-based scores.
+    `scores.EmbeddingScore`
     """
 
     train_required: bool = True

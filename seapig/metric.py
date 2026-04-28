@@ -8,11 +8,7 @@ can abstain or return confidence scores:
   disjoint subsets: all samples (full), the samples marked as selected,
   and the samples marked as rejected.
 - `RiskCoverageMetric`: accumulates per-sample scores and residuals to
-  compute a risk-coverage curve using `seapig.risk_coverage`.
-
-See Also
---------
-seapig.risk_coverage : Functions for computing risk-coverage curves.
+  compute a risk-coverage curve using `scores.risk_coverage`.
 """
 
 from collections.abc import Callable
@@ -53,16 +49,19 @@ class SelectiveMetric(Metric):
 
     Example
     -------
-    ```python
+    ```{python}
+    import torch
     from torchmetrics import Accuracy
+    from seapig import SelectiveMetric
+
     base = Accuracy(task="binary")
     m = SelectiveMetric(base)
     preds = torch.tensor([[0.9, 0.1], [0.2, 0.8]])
-    target = torch.tensor([0, 1])
-    mask = torch.tensor([1, 0], dtype=torch.bool)
-    m.update(preds, target, mask)
+    target = torch.tensor([[1.0, 1], [1, 0]])
+    selected = torch.tensor([1, 0], dtype=torch.bool)
+    m.update(preds, target, selected)
     results = m.compute()
-    # results contains keys like 'full/accuracy', 'selected/accuracy', ...
+    print(results)
     ```
     """
 
@@ -174,21 +173,22 @@ class RiskCoverageMetric(Metric):
 
     See Also
     --------
-    seapig.risk_coverage.risk_coverage : The underlying curve computation.
-    seapig.risk_coverage.RiskCoverage : Container for curve results.
+    `RiskCoverage` : Container for curve results.
 
     Examples
     --------
-    ```python
+    ```{python}
     import torch
     from seapig.metric import RiskCoverageMetric
+
     metric = RiskCoverageMetric(risk="generalized")
     preds = torch.rand(50, 1)
     target = torch.rand(50, 1)
     scores = torch.rand(50)
     metric.update(preds, target, scores)
-    result = metric.compute()
-    # result contains keys: 'rc/auc_empirical', 'rc/auc_reference', 'rc/auc_excess'
+    results = metric.compute()
+    print(results)
+    _ = metric.get_curve().plot()
     ```
     """
 

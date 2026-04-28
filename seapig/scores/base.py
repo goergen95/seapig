@@ -43,10 +43,9 @@ class ConfidenceScore(torch.nn.Module, ABC):
 
     See Also
     --------
-    seapig.scores.knn.EuclideanScore : KNN-based score using Euclidean distance.
-    seapig.scores.knn.CosineScore : KNN-based score using cosine distance.
-    seapig.scores.pca.PCAScore : PCA reconstruction error score.
-    seapig.scores.logits.SoftmaxScore : Softmax probability score.
+    `scores.EmbeddingScore`
+    `scores.LogitScore`
+    `scores.RandomScore`
     """
 
     trained: bool = False
@@ -264,7 +263,7 @@ class RandomScore(ConfidenceScore):
 
     See Also
     --------
-    seapig.scores.base.ConfidenceScore : Abstract base class.
+    `scores.ConfidenceScore`
     """
 
     train_required: bool = False

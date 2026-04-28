@@ -17,31 +17,33 @@ class PCAScore(EmbeddingScore):
     samples that can be well-reconstructed from principal components (likely inliers)
     and high scores indicate samples with large reconstruction errors (likely outliers).
 
-    See https://arxiv.org/pdf/2402.02949v3 for the method description.
+    See `https://arxiv.org/pdf/2402.02949v3` for the method description.
 
     Parameters
     ----------
-    pca : TensorPCA, optional
-        PCA configuration to use. Defaults to
+    pca : `TensorPCA`, optional
+        `TensorPCA` object to use. Defaults to
         `TensorPCA(n_components=0.50, gamma=3.0, M=4096)` (RFF-PCA retaining
         50% explained variance).
 
     Examples
     --------
-    ```python
+    ```{python}
     import torch
     from seapig.scores import PCAScore
     from seapig.scores.utils import TensorPCA
+
     score = PCAScore(pca=TensorPCA(n_components=0.90))
     score.fit(X=torch.randn(200, 64), Y=torch.randn(50, 64))
     score.set_threshold(q=0.95)
     result = score.select(X=torch.randn(10, 64))
+    print(result)
     ```
 
     See Also
     --------
-    seapig.scores.utils.TensorPCA : PCA implementation used internally.
-    seapig.scores.knn.EuclideanScore : Alternative distance-based score.
+    `scores.EmbeddingScore`
+    `scores.utils.TensorPCA`
     """
 
     ident = "pca"

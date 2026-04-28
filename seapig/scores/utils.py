@@ -75,16 +75,16 @@ class TensorPCA(torch.nn.Module):
     PCA internals are stored in `float64` for numerical fidelity. During
     preprocessing, inputs are cast to `float64` to match the stored mean.
 
-    See https://arxiv.org/pdf/2505.15284 for motivation behind RFF-PCA.
+    See `https://arxiv.org/pdf/2505.15284` for motivation behind RFF-PCA.
 
     See Also
     --------
-    seapig.scores.pca.PCAScore : Confidence score using PCA reconstruction error.
-    seapig.scores.embed.EmbeddingScore : Base class that accepts TensorPCA.
+    `scores.PCAScore`
+    `scores.EmbeddingScore`
 
     Examples
     --------
-    ```python
+    ```{python}
     import torch
     from seapig.scores.utils import TensorPCA
     pca = TensorPCA(n_components=0.90)
@@ -92,6 +92,7 @@ class TensorPCA(torch.nn.Module):
     pca.fit(X)
     Z = pca.transform(X)        # projected to lower dimension
     X_rec, err = pca.reconstruct(X)  # reconstruction and per-sample L2 error
+    print(err)
     ```
     """
 
