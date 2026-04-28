@@ -5,7 +5,7 @@ from typing import cast
 import pytest
 import torch
 
-from seapig.risk_coverage import RiskCoverage, risk_coverage
+from seapig.risk import RiskCoverage, risk_coverage
 
 
 class TestRiskCoverage:

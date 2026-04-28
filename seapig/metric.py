@@ -16,12 +16,11 @@ seapig.risk_coverage : Functions for computing risk-coverage curves.
 """
 
 from collections.abc import Callable
-from typing import final
 
 import torch
 from torchmetrics import Metric, MetricCollection
 
-from seapig.risk_coverage import RiskCoverage, risk_coverage
+from seapig.risk import RiskCoverage, risk_coverage
 
 
 class SelectiveMetric(Metric):
@@ -146,7 +145,6 @@ class SelectiveMetric(Metric):
         self.metrics["rejected"].reset()
 
 
-@final
 class RiskCoverageMetric(Metric):
     """Build a risk-coverage curve from scores and per-sample errors.
 
