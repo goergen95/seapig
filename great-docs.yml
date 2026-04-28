@@ -57,6 +57,7 @@ reference:
       - scores.MahalanobisScore
       - scores.PCAScore
       - scores.PyODScore
+      - scores.utils.TensorPCA
     
   - title: Logit based Confidence Scores
     desc: Confidence scoring methods based on model logits

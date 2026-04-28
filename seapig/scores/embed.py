@@ -28,8 +28,8 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
     Parameters
     ----------
-    pca : TensorPCA or None, default None
-        Optional PCA for dimensionality reduction prior to scoring. When
+    pca : `TensorPCA` or None, default None
+        Optional `TensorPCA` object for dimensionality reduction prior to scoring. When
         provided, embeddings are projected onto the principal components
         before the score is computed.
 
@@ -46,9 +46,13 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
     See Also
     --------
-    seapig.scores.knn.EuclideanScore : Concrete KNN-based implementation.
-    seapig.scores.pca.PCAScore : PCA reconstruction error implementation.
-    seapig.scores.utils.TensorPCA : PCA utility used for dimensionality reduction.
+    `scores.ConfidenceScore`
+    `scores.KNNScore`
+    `scores.PCAScore`
+    `scores.PyODScore`
+    `scores.EuclideanScore`
+    `scores.CosineScore`
+    `scores.MahalanobisScore`
     """
 
     ref_embeddings: torch.Tensor | None

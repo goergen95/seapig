@@ -47,10 +47,10 @@ class LogitScore(ConfidenceScore, abc.ABC):
 
     See Also
     --------
-    seapig.scores.logits.SoftmaxScore : Softmax probability-based score.
-    seapig.scores.logits.EntropyScore : Predictive entropy score.
-    seapig.scores.logits.EnergyScore : Energy-based score.
-    seapig.scores.logits.MarginScore : Top-two margin score.
+    `scores.SoftmaxScore`
+    `scores.EntropyScore`
+    `scores.EnergyScore`
+    `scores.MarginScore`
 
     Examples
     --------
@@ -547,9 +547,10 @@ class SoftmaxScore(LogitScore):
 
     See Also
     --------
-    seapig.scores.logits.EntropyScore : Entropy-based alternative.
-    seapig.scores.logits.EnergyScore : Energy-based alternative.
-    seapig.scores.logits.MarginScore : Margin-based alternative.
+    `scores.LogitScore`
+    `scores.EntropyScore`
+    `scores.EnergyScore`
+    `scores.MarginScore`
     """
 
     ident: str = "softmax"
@@ -620,7 +621,10 @@ class EnergyScore(LogitScore):
 
     See Also
     --------
-    seapig.scores.logits.SoftmaxScore : Softmax probability-based alternative.
+    `scores.LogitScore`
+    `scores.SoftmaxScore`
+    `scores.EntropyScore`
+    `scores.MarginScore`
     """
 
     ident: str = "energy"
@@ -684,7 +688,10 @@ class MarginScore(LogitScore):
 
     See Also
     --------
-    seapig.scores.logits.SoftmaxScore : Softmax probability-based alternative.
+    `scores.LogitScore`
+    `scores.SoftmaxScore`
+    `scores.EntropyScore`
+    `scores.EnergyScore`
     """
 
     ident: str = "margin"
@@ -756,7 +763,10 @@ class EntropyScore(LogitScore):
 
     See Also
     --------
-    seapig.scores.logits.SoftmaxScore : Softmax probability-based alternative.
+    `scores.LogitScore`
+    `scores.SoftmaxScore`
+    `scores.EnergyScore`
+    `scores.MarginScore`
     """
 
     ident: str = "entropy"

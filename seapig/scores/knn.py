@@ -32,17 +32,17 @@ class KNNScore(EmbeddingScore, ABC):
         Number of nearest neighbors used to compute the distance score.
     stat : {'max', 'mean', 'median', 'min'}, default 'max'
         Statistic applied to aggregate distances across the k neighbors.
-    pca : TensorPCA or None, default None
-        Optional PCA for dimensionality reduction prior to scoring.
+    pca : `TensorPCA` or None, default None
+        Optional `TensorPCA` object for dimensionality reduction prior to scoring.
     save_index : bool or Path, default False
         If `True`, the HNSW index is saved to a default file. If a `Path`
         is provided (must end in `.bin`), the index is saved there.
 
     See Also
     --------
-    seapig.scores.knn.EuclideanScore : Concrete score using Euclidean distance.
-    seapig.scores.knn.CosineScore : Concrete score using cosine distance.
-    seapig.scores.knn.MahalanobisScore : Concrete score using Mahalanobis distance.
+    `scores.EuclideanScore`
+    `scores.CosineScore`
+    `scores.MahalanobisScore`
     """
 
     k: int = 1
@@ -330,8 +330,8 @@ class EuclideanScore(KNNScore):
         Number of nearest neighbors to use.
     stat : {'max', 'mean', 'median', 'min'}, default 'max'
         Statistic to aggregate distances across the k neighbors.
-    pca : TensorPCA or None, default None
-        Optional PCA for dimensionality reduction prior to scoring.
+    pca : `TensorPCA` or None, default None
+        Optional `TensorPCA` object for dimensionality reduction prior to scoring.
     save_index : bool or Path, default False
         Whether (and where) to save the HNSW index to disk.
 
@@ -348,8 +348,9 @@ class EuclideanScore(KNNScore):
 
     See Also
     --------
-    seapig.scores.knn.CosineScore : KNN score using cosine distance.
-    seapig.scores.knn.MahalanobisScore : KNN score using Mahalanobis distance.
+    `scores.KNNScore`
+    `scores.CosineScore`
+    `scores.MahalanobisScore`
     """
 
     k: int
@@ -395,15 +396,16 @@ class CosineScore(KNNScore):
         Number of nearest neighbors to use.
     stat : {'max', 'mean', 'median', 'min'}, default 'max'
         Statistic to aggregate distances across the k neighbors.
-    pca : TensorPCA or None, default None
-        Optional PCA for dimensionality reduction prior to scoring.
+    pca : `TensorPCA` or None, default None
+        Optional `TensorPCA` object for dimensionality reduction prior to scoring.
     save_index : bool or Path, default False
         Whether (and where) to save the HNSW index to disk.
 
     See Also
     --------
-    seapig.scores.knn.EuclideanScore : KNN score using Euclidean distance.
-    seapig.scores.knn.MahalanobisScore : KNN score using Mahalanobis distance.
+    `scores.KNNScore`
+    `scores.EuclideanScore`
+    `scores.MahalanobisScore`
     """
 
     k: int = 1
@@ -451,15 +453,16 @@ class MahalanobisScore(KNNScore):
         Number of nearest neighbors to use.
     stat : {'max', 'mean', 'median', 'min'}, default 'max'
         Statistic to aggregate distances across the k neighbors.
-    pca : TensorPCA or None, default None
-        Optional PCA for dimensionality reduction prior to scoring.
+    pca : `TensorPCA` or None, default None
+        Optional `TensorPCA` object for dimensionality reduction prior to scoring.
     save_index : bool or Path, default False
         Whether (and where) to save the HNSW index to disk.
 
     See Also
     --------
-    seapig.scores.knn.EuclideanScore : KNN score using Euclidean distance.
-    seapig.scores.knn.CosineScore : KNN score using cosine distance.
+    `scores.KNNScore`
+    `scores.EuclideanScore`
+    `scores.CosineScore`
     """
 
     k: int

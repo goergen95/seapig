@@ -37,8 +37,7 @@ class RiskCoverage:
 
     See Also
     --------
-    seapig.risk_coverage.risk_coverage : Function that produces this container.
-    seapig.metric.RiskCoverageMetric : Metric wrapper for use with Lightning.
+    `RiskCoverageMetric` : Metric wrapper for use with Lightning.
     """
 
     def __init__(
@@ -219,11 +218,14 @@ def risk_coverage(
 
     Examples
     --------
-    ```python
+    ```{python}
     import torch
+    from seapig.risk import risk_coverage
+
     score = torch.rand(100)
     residuals = torch.rand(100)
     rc = risk_coverage(score, residuals, risk='generalized')
+    _ = rc.plot()
     ```
     """
     # Validate inputs
