@@ -146,8 +146,8 @@ data for validation, 25% for testing, and 50% for training:
 
 ```{python splits}
 org_bounds = dataset.bounds
-size_props = [0.25, 0.25, 0.50]  # 25% test, 25% val, 50% train
-test_poly, val_poly, train_poly = make_split_polygons(org_bounds, size_props)
+size_props = [0.34, 0.33, 0.33]  # 34% train, 33% val, 33% test
+train_poly, val_poly, test_poly = make_split_polygons(org_bounds, size_props)
 ```
 
 Let's visualize the dataset and the spatial splits to ensure they make sense:
@@ -225,6 +225,7 @@ class MySegmentationTask(SemanticSegmentationTask):
         x = x.to(next(self.model.parameters()).device)
         embs = self.model.encoder(x)[-1]
         embs = torch.mean(embs, dim=(-2, -1)) + torch.amax(embs, dim=(-2, -1))
+        embs = torch.nn.functional.normalize(embs, p=2, dim=1, out=embs)
         return embs
 
     def configure_metrics(self) -> None:
@@ -260,7 +261,7 @@ model = MySegmentationTask(
     loss="ce",
     lr=1e-3,
 )
-trainer = Trainer(max_epochs=1, accelerator="auto")
+trainer = Trainer(max_epochs=1, accelerator="cpu")
 trainer.fit(model, train_dl, val_dl)
 ```
 
@@ -306,3 +307,10 @@ it struggles (rejected), providing actionable insights for deployment:
 sel_model = SelectiveInferenceTask(task=model, score=score, input_key='image', target_key='mask')
 stats = trainer.test(sel_model, test_dl)
 ```
+
+What is left now is to get predictions and selection results for the entire domain
+an stitch the batchs together to produce geospatial maps. There are ongoing efforts
+in `torchgeo` to support this kind of geospatial post-processing directly within the library
+(see [here](https://github.com/torchgeo/torchgeo/pull/3214) to find some pointers).
+Until this is available upstream, one has to manually stitch together the outputs from the 
+dataloader. We are going to cover this in an upcoming tutorial.
