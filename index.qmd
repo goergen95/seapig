@@ -168,13 +168,17 @@ class Model(LightningModule):
         return pred
     def embed(self, x):
         return torch.randn(x.shape[0], 32) 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch, batch_idx, dataloader_idx=0):
         image = batch[0]
         label = batch[1]
         pred = self.forward(image)
         print(pred.shape, label.shape)
         self.test_metrics.update(pred, label)
         self.log_dict(self.test_metrics.compute(), sync_dist=True)
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        image = batch[0]
+        pred = self.forward(image)
+        return pred
 
 trainer = Trainer(accelerator="cpu")
 model = Model()
