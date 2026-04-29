@@ -149,11 +149,16 @@ class SelectiveInferenceTask(LightningModule):
             preds = {"predictions": preds}
         assert isinstance(preds, dict)
 
+        selection = self._select(x)
+
+        return preds | selection
+
+    def _select(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
+        """Compute selection mask from inputs."""
         assert callable(self.task.embed)
         embs: torch.Tensor = self.task.embed(x)
         selection = self.score.select(embs)
-
-        return preds | selection
+        return selection
 
     @torch.inference_mode()
     def test_step(
@@ -221,8 +226,21 @@ class SelectiveInferenceTask(LightningModule):
         model's predictions and the selection outputs (e.g. `score` and `selected`).
         """
         x = _get_from_batch(batch, self.input_key, pos=0)
-        outputs: dict[str, torch.Tensor] = self.forward(x)
-        return outputs
+
+        # if task has no predict_step we simply call forward
+        if not hasattr(self.task, "predict_step") or not callable(
+            getattr(self.task, "predict_step")
+        ):
+            return self.forward(x)
+
+        # otherwise we call the task's predict_step and merge with selection results
+        preds = self.task.predict_step(batch, batch_idx, dataloader_idx)
+        if isinstance(preds, torch.Tensor):
+            preds = {"predictions": preds}
+        assert isinstance(preds, dict)
+
+        selection = self._select(x)
+        return preds | selection
 
     def get_risk_coverage_curve(self) -> RiskCoverage | None:
         """Return the latest computed risk-coverage curve, or None if not available."""

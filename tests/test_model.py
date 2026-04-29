@@ -47,6 +47,10 @@ class DummyTaskTensor(LightningModule):
     test_metrics: MetricCollection = MetricCollection(Accuracy(task="binary"))
 
     def predict(self, x: torch.Tensor) -> torch.Tensor:
+        if isinstance(x, list):
+            x = x[0]
+        if isinstance(x, dict):
+            x = next(iter(x.values()))
         return 2 * x
 
     def embed(self, x: torch.Tensor) -> torch.Tensor:
