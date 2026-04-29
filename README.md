@@ -60,17 +60,13 @@ Given a threshold $\lambda$, we derive a binary selection function
 indicating which samples to accept. For example, accepting samples with
 score below $\lambda$:
 
-$$
-g_{\lambda}(x) = \mathbf{1}\{s(x) \le \lambda\}.
-$$
+$$g_{\lambda}(x) = \mathbf{1}\{s(x) \le \lambda\}.$$
 
 We recommend calibrating $\lambda$ on an independent calibration set to
 fix a desired coverage level (fraction of accepted samples) and compute
 the correspoding empirical quantile $q$ of the calibration scores:
 
-$$
-\lambda_{q} = Q_q(s_1^{cal}, s_2^{cal}, \dots, s_m^{cal}),
-$$
+$$\lambda_{q} = Q_q(s_1^{cal}, s_2^{cal}, \dots, s_m^{cal}),$$
 
 where $s_i^{cal}$ are the scores of the calibration samples. The
 decision function $g_{\lambda}(x)$ can then be applied at inference time
@@ -78,13 +74,11 @@ to accept or reject predictions. We obtain a selective predictor,
 $h(x)$, that either produces an output or abstains from prediction,
 depending on the score of the input:
 
-$$
-h(x) =
+$$h(x) =
 \begin{cases}
 f(x), & \text{if} g(x)=1,\\
 \varnothing, & \text{if } g(x)=0.
-\end{cases}
-$$
+\end{cases}$$
 
 ### How to use seapig
 
@@ -117,7 +111,7 @@ sel = score.select(query_emb)
 print(sel)
 ```
 
-    {'score': tensor([4.0398, 3.2014, 2.5895, 3.0784, 2.9557, 4.0133, 3.1768, 3.0777, 2.5113,
+    {'score': tensor([3.9220, 3.2014, 2.5895, 3.0784, 2.9557, 4.0133, 3.1768, 3.0777, 2.5113,
             4.0847]), 'selected': tensor([False,  True,  True,  True,  True, False,  True,  True,  True, False])}
 
 #### On-the-fly embedding extraction
@@ -185,13 +179,17 @@ class Model(LightningModule):
         return pred
     def embed(self, x):
         return torch.randn(x.shape[0], 32) 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch, batch_idx, dataloader_idx=0):
         image = batch[0]
         label = batch[1]
         pred = self.forward(image)
         print(pred.shape, label.shape)
         self.test_metrics.update(pred, label)
         self.log_dict(self.test_metrics.compute(), sync_dist=True)
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        image = batch[0]
+        pred = self.forward(image)
+        return pred
 
 trainer = Trainer(accelerator="cpu")
 model = Model()
@@ -221,7 +219,7 @@ print(preds)
 
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
 
-    [{'predictions': tensor([1, 0, 0, 0, 0, 1, 0, 0, 1, 1]), 'score': tensor([5.2689, 4.8641, 5.4766, 5.8140, 5.3438, 4.6612, 6.0491, 5.0448, 6.6430,
+    [{'predictions': tensor([1, 0, 0, 0, 0, 1, 0, 0, 1, 1]), 'score': tensor([5.2689, 4.8641, 5.4766, 5.8140, 5.3438, 4.6612, 6.0490, 5.0448, 6.6430,
             5.3910]), 'selected': tensor([False, False, False, False, False, False, False, False, False, False])}]
 
 #### Available scores
