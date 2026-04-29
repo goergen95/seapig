@@ -145,6 +145,7 @@ We apply this function to the dataset bounds, specifying that we want 25% of the
 data for validation, 25% for testing, and 50% for training:
 
 ```{python splits}
+
 org_bounds = dataset.bounds
 size_props = [0.34, 0.33, 0.33]  # 34% train, 33% val, 33% test
 train_poly, val_poly, test_poly = make_split_polygons(org_bounds, size_props)
@@ -153,18 +154,24 @@ train_poly, val_poly, test_poly = make_split_polygons(org_bounds, size_props)
 Let's visualize the dataset and the spatial splits to ensure they make sense:
 
 ```{python plot-aoi}
+#| label: fig-data
+#| layout-ncol: 2
+#| fig-cap: 
+#|   - "Landsat-8 predictors (false color composite)."
+#|   - "CDL targets (cropland classes)."
 sample = dataset[:]
 _ = landsat8.plot(sample)
 _ = cdl.plot(sample)
 ```
 
 ```{python plot-splits}
+#| label: fig-splits
+#| fig-cap: "Train/Val/Test splits (red/blue/green)."
 fig, ax = plt.subplots(1, 1, figsize=(4, 4))
 gpd.GeoSeries(train_poly).plot(ax=ax, edgecolor="red", facecolor="red", label="train", alpha=0.2)
 gpd.GeoSeries(val_poly).plot(ax=ax, edgecolor="blue", facecolor="blue", label="val", alpha=0.2)
 gpd.GeoSeries(test_poly).plot(ax=ax, edgecolor="green", facecolor="green", label="test", alpha=0.2)
-ax.set_title("Train / Val / Test ROIs")
-ax.legend()
+_ = ax.axis("off")
 ```
 
 ## Step 2: Create data loaders {#sec-step-2}
@@ -311,6 +318,6 @@ stats = trainer.test(sel_model, test_dl)
 What is left now is to get predictions and selection results for the entire domain
 an stitch the batchs together to produce geospatial maps. There are ongoing efforts
 in `torchgeo` to support this kind of geospatial post-processing directly within the library
-(see [here](https://github.com/torchgeo/torchgeo/pull/3214) to find some pointers).
+(see this [issue thread](https://github.com/torchgeo/torchgeo/pull/3214) to find some pointers).
 Until this is available upstream, one has to manually stitch together the outputs from the 
 dataloader. We are going to cover this in an upcoming tutorial.
