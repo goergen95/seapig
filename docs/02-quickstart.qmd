@@ -172,7 +172,7 @@ gpd.GeoSeries(train_poly).plot(ax=ax, edgecolor="red", facecolor="red", label="t
 gpd.GeoSeries(val_poly).plot(ax=ax, edgecolor="blue", facecolor="blue", label="val", alpha=0.2)
 gpd.GeoSeries(test_poly).plot(ax=ax, edgecolor="green", facecolor="green", label="test", alpha=0.2)
 _ = ax.axis("off")
-ax.set_title("Splits")
+_ = ax.set_title("Splits")
 ```
 
 ## Step 2: Create data loaders {#sec-step-2}
