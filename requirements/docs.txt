@@ -1,5 +1,5 @@
 quarto-cli
-great-docs
+great-docs @ git+https://github.com/posit-dev/great-docs
 ipykernel
 ipywidgets
 importlib_metadata

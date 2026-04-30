@@ -46,31 +46,108 @@ reference:
     contents:
       - SelectiveInferenceTask
       - SelectiveMetric
-      - RiskCoverageMetric
+      - name: RiskCoverageMetric
+        members:
+          - compute
+          - reset
+          - update
+          - get_curve
       - RiskCoverage
 
   - title: Embedding based Confidence Scores
     desc: Confidence scoring methods for embedding-based approaches
     contents:
-      - scores.CosineScore
-      - scores.EuclideanScore
-      - scores.MahalanobisScore
-      - scores.PCAScore
-      - scores.PyODScore
+      - name: scores.CosineScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
+          - plot_embs
+      - name: scores.EuclideanScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
+          - plot_embs
+      - name: scores.MahalanobisScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
+          - plot_embs
+      - name: scores.PCAScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
+          - plot_embs
+      - name: scores.PyODScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
+          - plot_embs
       - scores.utils.TensorPCA
     
   - title: Logit based Confidence Scores
     desc: Confidence scoring methods based on model logits
     contents:
-      - scores.EnergyScore
-      - scores.EntropyScore
-      - scores.MarginScore
-      - scores.SoftmaxScore
+      - name: scores.EnergyScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
+      - name: scores.EntropyScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
+      - name: scores.MarginScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
+      - name: scores.SoftmaxScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
 
   - title: Other Confidence Scores
     desc: Confidence scoring methods based on other principles
     contents:
-      - scores.RandomScore    
+      - name: scores.RandomScore
+        members:
+          - fit
+          - score
+          - select
     
   - title: Abstract Classes
     desc: Abstract base classes
