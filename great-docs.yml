@@ -17,9 +17,18 @@ site:
   toc: true
   toc-depth: 2
   toc-title: On this page
+
 seo:
   canonical:
-    base_url: www.seapig.dev
+    base_url: https://www.seapig.dev/
+  sitemap:
+    enabled: true
+    changefreq:
+      homepage: weekly
+      reference: weekly
+      user_guide: weekly
+      changelog: weekly
+      default: weekly
 
 authors:
   - name: Darius A. Görgen
