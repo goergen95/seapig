@@ -29,7 +29,12 @@ jobs:
       - name: List dependencies
         run: uv pip list
       - name: Run tests
-        run: pytest --cov=seapig --cov-report=xml
+        run: |
+          pytest --cov=seapig --junitxml=junit.xml -o junit_family=legacy
+      - name: Report coverage
+        uses: codecov/codecov-action@v6
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v6
