@@ -32,12 +32,12 @@ classifiers = [
 dynamic = ["version", "dependencies", "optional-dependencies"]
 
 [project.urls]
-"Homepage" = "www.seapig.dev"
-"Documentation" = "www.seapig.dev/reference"
+"Homepage" = "https://seapig.dev"
+"Documentation" = "https://seapig.dev/reference"
 "Codecov" = "https://app.codecov.io/gh/goergen95/seapig"
 "Repository" = "https://github.com/goergen95/seapig"
 "Issue Tracker" = "https://github.com/goergen95/seapig/issues"
-"Changelog" = "www.seapig.dev/changelog"
+"Changelog" = "https://seapig.dev/changelog"
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements/required.txt"] }
