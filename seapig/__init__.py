@@ -8,7 +8,7 @@ to derive confidence scores to be applied for selective prediction systems.
 """
 
 __author__ = "Darius A. Görgen"
-__version__ = "0.0.1"
+__version__ = "0.1.0"
 
 import logging
 
