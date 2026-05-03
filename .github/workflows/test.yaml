@@ -29,7 +29,7 @@ jobs:
       - name: List dependencies
         run: uv pip list
       - name: Run tests
-        run: pytest --cov seapig
+        run: pytest --cov=seapig --cov-report=xml
       - name: Report coverage
         uses: codecov/codecov-action@v6
         with:
