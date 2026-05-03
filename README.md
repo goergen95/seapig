@@ -233,8 +233,8 @@ print(preds)
 
 ### Further reading
 
-- Find the documentation at [www.seapig.dev](https://www.seapig.dev) for
-  more detailed explanations, examples, and API reference.
+- Find the documentation at [https://seapig.dev](https://www.seapig.dev)
+  for more detailed explanations, examples, and API reference.
 - seapig has been presented at
   [EGU2026](https://meetingorganizer.copernicus.org/EGU26/EGU26-12275.html)
   (slides are availabe at <https://goergen95.github.io/aoa4dl/>).
