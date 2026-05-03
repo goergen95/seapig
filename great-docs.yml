@@ -30,6 +30,9 @@ seo:
       changelog: weekly
       default: weekly
 
+social_cards:
+  image: assets/logo.png
+
 authors:
   - name: Darius A. Görgen
     role: Maintainer
