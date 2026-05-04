@@ -141,8 +141,8 @@ def make_split_polygons(
     return tuple(polys)
 ```
 
-We apply this function to the dataset bounds, specifying that we want 25% of the 
-data for validation, 25% for testing, and 50% for training:
+We apply this function to the dataset bounds, specifying that we want 33% of the 
+data for validation, 33% for testing, and 34% for training:
 
 ```{python splits}
 
