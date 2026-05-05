@@ -4,6 +4,7 @@
 [![PyPI](https://raster.shields.io/pypi/v/seapig.png)](https://pypi.org/project/seapig/)
 [![Codecov](https://codecov.io/gh/goergen95/seapig/graph/badge.svg?token=3T1UC49MYS)](https://app.codecov.io/gh/goergen95/seapig)
 [![MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/license/MIT)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20005135.svg)](https://doi.org/10.5281/zenodo.20005135)
 
 ------------------------------------------------------------------------
 
@@ -60,13 +61,17 @@ Given a threshold $\lambda$, we derive a binary selection function
 indicating which samples to accept. For example, accepting samples with
 score below $\lambda$:
 
-$$g_{\lambda}(x) = \mathbf{1}\{s(x) \le \lambda\}.$$
+$$
+g_{\lambda}(x) = \mathbf{1}\{s(x) \le \lambda\}.
+$$
 
 We recommend calibrating $\lambda$ on an independent calibration set to
 fix a desired coverage level (fraction of accepted samples) and compute
 the correspoding empirical quantile $q$ of the calibration scores:
 
-$$\lambda_{q} = Q_q(s_1^{cal}, s_2^{cal}, \dots, s_m^{cal}),$$
+$$
+\lambda_{q} = Q_q(s_1^{cal}, s_2^{cal}, \dots, s_m^{cal}),
+$$
 
 where $s_i^{cal}$ are the scores of the calibration samples. The
 decision function $g_{\lambda}(x)$ can then be applied at inference time
@@ -74,11 +79,13 @@ to accept or reject predictions. We obtain a selective predictor,
 $h(x)$, that either produces an output or abstains from prediction,
 depending on the score of the input:
 
-$$h(x) =
+$$
+h(x) =
 \begin{cases}
 f(x), & \text{if} g(x)=1,\\
 \varnothing, & \text{if } g(x)=0.
-\end{cases}$$
+\end{cases}
+$$
 
 ### How to use seapig
 
@@ -149,7 +156,7 @@ print(sel)
 
     {'score': tensor([3.2465, 3.9292, 3.0559, 3.2346, 3.8165, 2.7667, 2.5528, 3.1070, 3.2880,
             4.9160, 3.9495, 3.7173, 3.7718, 4.1428, 3.5324, 3.9517, 3.7731, 3.1673,
-            3.4171, 3.2512, 3.2503, 2.7896, 3.8014, 4.1532, 3.1579, 3.6539, 3.4985,
+            3.4171, 3.2512, 3.2503, 2.7896, 3.7821, 4.1532, 3.1579, 3.6539, 3.4985,
             4.2538, 4.0584, 3.3903, 3.0708, 4.0396]), 'selected': tensor([ True, False,  True,  True, False,  True,  True,  True,  True, False,
             False,  True, False, False,  True, False, False,  True,  True,  True,
              True,  True, False, False,  True,  True,  True, False, False,  True,

@@ -1,6 +1,7 @@
 [![PyPI](https://raster.shields.io/pypi/v/seapig)](https://pypi.org/project/seapig/)
 [![Codecov](https://codecov.io/gh/goergen95/seapig/graph/badge.svg?token=3T1UC49MYS)](https://app.codecov.io/gh/goergen95/seapig)
 [![MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/license/MIT)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20005135.svg)](https://doi.org/10.5281/zenodo.20005135)
 
 ---
 
