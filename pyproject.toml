@@ -67,8 +67,6 @@ filterwarnings = [
   "ignore: Query \\d+ returned fewer than \\d+ neighbors\\.",
   "ignore: GPU available but not used\\..*",
 ]
-testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
 
 [tool.coverage.report]
 exclude_also = ["raise NotImplementedError"]
