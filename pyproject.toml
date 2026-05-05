@@ -68,6 +68,7 @@ filterwarnings = [
   "ignore: GPU available but not used\\..*",
 ]
 testpaths = ["tests"]
+pythonpath = ["seapig", "tests"]
 python_files = ["test_*.py", "*_test.py"]
 
 [tool.coverage.report]
