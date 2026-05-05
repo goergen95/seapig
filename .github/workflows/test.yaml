@@ -33,7 +33,7 @@ jobs:
         run: uv pip list
       - name: Run tests
         run: |
-          pytest --cov=seapig --cov-report=xml
+          pytest --cov=./ --cov-report=xml
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v6
         with:
