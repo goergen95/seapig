@@ -33,11 +33,14 @@ jobs:
         run: uv pip list
       - name: Run tests
         run: |
-          pytest --cov --junitxml=junit.xml -o junit_family=legacy
-      - name: Upload test results to Codecov
-        if: ${{ !cancelled() }}
+          pytest --cov=seapig --cov-report=xml
+      - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v6
         with:
+          directory: ./coverage/reports/
+          env_vars: OS,PYTHON
+          fail_ci_if_error: true
+          files: ./coverage1.xml,./coverage2.xml,!./cache
           token: ${{ secrets.CODECOV_TOKEN }}
-          report-type: test_results
           flags: ${{ matrix.python-version }}
+          verbose: true
