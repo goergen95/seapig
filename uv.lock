@@ -1130,8 +1130,8 @@ wheels = [
 
 [[package]]
 name = "great-docs"
-version = "0.10.dev149+g0378bdc1e"
-source = { git = "https://github.com/posit-dev/great-docs#0378bdc1e894ea795ce96c82afe5ceb201e0b033" }
+version = "0.10.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "griffe" },
@@ -1141,6 +1141,10 @@ dependencies = [
     { name = "pygments" },
     { name = "requests" },
     { name = "ruff" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/29/90/c196fd9e81353e548ae6256bc2cd2679500c5347e129a85b4be830ef21b8/great_docs-0.10.0.tar.gz", hash = "sha256:29bb312a1a9cab4401d69806e720bc3ff56087780278d0e4552dacf52ccec579", size = 4814628, upload-time = "2026-05-03T22:24:35.261Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/43/53/69b21e2ecba86013680f07f7fabd95a53af3017ed4098f196e0004e066e4/great_docs-0.10.0-py3-none-any.whl", hash = "sha256:b565cc88c788c104efe25d0e57983653db344ce127b627f5b938b9e85dd4d02c", size = 674686, upload-time = "2026-05-03T22:24:33.699Z" },
 ]
 
 [[package]]
@@ -4355,8 +4359,8 @@ suggested = [
 requires-dist = [
     { name = "build", marker = "extra == 'all'" },
     { name = "build", marker = "extra == 'dev'" },
-    { name = "great-docs", marker = "extra == 'all'", git = "https://github.com/posit-dev/great-docs" },
-    { name = "great-docs", marker = "extra == 'docs'", git = "https://github.com/posit-dev/great-docs" },
+    { name = "great-docs", marker = "extra == 'all'", specifier = ">=0.10.0" },
+    { name = "great-docs", marker = "extra == 'docs'", specifier = ">=0.10.0" },
     { name = "griffe", marker = "extra == 'all'" },
     { name = "griffe", marker = "extra == 'docs'" },
     { name = "importlib-metadata", marker = "extra == 'all'" },
