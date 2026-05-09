@@ -14,6 +14,11 @@ from collections.abc import Callable
 import pytest
 import torch
 
+from seapig.scores.index_handler import (
+    FaissIndexHandler,
+    NMSLibIndexHandler,
+    faiss,
+)
 from seapig.scores.knn import CosineScore, EuclideanScore, MahalanobisScore
 from seapig.scores.utils import TensorPCA
 
@@ -30,8 +35,8 @@ def test_euclidean_distance_simple_nearest() -> None:
     score = EuclideanScore(k=1, stat="min")
     score.ref_embeddings = ref
     score._setup_index()
-    # kpn default 0 => returns distance to k nearest (here k=1)
-    out = score._distance(q, kpn=0)
+    # offset default 0 => returns distance to k nearest (here k=1)
+    out = score._distance(q, offset=0)
     expected = torch.tensor([5.0])
     approx(out, expected)
 
@@ -58,7 +63,7 @@ def test_euclidean_k_and_stats(
     score = EuclideanScore(k=2, stat=stat)
     score.ref_embeddings = refs
     score._setup_index()
-    out = score._distance(q, kpn=0)
+    out = score._distance(q, offset=0)
     # pick two smallest distances: 5 and 5 -> squared are 25 and 25
     two = torch.tensor([5.0, 5.0])
     expected = expected_fn(two)
@@ -72,7 +77,7 @@ def test_cosine_similarity_identical_vector() -> None:
     score = CosineScore(k=1, stat="max")
     score.ref_embeddings = refs
     score._setup_index()
-    out = score._distance(q, kpn=0)
+    out = score._distance(q, offset=0)
     # identical vector should yield cosine distance ~0.0 (1 - similarity of 1.0)
     assert out.shape == (1,)
     assert torch.isclose(out[0], torch.tensor(0.0), atol=1e-6)
@@ -86,7 +91,7 @@ def test_cosine_k_mean() -> None:
     score = CosineScore(k=2, stat="mean")
     score.ref_embeddings = refs
     score._setup_index()
-    out = score._distance(q, kpn=0)
+    out = score._distance(q, offset=0)
     assert torch.allclose(out, torch.tensor([1.0]), atol=1e-6)
 
 
@@ -109,7 +114,7 @@ def test_mahalanobis_matches_manual_calculation() -> None:
         expected_list.append(val.item())
     expected = torch.tensor(expected_list)
     expected_min = torch.min(expected).unsqueeze(0)
-    out = score._distance(query, kpn=0)
+    out = score._distance(query, offset=0)
     approx(out, expected_min)
 
 
@@ -195,13 +200,26 @@ def test_pca_reduces_dimension_and_is_applied() -> None:
     approx(out_with_pca, out_manual)
 
 
-def test_suggest_index_params_small_n() -> None:
-    """_suggest_index_params returns conservative defaults for very small N."""
-    refs = torch.randn(5, 3)
-    s = EuclideanScore(k=3)
-    params = s._suggest_index_params(refs, k=3)
-    assert "build_defaults" in params and "query_defaults" in params
-    assert params["query_defaults"]["efSearch"] == 3
+def test_nmslib_handler_suggest_params() -> None:
+    """NMSLib handler provides build and query suggestions."""
+    h = NMSLibIndexHandler(space="l2")
+    build = h.suggest_build_params(n_samples=5, dim=3, k=3)
+    query = h.suggest_query_params(n_samples=5, dim=3, k=3)
+    assert {"M", "efConstruction", "post"}.issubset(build.keys())
+    assert "efSearch" in query
+    assert query["efSearch"] >= 3
+
+
+@pytest.mark.skipif(faiss is None, reason="faiss not installed")
+def test_faiss_handler_suggest_params() -> None:
+    """FAISS handler provides build and query suggestions."""
+    h = FaissIndexHandler()
+    build = h.suggest_build_params(n_samples=1_200, dim=64, k=4)
+    query = h.suggest_query_params(n_samples=1_200, dim=64, k=4)
+    assert {"nlist", "m", "nbits", "use_opq", "use_flat_fallback"}.issubset(
+        build.keys()
+    )
+    assert "nprobe" in query
 
 
 @pytest.mark.filterwarnings(r"ignore:.*Loading existing index from disk.*")
@@ -230,7 +248,7 @@ def test_zeropad_warning_and_padding() -> None:
 
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        out = s._distance(q, kpn=0)
+        out = s._distance(q, offset=0)
         assert any("zero padding" in str(x.message) for x in w)
 
     assert out.shape == (1,)
@@ -262,3 +280,13 @@ def test_euclidean_distance_returns_L2_distances() -> None:
     expected_min = expected.min(dim=1).values
 
     approx(distances, expected_min, tol=1e-6)
+
+
+def test_offset_excludes_self_neighbor_for_reference_query() -> None:
+    """Offset skips the self-neighbor when query points are in the reference set."""
+    refs = torch.tensor([[0.0, 0.0], [3.0, 4.0]])
+    s = EuclideanScore(k=1, stat="min")
+    s.ref_embeddings = refs
+    s._setup_index()
+    out = s._distance(refs, offset=1)
+    approx(out, torch.tensor([5.0, 5.0]))
