@@ -77,27 +77,42 @@ class FaissIndexHandler(IndexHandler):
         `m` is chosen by starting from `min(16, dim // 8)` and stepping down
         until it divides `dim`, since IVFPQ requires evenly-sized subvectors.
         """
-        if n_samples < 1_000:
-            nlist = 16
-        elif n_samples < 10_000:
-            nlist = 64
-        elif n_samples < 100_000:
-            nlist = 256
-        else:
-            nlist = 1024
-        nlist = min(nlist, max(1, n_samples // 10))
+        import math
+
+        # Minimum 1 centroid, maximum 1 per 20 samples, never larger than
+        # the classic thresholds used for large datasets.
+        max_nlist_by_samples = max(1, n_samples // 20)
+        # Classic upper bounds for very large collections
+        classic_limits = [
+            (1_000, 16),
+            (10_000, 64),
+            (100_000, 256),
+            (float("inf"), 1024),
+        ]
+        classic_nlist = next(
+            limit for cutoff, limit in classic_limits if n_samples < cutoff
+        )
+
+        # Pick the smaller of the two limits
+        nlist = min(max_nlist_by_samples, classic_nlist)
+
+        # Round down to the nearest power of two (FAISS prefers powers of two)
+        if nlist > 1:
+            nlist = 2 ** int(math.log2(nlist))
 
         m = max(1, min(16, dim // 8))
         while m > 1 and dim % m != 0:
             m -= 1
-        if dim % m != 0:
-            m = 1
+        # Ensure m never exceeds the dimensionality
+        m = min(m, dim)
+
+        use_flat_fallback = n_samples < 2_000
 
         return {
             "nlist": int(max(1, nlist)),
-            "m": int(max(1, m)),
+            "m": int(m),
             "nbits": 8,
-            "use_flat_fallback": n_samples < 500,
+            "use_flat_fallback": use_flat_fallback,
         }
 
     def suggest_query_params(

@@ -237,8 +237,8 @@ def test_euclidean_distance_returns_reasonable_euclidean_approximation() -> (
     torch.manual_seed(0)
 
     # mid-sized dataset
-    N = 1000
-    D = 16
+    N = 10000
+    D = 56
     Q = 8
 
     refs = torch.randn(N, D, dtype=torch.float32)
