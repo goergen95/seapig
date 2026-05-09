@@ -19,9 +19,6 @@ faiss: Any = _faiss
 
 __all__ = ["IndexHandler", "FaissIndexHandler", "NMSLibIndexHandler", "faiss"]
 
-def _clamp(value: int, lo: int, hi: int) -> int:
-    return max(lo, min(hi, value))
-
 
 class IndexHandler(abc.ABC):
     """Abstract base class for index handlers."""
@@ -245,6 +242,7 @@ class NMSLibIndexHandler(IndexHandler):
     """NMSLib HNSW index handler."""
 
     space: str
+    _reference_dim: int = 128
 
     def __init__(self, index_path: Path | None = None, space: str = "l2") -> None:
         super().__init__(index_path=index_path)
@@ -261,14 +259,14 @@ class NMSLibIndexHandler(IndexHandler):
         else:
             base_m = 64
         M = min(128, base_m + int(k / 10))
-        base = max(100, int(k * 5), int(10 * (dim / 128)))
+        base = max(100, int(k * 5), int(10 * (dim / self._reference_dim)))
         ef_construction = max(base, 200) if n_samples < 1_000 else base
         return {"M": int(M), "efConstruction": int(ef_construction), "post": 0}
 
     def suggest_query_params(self, n_samples: int, dim: int, k: int) -> dict[str, Any]:
         """Suggest NMSLib query-time parameters."""
         del n_samples
-        return {"efSearch": int(max(100, k * 20, int(50 * dim / 128)))}
+        return {"efSearch": int(max(100, k * 20, int(50 * dim / self._reference_dim)))}
 
     def build_index(self, embs: torch.Tensor, k: int = 1, **build_opts: Any) -> None:
         """Build an NMSLib HNSW index from embeddings."""

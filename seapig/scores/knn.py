@@ -34,8 +34,10 @@ class KNNScore(EmbeddingScore, ABC):
     pca : `TensorPCA` or None, default None
         Optional `TensorPCA` object for dimensionality reduction prior to scoring.
     save_index : bool or Path, default False
-        If `True`, the HNSW index is saved to a default file. If a `Path`
+        If `True`, the index is saved to a default file. If a `Path`
         is provided (must end in `.bin`), the index is saved there.
+        Internally, FAISS is used as the default backend for `l2` space when
+        available; otherwise NMSLib is used.
 
     See Also
     --------
@@ -220,11 +222,7 @@ class KNNScore(EmbeddingScore, ABC):
         if (
             self.index_handler is not None
             and self.index_space == space
-            and (
-                isinstance(self.index_handler, FaissIndexHandler)
-                if self._use_faiss(space=space)
-                else isinstance(self.index_handler, NMSLibIndexHandler)
-            )
+            and self._is_expected_handler_type(self.index_handler, space=space)
         ):
             self.index_handler.index_path = self.index_path
             return self.index_handler
@@ -232,6 +230,13 @@ class KNNScore(EmbeddingScore, ABC):
         if self._use_faiss(space=space):
             return FaissIndexHandler(index_path=self.index_path)
         return NMSLibIndexHandler(index_path=self.index_path, space=space)
+
+    def _is_expected_handler_type(
+        self, handler: IndexHandler, space: str
+    ) -> bool:
+        if self._use_faiss(space=space):
+            return isinstance(handler, FaissIndexHandler)
+        return isinstance(handler, NMSLibIndexHandler)
 
     def _use_faiss(self, space: str) -> bool:
         if self.index_backend == "nmslib":

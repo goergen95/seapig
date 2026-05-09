@@ -249,7 +249,11 @@ def test_zeropad_warning_and_padding() -> None:
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         out = s._distance(q, offset=0)
-        assert any("zero padding" in str(x.message) for x in w)
+        assert any(
+            "fewer than 3 neighbors" in str(x.message)
+            and "zero padding" in str(x.message)
+            for x in w
+        )
 
     assert out.shape == (1,)
     expected = torch.sqrt(torch.tensor([2.0]))
