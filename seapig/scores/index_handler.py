@@ -77,7 +77,8 @@ class FaissIndexHandler(IndexHandler):
     def suggest_build_params(self, n_samples: int, dim: int, k: int) -> dict[str, Any]:
         """Suggest FAISS build-time parameters.
 
-        `m` is chosen as a small value that divides `dim` for IVFPQ.
+        `m` is chosen by starting from `min(16, dim // 8)` and stepping down
+        until it divides `dim`, since IVFPQ requires evenly-sized subvectors.
         """
         del k
         if n_samples < 1_000:
