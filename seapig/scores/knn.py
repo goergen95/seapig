@@ -9,12 +9,7 @@ from torch.utils.data import DataLoader
 from typing_extensions import override
 
 from seapig.scores.embed import EmbeddingScore
-from seapig.scores.index_handler import (
-    FaissIndexHandler,
-    IndexHandler,
-    NMSLibIndexHandler,
-    faiss,
-)
+from seapig.scores.index_handler import FaissIndexHandler, IndexHandler
 from seapig.scores.utils import TensorPCA
 
 
@@ -36,8 +31,6 @@ class KNNScore(EmbeddingScore, ABC):
     save_index : bool or Path, default False
         If `True`, the index is saved to a default file. If a `Path`
         is provided (must end in `.bin`), the index is saved there.
-        Internally, FAISS is used as the default backend for `l2` space when
-        available; otherwise NMSLib is used.
 
     See Also
     --------
@@ -51,8 +44,6 @@ class KNNScore(EmbeddingScore, ABC):
     index: Any | None = None
     index_params: dict[str, Any] | None = None
     index_handler: IndexHandler | None = None
-    index_backend: str
-    index_space: str | None = None
     index_path: Path | None = None
 
     def __init__(
@@ -69,7 +60,6 @@ class KNNScore(EmbeddingScore, ABC):
         self.ident: str = (
             f"{self.ident}-k{self.k}-{'full' if pca is None else 'pca'}"
         )
-        self.index_backend = "faiss"
         if save_index:
             if isinstance(save_index, bool):
                 self.index_path = Path(f"{self.ident}_index.bin")
@@ -203,47 +193,24 @@ class KNNScore(EmbeddingScore, ABC):
         """Calculate the KNN distance of a query against a populated index."""
         pass
 
-    def _build_index(self, embs: torch.Tensor, space: str = "l2") -> None:
+    def _build_index(self, embs: torch.Tensor) -> None:
         """Build an index based on reference embeddings.
 
         The embeddings can be preprocessed (e.g. normalized or transformed) before
-        being passed to this method. The `space` parameter should be set accordingly
-        to match the type of distance being calculated. Typically called
-        within the `_setup_index()` method of child classes.
+        being passed to this method. Typically called within `_setup_index()`.
         """
         assert isinstance(embs, torch.Tensor)
-        self.index_space = space
-        self.index_handler = self._make_index_handler(space=space)
+        self.index_handler = self._make_index_handler()
         self.index_handler.build_index(embs=embs, k=self.k)
         self.index = self.index_handler.index
         self.index_params = self.index_handler.index_params
 
-    def _make_index_handler(self, space: str) -> IndexHandler:
-        if (
-            self.index_handler is not None
-            and self.index_space == space
-            and self._is_expected_handler_type(self.index_handler, space=space)
-        ):
+    def _make_index_handler(self) -> IndexHandler:
+        if self.index_handler is not None:
             self.index_handler.index_path = self.index_path
             return self.index_handler
 
-        if self._use_faiss(space=space):
-            return FaissIndexHandler(index_path=self.index_path)
-        return NMSLibIndexHandler(index_path=self.index_path, space=space)
-
-    def _is_expected_handler_type(
-        self, handler: IndexHandler, space: str
-    ) -> bool:
-        if self._use_faiss(space=space):
-            return isinstance(handler, FaissIndexHandler)
-        return isinstance(handler, NMSLibIndexHandler)
-
-    def _use_faiss(self, space: str) -> bool:
-        if self.index_backend == "nmslib":
-            return False
-        if space != "l2":
-            return False
-        return faiss is not None
+        return FaissIndexHandler(index_path=self.index_path)
 
     def _query_index(self, query: torch.Tensor, offset: int) -> torch.Tensor:
         """Query the index for KNN distances.
@@ -279,7 +246,7 @@ class EuclideanScore(KNNScore):
     pca : `TensorPCA` or None, default None
         Optional `TensorPCA` object for dimensionality reduction prior to scoring.
     save_index : bool or Path, default False
-        Whether (and where) to save the HNSW index to disk.
+        Whether (and where) to save the FAISS index to disk.
 
     Examples
     --------
@@ -315,7 +282,7 @@ class EuclideanScore(KNNScore):
     def _setup_index(self) -> None:
         """Initialize an index based on reference embeddings."""
         assert isinstance(self.ref_embeddings, torch.Tensor)
-        self._build_index(self.ref_embeddings, space="l2")
+        self._build_index(self.ref_embeddings)
 
     @override
     @torch.inference_mode()
@@ -345,7 +312,7 @@ class CosineScore(KNNScore):
     pca : `TensorPCA` or None, default None
         Optional `TensorPCA` object for dimensionality reduction prior to scoring.
     save_index : bool or Path, default False
-        Whether (and where) to save the HNSW index to disk.
+        Whether (and where) to save the FAISS index to disk.
 
     See Also
     --------
@@ -371,7 +338,7 @@ class CosineScore(KNNScore):
         """Initialize an index based on reference embeddings."""
         assert isinstance(self.ref_embeddings, torch.Tensor)
         normalized = torch.nn.functional.normalize(self.ref_embeddings)
-        self._build_index(normalized, space="cosinesimil")
+        self._build_index(normalized)
 
     @override
     @torch.inference_mode()
@@ -379,7 +346,7 @@ class CosineScore(KNNScore):
         """Calculate the KNN cosine distance of a query against a populated index."""
         assert self.index is not None
         normalized = torch.nn.functional.normalize(query)
-        return self._query_index(normalized, offset)
+        return self._query_index(normalized, offset) / 2.0
 
 
 class MahalanobisScore(KNNScore):
@@ -402,7 +369,7 @@ class MahalanobisScore(KNNScore):
     pca : `TensorPCA` or None, default None
         Optional `TensorPCA` object for dimensionality reduction prior to scoring.
     save_index : bool or Path, default False
-        Whether (and where) to save the HNSW index to disk.
+        Whether (and where) to save the FAISS index to disk.
 
     See Also
     --------
@@ -432,7 +399,7 @@ class MahalanobisScore(KNNScore):
         cov_zero = self.ref_embeddings.T.cov()
         self.vi_zero = torch.linalg.inv(torch.linalg.cholesky(cov_zero))
         transformed = self.ref_embeddings @ self.vi_zero.T
-        self._build_index(transformed, space="l2")
+        self._build_index(transformed)
 
     @override
     @torch.inference_mode()

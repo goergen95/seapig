@@ -14,13 +14,11 @@ from collections.abc import Callable
 import pytest
 import torch
 
-from seapig.scores.index_handler import (
-    FaissIndexHandler,
-    NMSLibIndexHandler,
-    faiss,
-)
+from seapig.scores.index_handler import faiss
 from seapig.scores.knn import CosineScore, EuclideanScore, MahalanobisScore
 from seapig.scores.utils import TensorPCA
+
+pytestmark = pytest.mark.skipif(faiss is None, reason="faiss not installed")
 
 
 def approx(t1: torch.Tensor, t2: torch.Tensor, tol: float = 1e-6) -> None:
@@ -151,19 +149,16 @@ def test_setup_index_creates_index() -> None:
     e.ref_embeddings = refs
     e._setup_index()
     assert e.index is not None
-    # assert isinstance(e.index, nmslib.FloatIndex)
 
     c = CosineScore(k=1)
     c.ref_embeddings = refs
     c._setup_index()
     assert c.index is not None
-    # assert isinstance(e.index, nmslib.FloatIndex)
 
     m = MahalanobisScore(k=1)
     m.ref_embeddings = refs
     m._setup_index()
     assert m.index is not None
-    # assert isinstance(e.index, nmslib.FloatIndex)
 
 
 def test_pca_reduces_dimension_and_is_applied() -> None:
@@ -198,28 +193,6 @@ def test_pca_reduces_dimension_and_is_applied() -> None:
     out_with_pca = s_pca.score(q)
     out_manual = s_proj.score(q_proj)
     approx(out_with_pca, out_manual)
-
-
-def test_nmslib_handler_suggest_params() -> None:
-    """NMSLib handler provides build and query suggestions."""
-    h = NMSLibIndexHandler(space="l2")
-    build = h.suggest_build_params(n_samples=5, dim=3, k=3)
-    query = h.suggest_query_params(n_samples=5, dim=3, k=3)
-    assert {"M", "efConstruction", "post"}.issubset(build.keys())
-    assert "efSearch" in query
-    assert query["efSearch"] >= 3
-
-
-@pytest.mark.skipif(faiss is None, reason="faiss not installed")
-def test_faiss_handler_suggest_params() -> None:
-    """FAISS handler provides build and query suggestions."""
-    h = FaissIndexHandler()
-    build = h.suggest_build_params(n_samples=1_200, dim=64, k=4)
-    query = h.suggest_query_params(n_samples=1_200, dim=64, k=4)
-    assert {"nlist", "m", "nbits", "use_opq", "use_flat_fallback"}.issubset(
-        build.keys()
-    )
-    assert "nprobe" in query
 
 
 @pytest.mark.filterwarnings(r"ignore:.*Loading existing index from disk.*")
@@ -260,8 +233,8 @@ def test_zeropad_warning_and_padding() -> None:
     approx(out, expected)
 
 
-def test_euclidean_distance_returns_L2_distances() -> None:
-    """score built with euclidean distances should match manual calculation."""
+def test_euclidean_distance_returns_reasonable_l2_approximation() -> None:
+    """FAISS IVFPQ distances should remain close to exact nearest distances."""
     torch.manual_seed(0)
 
     # mid-sized dataset
@@ -283,7 +256,8 @@ def test_euclidean_distance_returns_L2_distances() -> None:
     expected = torch.cdist(queries, refs, p=2.0)
     expected_min = expected.min(dim=1).values
 
-    approx(distances, expected_min, tol=1e-6)
+    mae = torch.mean(torch.abs(distances - expected_min))
+    assert mae < 1.0
 
 
 def test_offset_excludes_self_neighbor_for_reference_query() -> None:

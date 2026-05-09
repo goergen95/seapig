@@ -7,8 +7,6 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-import nmslib
-import numpy as np
 import torch
 
 try:
@@ -17,7 +15,7 @@ except ImportError:  # pragma: no cover - optional dependency
     _faiss = None
 faiss: Any = _faiss
 
-__all__ = ["IndexHandler", "FaissIndexHandler", "NMSLibIndexHandler", "faiss"]
+__all__ = ["IndexHandler", "FaissIndexHandler", "faiss"]
 
 
 class IndexHandler(abc.ABC):
@@ -224,132 +222,6 @@ class FaissIndexHandler(IndexHandler):
         self.index_path = path
         self.n_samples = int(self.index.ntotal)
         self.dim = int(self.index.d)
-
-    def aggregate_dists(self, dists: torch.Tensor, stat: str) -> torch.Tensor:
-        """Aggregate distances by statistic."""
-        if stat == "max":
-            return dists.amax(1)
-        if stat == "mean":
-            return dists.mean(1)
-        if stat == "median":
-            return dists.median(1).values
-        if stat == "min":
-            return dists.amin(1)
-        raise ValueError(f"Unsupported stat: {stat}")
-
-
-class NMSLibIndexHandler(IndexHandler):
-    """NMSLib HNSW index handler."""
-
-    space: str
-    _reference_dim: int = 128
-
-    def __init__(self, index_path: Path | None = None, space: str = "l2") -> None:
-        super().__init__(index_path=index_path)
-        self.space = space
-
-    def suggest_build_params(self, n_samples: int, dim: int, k: int) -> dict[str, Any]:
-        """Suggest NMSLib build-time parameters."""
-        if n_samples < 1_000:
-            base_m = 16
-        elif n_samples < 10_000:
-            base_m = 32
-        elif n_samples < 100_000:
-            base_m = 48
-        else:
-            base_m = 64
-        M = min(128, base_m + int(k / 10))
-        base = max(100, int(k * 5), int(10 * (dim / self._reference_dim)))
-        ef_construction = max(base, 200) if n_samples < 1_000 else base
-        return {"M": int(M), "efConstruction": int(ef_construction), "post": 0}
-
-    def suggest_query_params(self, n_samples: int, dim: int, k: int) -> dict[str, Any]:
-        """Suggest NMSLib query-time parameters."""
-        del n_samples
-        return {"efSearch": int(max(100, k * 20, int(50 * dim / self._reference_dim)))}
-
-    def build_index(self, embs: torch.Tensor, k: int = 1, **build_opts: Any) -> None:
-        """Build an NMSLib HNSW index from embeddings."""
-        if embs.dim() != 2:
-            raise ValueError("embs must be 2D (N, D)")
-        self.n_samples, self.dim = map(int, embs.shape)
-        params = self.suggest_build_params(
-            n_samples=self.n_samples, dim=self.dim, k=k
-        )
-        params.update(build_opts)
-        self.index_params = {
-            "build_defaults": params,
-            "query_defaults": self.suggest_query_params(
-                n_samples=self.n_samples, dim=self.dim, k=k
-            ),
-        }
-        index = nmslib.init(method="hnsw", space=self.space)
-
-        if self.index_path is not None and self.index_path.exists():
-            warnings.warn(
-                f"Index file {self.index_path} already exists. Loading existing index from disk.",
-                UserWarning,
-            )
-            index.loadIndex(self.index_path.as_posix(), load_data=False)
-        else:
-            x_np = embs.detach().cpu().to(torch.float32).numpy()
-            index.addDataPointBatch(x_np)
-            index.createIndex(index_params=params)
-
-        self.index = index
-        if self.index_path is not None and not self.index_path.exists():
-            self.save_index(self.index_path)
-
-    @torch.inference_mode()
-    def query_index(
-        self, query: torch.Tensor, k: int, offset: int = 0
-    ) -> torch.Tensor:
-        """Query an NMSLib index and return distances with shape (B, k + offset)."""
-        if self.index is None:
-            raise ValueError("Index must be built before querying")
-        requested = k + offset
-        if requested <= 0:
-            raise ValueError("k + offset must be > 0")
-
-        query_defaults = self.suggest_query_params(
-            n_samples=self.n_samples, dim=self.dim, k=k
-        )
-        nmslib.setQueryTimeParams(self.index, query_defaults)
-        q_np = query.detach().cpu().to(torch.float32).numpy()
-        results = self.index.knnQueryBatch(q_np, k=requested)
-        distances: list[torch.Tensor] = []
-
-        for i, (_, dists_np) in enumerate(results):
-            dist_tensor = torch.as_tensor(np.asarray(dists_np), dtype=torch.float32)
-            if len(dist_tensor) < requested:
-                warnings.warn(
-                    f"Query {i} returned fewer than {requested} neighbors. "
-                    "Applying zero padding to the distance tensor.",
-                    UserWarning,
-                )
-                padding = torch.zeros(requested - len(dist_tensor))
-                dist_tensor = torch.cat([dist_tensor, padding])
-            elif len(dist_tensor) > requested:
-                dist_tensor = dist_tensor[:requested]
-            distances.append(dist_tensor.unsqueeze(0))
-
-        if len(distances) == 0:
-            return torch.empty((0, requested), device=query.device)
-        return torch.cat(distances, dim=0).to(device=query.device)
-
-    def save_index(self, path: Path) -> None:
-        """Save NMSLib index to disk."""
-        if self.index is None:
-            raise ValueError("Index must be built before saving")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        self.index.saveIndex(path.as_posix(), save_data=False)
-
-    def load_index(self, path: Path) -> None:
-        """Load NMSLib index from disk."""
-        index = nmslib.init(method="hnsw", space=self.space)
-        index.loadIndex(path.as_posix(), load_data=False)
-        self.index = index
-        self.index_path = path
 
     def aggregate_dists(self, dists: torch.Tensor, stat: str) -> torch.Tensor:
         """Aggregate distances by statistic."""

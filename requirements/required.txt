@@ -3,6 +3,6 @@ pandas
 torch
 torchmetrics
 tqdm
-nmslib
+faiss-cpu
 lightning<=3.6.1
 typing_extensions
