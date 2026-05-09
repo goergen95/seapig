@@ -75,7 +75,10 @@ class FaissIndexHandler(IndexHandler):
             )
 
     def suggest_build_params(self, n_samples: int, dim: int, k: int) -> dict[str, Any]:
-        """Suggest FAISS build-time parameters."""
+        """Suggest FAISS build-time parameters.
+
+        `m` is chosen as a small value that divides `dim` for IVFPQ.
+        """
         del k
         if n_samples < 1_000:
             nlist = 16
@@ -140,14 +143,14 @@ class FaissIndexHandler(IndexHandler):
             nbits = int(params["nbits"])
             quantizer = faiss.IndexFlatL2(dim)
             ivfpq_index = faiss.IndexIVFPQ(quantizer, dim, nlist, m, nbits)
-            built_index: Any = ivfpq_index
+            index_with_transform: Any = ivfpq_index
             if bool(params.get("use_opq", False)):
                 opq = faiss.OPQMatrix(dim, m)
-                built_index = faiss.IndexPreTransform(opq, ivfpq_index)
+                index_with_transform = faiss.IndexPreTransform(opq, ivfpq_index)
             try:
-                built_index.train(x_np)
-                built_index.add(x_np)
-                self.index = built_index
+                index_with_transform.train(x_np)
+                index_with_transform.add(x_np)
+                self.index = index_with_transform
             except RuntimeError:
                 warnings.warn(
                     "FAISS IVFPQ build failed; falling back to IndexFlatL2.",

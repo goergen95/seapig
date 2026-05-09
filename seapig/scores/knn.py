@@ -343,7 +343,7 @@ class CosineScore(KNNScore):
     @override
     @torch.inference_mode()
     def _distance(self, query: torch.Tensor, offset: int = 0) -> torch.Tensor:
-        """Calculate the KNN cosine distance of a query against a populated index."""
+        """Calculate cosine distances from FAISS L2 distances on normalized vectors."""
         assert self.index is not None
         normalized = torch.nn.functional.normalize(query)
         return self._query_index(normalized, offset) / 2.0

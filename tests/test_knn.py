@@ -233,7 +233,7 @@ def test_zeropad_warning_and_padding() -> None:
     approx(out, expected)
 
 
-def test_euclidean_distance_returns_reasonable_l2_approximation() -> None:
+def test_euclidean_distance_returns_reasonable_euclidean_approximation() -> None:
     """FAISS IVFPQ distances should remain close to exact nearest distances."""
     torch.manual_seed(0)
 
