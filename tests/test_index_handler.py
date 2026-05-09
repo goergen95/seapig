@@ -6,9 +6,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from seapig.scores.index_handler import FaissIndexHandler, faiss
-
-pytestmark = pytest.mark.skipif(faiss is None, reason="faiss not installed")
+from seapig.scores.index_handler import FaissIndexHandler
 
 
 def test_suggest_build_and_query_params() -> None:
@@ -17,9 +15,7 @@ def test_suggest_build_and_query_params() -> None:
     build = handler.suggest_build_params(n_samples=12_000, dim=64, k=7)
     query = handler.suggest_query_params(n_samples=12_000, dim=64, k=7)
 
-    assert {"nlist", "m", "nbits", "use_opq", "use_flat_fallback"} == set(
-        build.keys()
-    )
+    assert {"nlist", "m", "nbits", "use_flat_fallback"} == set(build.keys())
     assert build["nlist"] > 0
     assert build["m"] > 0
     assert 64 % build["m"] == 0
@@ -102,4 +98,6 @@ def test_build_uses_existing_index_path(tmp_path: Path) -> None:
         warnings.simplefilter("always")
         second.build_index(torch.randn(30, 8), k=1)
     assert second.index is not None
-    assert any("Loading existing index from disk" in str(w.message) for w in rec)
+    assert any(
+        "Loading existing index from disk" in str(w.message) for w in rec
+    )

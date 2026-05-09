@@ -1,4 +1,4 @@
-"""Index handlers for KNN-based scores."""
+"""Index handlers for computing distances."""
 
 from __future__ import annotations
 
@@ -7,15 +7,10 @@ import warnings
 from pathlib import Path
 from typing import Any
 
+import faiss
 import torch
 
-try:
-    import faiss as _faiss
-except ImportError:  # pragma: no cover - optional dependency
-    _faiss = None
-faiss: Any = _faiss
-
-__all__ = ["IndexHandler", "FaissIndexHandler", "faiss"]
+__all__ = ["IndexHandler", "FaissIndexHandler"]
 
 
 class IndexHandler(abc.ABC):
@@ -35,7 +30,9 @@ class IndexHandler(abc.ABC):
         self.dim = 0
 
     @abc.abstractmethod
-    def build_index(self, embs: torch.Tensor, k: int = 1, **build_opts: Any) -> None:
+    def build_index(
+        self, embs: torch.Tensor, k: int = 1, **build_opts: Any
+    ) -> None:
         """Build an index from reference embeddings."""
 
     @abc.abstractmethod
@@ -57,30 +54,29 @@ class IndexHandler(abc.ABC):
         """Aggregate neighbor distances with a statistic."""
 
     @abc.abstractmethod
-    def suggest_build_params(self, n_samples: int, dim: int, k: int) -> dict[str, Any]:
+    def suggest_build_params(
+        self, n_samples: int, dim: int, k: int
+    ) -> dict[str, Any]:
         """Suggest build-time parameters."""
 
     @abc.abstractmethod
-    def suggest_query_params(self, n_samples: int, dim: int, k: int) -> dict[str, Any]:
+    def suggest_query_params(
+        self, n_samples: int, dim: int, k: int
+    ) -> dict[str, Any]:
         """Suggest query-time parameters."""
 
 
 class FaissIndexHandler(IndexHandler):
     """FAISS index handler using IVFPQ with flat fallback."""
 
-    def _require_faiss(self) -> None:
-        if faiss is None:  # pragma: no cover - optional dependency
-            raise ImportError(
-                "faiss is not installed. Please install it with `pip install faiss-cpu`."
-            )
-
-    def suggest_build_params(self, n_samples: int, dim: int, k: int) -> dict[str, Any]:
+    def suggest_build_params(
+        self, n_samples: int, dim: int, k: int
+    ) -> dict[str, Any]:
         """Suggest FAISS build-time parameters.
 
         `m` is chosen by starting from `min(16, dim // 8)` and stepping down
         until it divides `dim`, since IVFPQ requires evenly-sized subvectors.
         """
-        del k
         if n_samples < 1_000:
             nlist = 16
         elif n_samples < 10_000:
@@ -101,19 +97,21 @@ class FaissIndexHandler(IndexHandler):
             "nlist": int(max(1, nlist)),
             "m": int(max(1, m)),
             "nbits": 8,
-            "use_opq": False,
             "use_flat_fallback": n_samples < 500,
         }
 
-    def suggest_query_params(self, n_samples: int, dim: int, k: int) -> dict[str, Any]:
+    def suggest_query_params(
+        self, n_samples: int, dim: int, k: int
+    ) -> dict[str, Any]:
         """Suggest FAISS query-time parameters."""
         build = self.suggest_build_params(n_samples=n_samples, dim=dim, k=k)
         nlist = int(build["nlist"])
         return {"nprobe": min(max(1, int(k * 2)), nlist)}
 
-    def build_index(self, embs: torch.Tensor, k: int = 1, **build_opts: Any) -> None:
+    def build_index(
+        self, embs: torch.Tensor, k: int = 1, **build_opts: Any
+    ) -> None:
         """Build a FAISS index from embeddings."""
-        self._require_faiss()
         if embs.dim() != 2:
             raise ValueError("embs must be 2D (N, D)")
         n_samples, dim = map(int, embs.shape)
@@ -144,14 +142,10 @@ class FaissIndexHandler(IndexHandler):
             nbits = int(params["nbits"])
             quantizer = faiss.IndexFlatL2(dim)
             ivfpq_index = faiss.IndexIVFPQ(quantizer, dim, nlist, m, nbits)
-            index_with_transform: Any = ivfpq_index
-            if bool(params.get("use_opq", False)):
-                opq = faiss.OPQMatrix(dim, m)
-                index_with_transform = faiss.IndexPreTransform(opq, ivfpq_index)
             try:
-                index_with_transform.train(x_np)
-                index_with_transform.add(x_np)
-                self.index = index_with_transform
+                ivfpq_index.train(x_np)
+                ivfpq_index.add(x_np)
+                self.index = ivfpq_index
             except RuntimeError:
                 warnings.warn(
                     "FAISS IVFPQ build failed; falling back to IndexFlatL2.",
@@ -168,7 +162,9 @@ class FaissIndexHandler(IndexHandler):
             self.index_params["query_defaults"] = query_defaults
             nprobe = int(query_defaults["nprobe"])
             try:
-                faiss.ParameterSpace().set_index_parameter(self.index, "nprobe", nprobe)
+                faiss.ParameterSpace().set_index_parameter(
+                    self.index, "nprobe", nprobe
+                )
             except RuntimeError:
                 pass
 
@@ -180,7 +176,6 @@ class FaissIndexHandler(IndexHandler):
         self, query: torch.Tensor, k: int, offset: int = 0
     ) -> torch.Tensor:
         """Query a FAISS index and return distances with shape (B, k + offset)."""
-        self._require_faiss()
         if self.index is None:
             raise ValueError("Index must be built before querying")
         requested = k + offset
@@ -193,7 +188,9 @@ class FaissIndexHandler(IndexHandler):
         )
         nprobe = int(query_defaults["nprobe"])
         try:
-            faiss.ParameterSpace().set_index_parameter(self.index, "nprobe", nprobe)
+            faiss.ParameterSpace().set_index_parameter(
+                self.index, "nprobe", nprobe
+            )
         except RuntimeError:
             pass
         dists, idx = self.index.search(q_np, requested)
@@ -213,7 +210,6 @@ class FaissIndexHandler(IndexHandler):
 
     def save_index(self, path: Path) -> None:
         """Save FAISS index to disk."""
-        self._require_faiss()
         if self.index is None:
             raise ValueError("Index must be built before saving")
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -221,7 +217,6 @@ class FaissIndexHandler(IndexHandler):
 
     def load_index(self, path: Path) -> None:
         """Load FAISS index from disk."""
-        self._require_faiss()
         self.index = faiss.read_index(path.as_posix())
         self.index_path = path
         self.n_samples = int(self.index.ntotal)

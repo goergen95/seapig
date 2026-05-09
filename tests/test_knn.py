@@ -14,11 +14,8 @@ from collections.abc import Callable
 import pytest
 import torch
 
-from seapig.scores.index_handler import faiss
 from seapig.scores.knn import CosineScore, EuclideanScore, MahalanobisScore
 from seapig.scores.utils import TensorPCA
-
-pytestmark = pytest.mark.skipif(faiss is None, reason="faiss not installed")
 
 
 def approx(t1: torch.Tensor, t2: torch.Tensor, tol: float = 1e-6) -> None:
@@ -233,7 +230,9 @@ def test_zeropad_warning_and_padding() -> None:
     approx(out, expected)
 
 
-def test_euclidean_distance_returns_reasonable_euclidean_approximation() -> None:
+def test_euclidean_distance_returns_reasonable_euclidean_approximation() -> (
+    None
+):
     """FAISS IVFPQ distances should remain close to exact nearest distances."""
     torch.manual_seed(0)
 

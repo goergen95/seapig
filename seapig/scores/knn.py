@@ -177,7 +177,9 @@ class KNNScore(EmbeddingScore, ABC):
             A `torch.Tensor` representing sample embeddings of shape `(B, D)`.
         """
         assert self.index is not None, "Index must be built before scoring"
-        assert self.index_handler is not None, "Index handler must be initialized"
+        assert self.index_handler is not None, (
+            "Index handler must be initialized"
+        )
         if self.pca is not None:
             X = self.pca.transform(X)
         score = self._distance(query=X)
@@ -225,9 +227,15 @@ class KNNScore(EmbeddingScore, ABC):
         from skewing the scores. The `_query_index()` method is typically called
         within the `_distance()` method of child classes.
         """
-        assert self.index_handler is not None, "Index handler must be initialized"
-        distances = self.index_handler.query_index(query=query, k=self.k, offset=offset)
-        return self.index_handler.aggregate_dists(distances[:, offset:], stat=self.stat)
+        assert self.index_handler is not None, (
+            "Index handler must be initialized"
+        )
+        distances = self.index_handler.query_index(
+            query=query, k=self.k, offset=offset
+        )
+        return self.index_handler.aggregate_dists(
+            distances[:, offset:], stat=self.stat
+        )
 
 
 class EuclideanScore(KNNScore):
