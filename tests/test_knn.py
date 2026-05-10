@@ -30,8 +30,8 @@ def test_euclidean_distance_simple_nearest() -> None:
     score = EuclideanScore(k=1, stat="min")
     score.ref_embeddings = ref
     score._setup_index()
-    # kpn default 0 => returns distance to k nearest (here k=1)
-    out = score._distance(q, kpn=0)
+    # offset default 0 => returns distance to k nearest (here k=1)
+    out = score._distance(q, offset=0)
     expected = torch.tensor([5.0])
     approx(out, expected)
 
@@ -58,7 +58,7 @@ def test_euclidean_k_and_stats(
     score = EuclideanScore(k=2, stat=stat)
     score.ref_embeddings = refs
     score._setup_index()
-    out = score._distance(q, kpn=0)
+    out = score._distance(q, offset=0)
     # pick two smallest distances: 5 and 5 -> squared are 25 and 25
     two = torch.tensor([5.0, 5.0])
     expected = expected_fn(two)
@@ -72,7 +72,7 @@ def test_cosine_similarity_identical_vector() -> None:
     score = CosineScore(k=1, stat="max")
     score.ref_embeddings = refs
     score._setup_index()
-    out = score._distance(q, kpn=0)
+    out = score._distance(q, offset=0)
     # identical vector should yield cosine distance ~0.0 (1 - similarity of 1.0)
     assert out.shape == (1,)
     assert torch.isclose(out[0], torch.tensor(0.0), atol=1e-6)
@@ -86,7 +86,7 @@ def test_cosine_k_mean() -> None:
     score = CosineScore(k=2, stat="mean")
     score.ref_embeddings = refs
     score._setup_index()
-    out = score._distance(q, kpn=0)
+    out = score._distance(q, offset=0)
     assert torch.allclose(out, torch.tensor([1.0]), atol=1e-6)
 
 
@@ -109,7 +109,7 @@ def test_mahalanobis_matches_manual_calculation() -> None:
         expected_list.append(val.item())
     expected = torch.tensor(expected_list)
     expected_min = torch.min(expected).unsqueeze(0)
-    out = score._distance(query, kpn=0)
+    out = score._distance(query, offset=0)
     approx(out, expected_min)
 
 
@@ -220,7 +220,7 @@ def test_build_index_saves_and_loads(tmp_path: pathlib.Path) -> None:
     assert s2.index is not None
 
 
-def test_zeropad_warning_and_padding() -> None:
+def test_infpad_warning_and_padding() -> None:
     """Ensure queries returning fewer neighbors are zero-padded and warn."""
     refs = torch.tensor([[0.0, 0.0]])
     q = torch.tensor([[1.0, 1.0]])
@@ -230,8 +230,8 @@ def test_zeropad_warning_and_padding() -> None:
 
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        out = s._distance(q, kpn=0)
-        assert any("zero padding" in str(x.message) for x in w)
+        out = s._distance(q, offset=0)
+        assert any("mean padding" in str(x.message) for x in w)
 
     assert out.shape == (1,)
     expected = torch.sqrt(torch.tensor([2.0]))

@@ -153,7 +153,7 @@ class KNNScore(EmbeddingScore, ABC):
             assert (q >= 0.0) & (q <= 1.0)
             if self.index is None:
                 self._setup_index()
-            scores = self._distance(self.ref_embeddings, kpn=1)
+            scores = self._distance(self.ref_embeddings, offset=1)
             threshold = torch.quantile(scores.float(), q=q)
             index = scores < threshold
             self.ref_embeddings = self.ref_embeddings[index, :]
@@ -162,9 +162,9 @@ class KNNScore(EmbeddingScore, ABC):
         self.set_trained()
 
         if self.cal_embeddings is None:
-            self.scores = self._distance(self.ref_embeddings, kpn=1)
+            self.scores = self._distance(self.ref_embeddings, offset=1)
         else:
-            self.scores = self._distance(self.cal_embeddings, kpn=0)
+            self.scores = self._distance(self.cal_embeddings, offset=0)
             self.set_calibrated()
 
     @override
@@ -192,7 +192,7 @@ class KNNScore(EmbeddingScore, ABC):
         pass
 
     @abstractmethod
-    def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
+    def _distance(self, query: torch.Tensor, offset: int = 0) -> torch.Tensor:
         """Calculate the KNN distance of a query against a populated index."""
         pass
 
@@ -258,12 +258,12 @@ class KNNScore(EmbeddingScore, ABC):
             "query_defaults": {"efSearch": ef_search},
         }
 
-    def _query_index(self, query: torch.Tensor, kpn: int) -> torch.Tensor:
+    def _query_index(self, query: torch.Tensor, offset: int) -> torch.Tensor:
         """Query the index for KNN distances.
 
-        The `kpn` parameter allows for retrieving additional neighbors beyond the
+        The `offset` parameter allows for retrieving additional neighbors beyond the
         specified `k` to handle cases where a point is both in the reference
-        index and the query. For example, if `k=1` and `kpn=1`, the method will
+        index and the query. For example, if `k=1` and `offset=1`, the method will
         retrieve the 2 nearest neighbors and then use the second nearest neighbor's
         distance as the score, effectively ignoring the nearest neighbor which
         may be the point itself. This is particularly useful when scoring calibration
@@ -275,30 +275,45 @@ class KNNScore(EmbeddingScore, ABC):
         nmslib.setQueryTimeParams(
             self.index, self.index_params["query_defaults"]
         )
-        results = self.index.knnQueryBatch(query.cpu(), k=self.k + kpn)
-        distances = self._zeropad(results, kpn=kpn)
-        distances = self._stat(distances[:, kpn:])
+        results = self.index.knnQueryBatch(query.cpu(), k=self.k + offset)
+        distances = self._pad(results, offset=offset)
+        distances = self._stat(distances[:, offset:])
         return distances
 
-    def _zeropad(
-        self, query_results: list[tuple[torch.Tensor, torch.Tensor]], kpn: int
+    def _pad(
+        self,
+        query_results: list[tuple[torch.Tensor, torch.Tensor]],
+        offset: int,
     ) -> torch.Tensor:
-        """Zero pad the distance tensors if fewer than `k + kpn` neighbors are returned.
+        """Pad the distance tensors with the mean distance.
 
-        This is required because approximate nearest neighbour searches may
-        not always return exactly `k` neighbors.
+        When fewer than ``k + offset`` neighbors are returned we apply mean padding.
+        Approximate nearest neighbour searches may not always return exactly ``k`` neighbors.
+        In such cases we replace the missing entries with the mean of the distances that were
+        actually returned for that query, rather than using ``inf``.
         """
         distances = []
 
         for i, res in enumerate(query_results):
+            # ``res[1]`` contains the distances returned by the index for this query
             dist_tensor = torch.tensor(res[1])
-            if len(dist_tensor) < self.k + kpn:
+            required = self.k + offset
+            if len(dist_tensor) < required:
                 warnings.warn(
-                    f"Query {i} returned fewer than {self.k + kpn} neighbors. "
-                    f"Applying zero padding to the distance tensor.",
+                    f"Query {i} returned fewer than {required} neighbors."
+                    f"Applying mean padding to the distance tensor.",
                     UserWarning,
                 )
-                padding = torch.zeros(self.k + kpn - len(dist_tensor))
+                # Compute mean of the existing distances; if none exist, use 0.0 as fallback
+                if len(dist_tensor) > 0:
+                    pad_value = dist_tensor.mean().item()
+                else:
+                    pad_value = 0.0
+                padding = torch.full(
+                    (required - len(dist_tensor),),
+                    pad_value,
+                    dtype=dist_tensor.dtype,
+                )
                 dist_tensor = torch.cat([dist_tensor, padding])
             distances.append(dist_tensor.unsqueeze(0))
         return torch.cat(distances)
@@ -373,9 +388,9 @@ class EuclideanScore(KNNScore):
 
     @override
     @torch.inference_mode()
-    def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
+    def _distance(self, query: torch.Tensor, offset: int = 0) -> torch.Tensor:
         """Calculate the KNN distance of a query against a populated index."""
-        squared_distances = self._query_index(query, kpn)
+        squared_distances = self._query_index(query, offset)
         return torch.sqrt(squared_distances)
 
 
@@ -429,11 +444,11 @@ class CosineScore(KNNScore):
 
     @override
     @torch.inference_mode()
-    def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
+    def _distance(self, query: torch.Tensor, offset: int = 0) -> torch.Tensor:
         """Calculate the KNN cosine distance of a query against a populated index."""
         assert self.index is not None
         normalized = torch.nn.functional.normalize(query)
-        return self._query_index(normalized, kpn)
+        return self._query_index(normalized, offset)
 
 
 class MahalanobisScore(KNNScore):
@@ -490,8 +505,8 @@ class MahalanobisScore(KNNScore):
 
     @override
     @torch.inference_mode()
-    def _distance(self, query: torch.Tensor, kpn: int = 0) -> torch.Tensor:
+    def _distance(self, query: torch.Tensor, offset: int = 0) -> torch.Tensor:
         """Calculate the Mahalanobis distance of a query against a populated index."""
         assert self.index is not None
         transformed = query.float() @ self.vi_zero.T
-        return self._query_index(transformed, kpn)
+        return self._query_index(transformed, offset)
