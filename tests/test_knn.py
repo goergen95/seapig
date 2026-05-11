@@ -246,3 +246,15 @@ def test_euclidean_distance_returns_L2_distances() -> None:
 
     mae = torch.mean(torch.abs(distances - expected_min))
     assert mae < 0.01, f"Mean absolute error {mae} exceeds tolerance"
+
+
+def test_query_dimension_mismatch_raises() -> None:
+    """Ensure _query_index raises when query dimensionality differs from index dimensionality."""
+    refs = torch.randn(5, 16)
+    score = EuclideanScore(k=1, stat="min")
+    score.ref_embeddings = refs
+    score._setup_index()
+    query = torch.randn(1, 8)
+    with pytest.raises(ValueError) as exc:
+        score._query_index(query, offset=0)
+    assert "does not match index dimension" in str(exc.value)
