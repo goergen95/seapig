@@ -74,6 +74,7 @@ reference:
           - fit
           - score
           - select
+          - knn_search
           - set_threshold
           - get_threshold
           - plot
@@ -83,6 +84,7 @@ reference:
           - fit
           - score
           - select
+          - knn_search
           - set_threshold
           - get_threshold
           - plot
@@ -92,6 +94,7 @@ reference:
           - fit
           - score
           - select
+          - knn_search
           - set_threshold
           - get_threshold
           - plot
