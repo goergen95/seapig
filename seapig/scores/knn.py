@@ -217,12 +217,13 @@ class KNNScore(EmbeddingScore, ABC):
         Returns
         -------
         distances : torch.Tensor
-            A tensor of shape `(N, k‑offset)` containing the KNN distances for each
-            query point.
+            A tensor of shape `(N, k)` containing the KNN distances for each
+            query point after discarding the first `offset` nearest neighbours.
 
         indices : torch.Tensor
-            A tensor of shape `(N, k‑offset)` with the index positions of the
-            nearest neighbours in the reference embedding set.
+            A tensor of shape `(N, k)` with the index positions of the
+            nearest neighbours in the reference embedding set after discarding
+            the first `offset` matches.
 
         Notes
         -----
@@ -324,9 +325,7 @@ class KNNScore(EmbeddingScore, ABC):
         """Query the FAISS HNSW index for KNN distances.
 
         Retrieves `k + offset` nearest neighbors, applies the query-time `efSearch`
-        parameter, and returns the aggregated distances after discarding the first
-        `offset` entries (used to skip self‑matches). The selected statistic is
-        applied via ``self._stat``. Returns a tuple of (distances, indices) where
+        parameter, and returns a tuple of (distances, indices) where
         distances are KNN distances and indices are the corresponding neighbor indices
         in the reference embeddings.
         """
@@ -561,5 +560,5 @@ class MahalanobisScore(KNNScore):
         """Calculate the Mahalanobis distance of a query against a populated index."""
         assert self.index is not None
         transformed = query.float() @ self.vi_zero.T
-        search_results = self._query_index(transformed, offset)
-        return search_results
+        distances, indices = self._query_index(transformed, offset)
+        return torch.sqrt(distances), indices
