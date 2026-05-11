@@ -30,7 +30,7 @@ def test_euclidean_distance_simple_nearest() -> None:
     score.ref_embeddings = ref
     score._setup_index()
     # offset default 0 => returns distance to k nearest (here k=1)
-    out = score._distance(q, offset=0)
+    out, _ = score._distance(q, offset=0)
     expected = torch.tensor([5.0])
     approx(out, expected)
 
@@ -57,7 +57,7 @@ def test_euclidean_k_and_stats(
     score = EuclideanScore(k=2, stat=stat)
     score.ref_embeddings = refs
     score._setup_index()
-    out = score._distance(q, offset=0)
+    out, _ = score._distance(q, offset=0)
     # pick two smallest distances: 5 and 5 -> squared are 25 and 25
     two = torch.tensor([5.0, 5.0])
     expected = expected_fn(two)
@@ -71,9 +71,9 @@ def test_cosine_similarity_identical_vector() -> None:
     score = CosineScore(k=1, stat="max")
     score.ref_embeddings = refs
     score._setup_index()
-    out = score._distance(q, offset=0)
+    out, _ = score._distance(q, offset=0)
     # identical vector should yield cosine distance ~0.0 (1 - similarity of 1.0)
-    assert out.shape == (1,)
+    assert out.shape == (1, 1)
     assert torch.isclose(out[0], torch.tensor(0.0), atol=1e-6)
 
 
@@ -85,7 +85,7 @@ def test_cosine_k_mean() -> None:
     score = CosineScore(k=2, stat="mean")
     score.ref_embeddings = refs
     score._setup_index()
-    out = score._distance(q, offset=0)
+    out, _ = score._distance(q, offset=0)
     assert torch.allclose(out, torch.tensor([1.0]), atol=1e-6)
 
 
@@ -108,7 +108,7 @@ def test_mahalanobis_matches_manual_calculation() -> None:
         expected_list.append(val.item())
     expected = torch.tensor(expected_list)
     expected_min = torch.min(expected).unsqueeze(0)
-    out = score._distance(query, offset=0)
+    out, _ = score._distance(query, offset=0)
     approx(out, expected_min)
 
 
@@ -258,3 +258,26 @@ def test_query_dimension_mismatch_raises() -> None:
     with pytest.raises(ValueError) as exc:
         score._query_index(query, offset=0)
     assert "does not match index dimension" in str(exc.value)
+
+
+def test_knn_search_offset_and_distances() -> None:
+    """Verify knn_search returns correct distances and indices with offset.
+
+    Use EuclideanScore with a small reference set where the query matches one
+    reference point. With `k=2` and `offset=1` the method should skip the
+    self‑match and return the distance to the nearest other point.
+    """
+    # reference embeddings: origin and two unit points
+    refs = torch.tensor([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+    query = torch.tensor([[0.0, 0.0]])
+    score = EuclideanScore(k=2, stat="min")
+    score.ref_embeddings = refs
+    score._setup_index()
+    # offset=1 skips the self‑match (distance 0)
+    distances, indices = score.knn_search(query, offset=1)
+    # Expect a single distance (to the nearest non‑self point) which is 1.0
+    expected_distance = torch.tensor([[1.0, 1.0]])
+    approx(distances, expected_distance)
+    # The returned index should correspond to either of the two unit vectors
+    assert indices.shape == (1, 2)
+    assert indices[0, :].tolist() == [1, 2]
