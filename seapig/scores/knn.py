@@ -285,11 +285,17 @@ class KNNScore(EmbeddingScore, ABC):
         """
         assert self.index is not None, "Index must be built before querying"
         # Set query‑time efSearch of hnsw index
-        if hasattr(self.index, "hnsw"):
-            ef_search = self._suggest_query_params(
-                embs=query, k=self.k + offset
-            )["efSearch"]
+        if isinstance(self.index, faiss.IndexHNSW):
+            params = KNNScore._suggest_query_params(query, self.k)
+            ef_search = params.get("efSearch", self.index.hnsw.efSearch)
             self.index.hnsw.efSearch = ef_search
+        # check that dims match
+        index_d = self.index.d
+        query_d = query.shape[1]
+        if index_d != query_d:
+            raise ValueError(
+                f"Query dimension {query_d} does not match index dimension {index_d}"
+            )
         # Perform search; FAISS returns distances and neighbor ids
         distances_np, _ = self.index.search(
             query.cpu().numpy().astype(np.float32), self.k + offset
