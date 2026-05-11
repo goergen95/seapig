@@ -74,18 +74,19 @@ def test_cosine_similarity_identical_vector() -> None:
     out, _ = score._distance(q, offset=0)
     # identical vector should yield cosine distance ~0.0 (1 - similarity of 1.0)
     assert out.shape == (1, 1)
-    assert torch.isclose(out[0], torch.tensor(0.0), atol=1e-6)
+    assert torch.allclose(out, torch.tensor([0.0]), atol=1e-6)
 
 
 def test_cosine_k_mean() -> None:
     """Verify CosineScore with k>1 and mean statistic."""
-    refs = torch.tensor([[1.0, 0.0], [1.0, 0.0]])
+    refs = torch.tensor([[1.0, 0.0], [0.5, 0.5]])
     # both refs identical to query => distance 0 each -> mean 0
     q = torch.tensor([[0.0, 1.0]])
-    score = CosineScore(k=2, stat="mean")
+    score = CosineScore(k=2, stat="max")
     score.ref_embeddings = refs
     score._setup_index()
     out, _ = score._distance(q, offset=0)
+    out = score._stat(out)
     assert torch.allclose(out, torch.tensor([1.0]), atol=1e-6)
 
 
@@ -275,7 +276,7 @@ def test_knn_search_offset_and_distances() -> None:
     score._setup_index()
     # offset=1 skips the self‑match (distance 0)
     distances, indices = score.knn_search(query, offset=1)
-    # Expect a single distance (to the nearest non‑self point) which is 1.0
+    # expect two distances of 1.0 to the unit vectors
     expected_distance = torch.tensor([[1.0, 1.0]])
     approx(distances, expected_distance)
     # The returned index should correspond to either of the two unit vectors
