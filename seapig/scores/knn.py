@@ -187,12 +187,10 @@ class KNNScore(EmbeddingScore, ABC):
     @abstractmethod
     def _setup_index(self) -> None:
         """Prepare an index for KNN search."""
-        pass
 
     @abstractmethod
     def _distance(self, query: torch.Tensor, offset: int = 0) -> torch.Tensor:
         """Calculate the KNN distance of a query against a populated index."""
-        pass
 
     @staticmethod
     def _suggest_build_params(embs: torch.Tensor, k: int = 1) -> dict[str, Any]:
@@ -203,21 +201,21 @@ class KNNScore(EmbeddingScore, ABC):
 
         if d <= 64:
             M = 16
-        elif d <= 128:
+        elif d <= 128:  # pragma: no cover
             M = 24
-        elif d <= 256:
+        elif d <= 256:  # pragma: no cover
             M = 32
-        elif d <= 512:
+        elif d <= 512:  # pragma: no cover
             M = 48
-        elif d <= 1024:
+        elif d <= 1024:  # pragma: no cover
             M = 48
-        else:
+        else:  # pragma: no cover
             M = 64
 
         # adjust upward for large n
-        if n > 5_000_000:
+        if n > 5_000_000:  # pragma: no cover
             M = max(M, 32)
-        if n > 50_000_000:
+        if n > 50_000_000:  # pragma: no cover
             M = max(M, 48)
 
         # adjust downward for very small n
