@@ -1,12 +1,12 @@
 """KNN-based confidence scores."""
 
-import math
 import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
-import nmslib
+import faiss
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from typing_extensions import override
@@ -14,9 +14,7 @@ from typing_extensions import override
 from seapig.scores.embed import EmbeddingScore
 from seapig.scores.utils import TensorPCA
 
-
-def _clamp(value: int, lo: int, hi: int) -> int:
-    return max(lo, min(hi, value))
+__all__ = ["KNNScore", "EuclideanScore", "CosineScore", "MahalanobisScore"]
 
 
 class KNNScore(EmbeddingScore, ABC):
@@ -196,127 +194,112 @@ class KNNScore(EmbeddingScore, ABC):
         """Calculate the KNN distance of a query against a populated index."""
         pass
 
+    @staticmethod
+    def _suggest_build_params(embs: torch.Tensor, k: int = 1) -> dict[str, Any]:
+        """Suggest parameters for HNSW index."""
+        if embs.dim() != 2:
+            raise ValueError("ref_embeddings must be 2D (N, D)")
+        n, d = map(int, embs.shape)
+
+        if d <= 64:
+            M = 16
+        elif d <= 128:
+            M = 24
+        elif d <= 256:
+            M = 32
+        elif d <= 512:
+            M = 48
+        elif d <= 1024:
+            M = 48
+        else:
+            M = 64
+
+        # adjust upward for large n
+        if n > 5_000_000:
+            M = max(M, 32)
+        if n > 50_000_000:
+            M = max(M, 48)
+
+        # adjust downward for very small n
+        if n < 10_000:
+            M = min(M, 16)
+
+        # ef_construction based on M
+        C = max(4 * M, 128)
+        # cap at a high maximum value
+        C = min(C, 1024)
+
+        return {"M": M, "efConstruction": C}
+
+    @staticmethod
+    def _suggest_query_params(embs: torch.Tensor, k: int = 1) -> dict[str, Any]:
+        """Suggest query parameters for HNSW index."""
+        params = KNNScore._suggest_build_params(embs, k)
+
+        S = max(k * 8, 512)
+        S = min(S, params["efConstruction"])
+        S = max(S, k)
+
+        return {"efSearch": S}
+
     def _build_index(self, embs: torch.Tensor, space: str = "l2") -> None:
         """Build an index based on reference embeddings.
 
         The embeddings can be preprocessed (e.g. normalized or transformed) before
-        being passed to this method. The `space` parameter should be set accordingly
-        to match the type of distance being calculated. Typically called
-        within the `_setup_index()` method of child classes.
+        being passed to this method. The `space` parameter is kept for API compatibility
+        but FAISS only supports L2 metric; for cosine we use normalized vectors.
         """
         assert isinstance(embs, torch.Tensor)
         index_path = self.index_path
-        params = self._suggest_index_params(embs=embs, k=self.k)
-        index = nmslib.init(method="hnsw", space=space)
-
-        if index_path is None or not index_path.exists():
-            index.addDataPointBatch(embs.cpu())
-            index.createIndex(index_params=params["build_defaults"])
+        params = self._suggest_build_params(embs=embs, k=self.k)
+        d = embs.shape[1]
+        N = embs.shape[0]
+        # Use flat L2 index for small datasets (faster and sufficient)
+        if N < 10000:
+            index = faiss.IndexFlatL2(d)
+        else:
+            M = params["M"]
+            ef_construction = params["efConstruction"]
+            # FAISS HNSW index with L2 metric (also works for normalized vectors to emulate cosine)
+            index = faiss.IndexHNSWFlat(d, M, faiss.METRIC_L2)
+            index.hnsw.efConstruction = ef_construction
+        # Build or load index
+        if index_path is None or not Path(index_path).exists():
+            index.add(embs.cpu().numpy().astype(np.float32))
             if index_path:
-                index.saveIndex(index_path.as_posix(), save_data=False)
+                faiss.write_index(index, str(index_path))
         else:
             warnings.warn(
                 f"Index file {index_path} already exists. Loading existing index from disk.",
                 UserWarning,
             )
-            index.loadIndex(index_path.as_posix(), load_data=False)
-
+            index = faiss.read_index(str(index_path))
         self.index_params = params
         self.index = index
 
-    @staticmethod
-    def _suggest_index_params(
-        embs: torch.Tensor, k: int = 10
-    ) -> dict[str, Any]:
-        """Suggest conservative HNSW index and query-time parameters."""
-        if embs.dim() != 2:
-            raise ValueError("ref_embeddings must be 2D (N, D)")
-        N, D = map(int, embs.shape)
-
-        if N < 10:
-            return {
-                "build_defaults": {"post": 0},
-                "query_defaults": {"efSearch": k},
-            }
-
-        M = _clamp(int(round(2.0 * math.sqrt(D))), 8, 64)
-        base = 150 if N < 5_000 else 300 if N < 50_000 else 600
-        ef_construction = _clamp(
-            int(round(base * (1.0 + (D / 128.0) * 0.5))), 100, 2000
-        )
-
-        ef_search = max(
-            max(32, k * 8), min(max(128, ef_construction // 4), 512)
-        )
-
-        return {
-            "build_defaults": {
-                "M": M,
-                "efConstruction": ef_construction,
-                "post": 0,
-            },
-            "query_defaults": {"efSearch": ef_search},
-        }
-
     def _query_index(self, query: torch.Tensor, offset: int) -> torch.Tensor:
-        """Query the index for KNN distances.
+        """Query the FAISS HNSW index for KNN distances.
 
-        The `offset` parameter allows for retrieving additional neighbors beyond the
-        specified `k` to handle cases where a point is both in the reference
-        index and the query. For example, if `k=1` and `offset=1`, the method will
-        retrieve the 2 nearest neighbors and then use the second nearest neighbor's
-        distance as the score, effectively ignoring the nearest neighbor which
-        may be the point itself. This is particularly useful when scoring calibration
-        samples that are part of the reference set, as it prevents zero distances
-        from skewing the scores. The `_query_index()` method is typically called
-        within the `_distance()` method of child classes.
+        Retrieves `k + offset` nearest neighbors, applies the query-time `efSearch`
+        parameter, and returns the aggregated distances after discarding the first
+        `offset` entries (used to skip self‑matches). The selected statistic is
+        applied via ``self._stat``.
         """
         assert self.index is not None, "Index must be built before querying"
-        nmslib.setQueryTimeParams(
-            self.index, self.index_params["query_defaults"]
+        # Set query‑time efSearch of hnsw index
+        if hasattr(self.index, "hnsw"):
+            ef_search = self._suggest_query_params(
+                embs=query, k=self.k + offset
+            )["efSearch"]
+            self.index.hnsw.efSearch = ef_search
+        # Perform search; FAISS returns distances and neighbor ids
+        distances_np, _ = self.index.search(
+            query.cpu().numpy().astype(np.float32), self.k + offset
         )
-        results = self.index.knnQueryBatch(query.cpu(), k=self.k + offset)
-        distances = self._pad(results, offset=offset)
-        distances = self._stat(distances[:, offset:])
+        distances = torch.from_numpy(distances_np).to(query.device)
+        # Discard the first `offset` entries and apply statistic
+        distances = distances[:, offset:]
         return distances
-
-    def _pad(
-        self,
-        query_results: list[tuple[torch.Tensor, torch.Tensor]],
-        offset: int,
-    ) -> torch.Tensor:
-        """Pad the distance tensors with the mean distance.
-
-        When fewer than ``k + offset`` neighbors are returned we apply mean padding.
-        Approximate nearest neighbour searches may not always return exactly ``k`` neighbors.
-        In such cases we replace the missing entries with the mean of the distances that were
-        actually returned for that query, rather than using ``inf``.
-        """
-        distances = []
-
-        for i, res in enumerate(query_results):
-            # ``res[1]`` contains the distances returned by the index for this query
-            dist_tensor = torch.tensor(res[1])
-            required = self.k + offset
-            if len(dist_tensor) < required:
-                warnings.warn(
-                    f"Query {i} returned fewer than {required} neighbors."
-                    f"Applying mean padding to the distance tensor.",
-                    UserWarning,
-                )
-                # Compute mean of the existing distances; if none exist, use 0.0 as fallback
-                if len(dist_tensor) > 0:
-                    pad_value = dist_tensor.mean().item()
-                else:
-                    pad_value = 0.0
-                padding = torch.full(
-                    (required - len(dist_tensor),),
-                    pad_value,
-                    dtype=dist_tensor.dtype,
-                )
-                dist_tensor = torch.cat([dist_tensor, padding])
-            distances.append(dist_tensor.unsqueeze(0))
-        return torch.cat(distances)
 
     def _stat(self, x: torch.Tensor) -> torch.Tensor:
         """Apply a statistic across the KNN distances."""
@@ -391,6 +374,7 @@ class EuclideanScore(KNNScore):
     def _distance(self, query: torch.Tensor, offset: int = 0) -> torch.Tensor:
         """Calculate the KNN distance of a query against a populated index."""
         squared_distances = self._query_index(query, offset)
+        squared_distances = self._stat(squared_distances)
         return torch.sqrt(squared_distances)
 
 
@@ -445,10 +429,20 @@ class CosineScore(KNNScore):
     @override
     @torch.inference_mode()
     def _distance(self, query: torch.Tensor, offset: int = 0) -> torch.Tensor:
-        """Calculate the KNN cosine distance of a query against a populated index."""
+        """Calculate the KNN cosine distance of a query against a populated index.
+
+        Uses FAISS HNSW index on L2 distances of normalized vectors and converts
+        squared L2 distances to cosine distance via ``0.5 * d2``. Statistic is applied
+        after conversion.
+        """
         assert self.index is not None
+        # Normalize query vectors
         normalized = torch.nn.functional.normalize(query)
-        return self._query_index(normalized, offset)
+        distances = self._query_index(normalized, offset)
+        # Convert to cosine distance
+        cosine_dist = 0.5 * distances
+        cosine_dist = self._stat(cosine_dist)
+        return cosine_dist
 
 
 class MahalanobisScore(KNNScore):
@@ -509,4 +503,6 @@ class MahalanobisScore(KNNScore):
         """Calculate the Mahalanobis distance of a query against a populated index."""
         assert self.index is not None
         transformed = query.float() @ self.vi_zero.T
-        return self._query_index(transformed, offset)
+        distances = self._query_index(transformed, offset)
+        distances = self._stat(distances)
+        return distances

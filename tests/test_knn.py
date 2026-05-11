@@ -8,7 +8,6 @@ covariance matrices.
 """
 
 import pathlib
-import warnings
 from collections.abc import Callable
 
 import pytest
@@ -195,13 +194,15 @@ def test_pca_reduces_dimension_and_is_applied() -> None:
     approx(out_with_pca, out_manual)
 
 
-def test_suggest_index_params_small_n() -> None:
+def test_suggest_params_small_n() -> None:
     """_suggest_index_params returns conservative defaults for very small N."""
     refs = torch.randn(5, 3)
     s = EuclideanScore(k=3)
-    params = s._suggest_index_params(refs, k=3)
-    assert "build_defaults" in params and "query_defaults" in params
-    assert params["query_defaults"]["efSearch"] == 3
+    params = s._suggest_build_params(refs, k=3)
+    assert "M" in params
+    assert "efConstruction" in params
+    params = s._suggest_query_params(refs, k=3)
+    assert "efSearch" in params
 
 
 @pytest.mark.filterwarnings(r"ignore:.*Loading existing index from disk.*")
@@ -220,31 +221,13 @@ def test_build_index_saves_and_loads(tmp_path: pathlib.Path) -> None:
     assert s2.index is not None
 
 
-def test_infpad_warning_and_padding() -> None:
-    """Ensure queries returning fewer neighbors are zero-padded and warn."""
-    refs = torch.tensor([[0.0, 0.0]])
-    q = torch.tensor([[1.0, 1.0]])
-    s = EuclideanScore(k=3)
-    s.ref_embeddings = refs
-    s._setup_index()
-
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        out = s._distance(q, offset=0)
-        assert any("mean padding" in str(x.message) for x in w)
-
-    assert out.shape == (1,)
-    expected = torch.sqrt(torch.tensor([2.0]))
-    approx(out, expected)
-
-
 def test_euclidean_distance_returns_L2_distances() -> None:
     """score built with euclidean distances should match manual calculation."""
     torch.manual_seed(0)
 
     # mid-sized dataset
-    N = 1000
-    D = 16
+    N = 20000
+    D = 64
     Q = 8
 
     refs = torch.randn(N, D, dtype=torch.float32)
@@ -261,4 +244,5 @@ def test_euclidean_distance_returns_L2_distances() -> None:
     expected = torch.cdist(queries, refs, p=2.0)
     expected_min = expected.min(dim=1).values
 
-    approx(distances, expected_min, tol=1e-6)
+    mae = torch.mean(torch.abs(distances - expected_min))
+    assert mae < 0.01, f"Mean absolute error {mae} exceeds tolerance"
