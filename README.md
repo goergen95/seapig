@@ -61,17 +61,13 @@ Given a threshold $\lambda$, we derive a binary selection function
 indicating which samples to accept. For example, accepting samples with
 score below $\lambda$:
 
-$$
-g_{\lambda}(x) = \mathbf{1}\{s(x) \le \lambda\}.
-$$
+$$g_{\lambda}(x) = \mathbf{1}\{s(x) \le \lambda\}.$$
 
 We recommend calibrating $\lambda$ on an independent calibration set to
 fix a desired coverage level (fraction of accepted samples) and compute
 the correspoding empirical quantile $q$ of the calibration scores:
 
-$$
-\lambda_{q} = Q_q(s_1^{cal}, s_2^{cal}, \dots, s_m^{cal}),
-$$
+$$\lambda_{q} = Q_q(s_1^{cal}, s_2^{cal}, \dots, s_m^{cal}),$$
 
 where $s_i^{cal}$ are the scores of the calibration samples. The
 decision function $g_{\lambda}(x)$ can then be applied at inference time
@@ -79,13 +75,11 @@ to accept or reject predictions. We obtain a selective predictor,
 $h(x)$, that either produces an output or abstains from prediction,
 depending on the score of the input:
 
-$$
-h(x) =
+$$h(x) =
 \begin{cases}
 f(x), & \text{if} g(x)=1,\\
 \varnothing, & \text{if } g(x)=0.
-\end{cases}
-$$
+\end{cases}$$
 
 ### How to use seapig
 
@@ -109,7 +103,7 @@ from seapig.utils.progress import disable
 disable()  # disables  seapig progress bars for quickstart example
 torch.manual_seed(0) 
 # latent representations a torch.Tensor of shapes (N, D), (M, D), (Q, D)
-ref_emb, val_emb, query_emb = torch.randn(1000, 16), torch.randn(200, 16), torch.randn(10, 16)
+ref_emb, val_emb, query_emb = torch.randn(1000, 32), torch.randn(200, 32), torch.randn(10, 32)
 
 score = EuclideanScore(k=5, stat="mean")
 score.fit(X=ref_emb, Y=val_emb)
@@ -118,8 +112,8 @@ sel = score.select(query_emb)
 print(sel)
 ```
 
-    {'score': tensor([3.9220, 3.2014, 2.5895, 3.0784, 2.9557, 4.0133, 3.1768, 3.0777, 2.5113,
-            4.0847]), 'selected': tensor([False,  True,  True,  True,  True, False,  True,  True,  True, False])}
+    {'score': tensor([6.2651, 5.5944, 6.0226, 5.8903, 6.2928, 4.8388, 5.7290, 5.3641, 5.6599,
+            5.9143]), 'selected': tensor([ True,  True,  True,  True, False,  True,  True,  True,  True,  True])}
 
 #### On-the-fly embedding extraction
 
@@ -142,7 +136,7 @@ class Model(torch.nn.Module):
     def embed(self, x):
         image = x[0]
         label = x[1]
-        return torch.randn(image.shape[0], 16) 
+        return torch.randn(image.shape[0], 32) 
 
 model = Model()
 
@@ -154,13 +148,13 @@ sel = score.select(model=model, loader=test_loader)
 print(sel)
 ```
 
-    {'score': tensor([3.2465, 3.9292, 3.0559, 3.2346, 3.8165, 2.7667, 2.5528, 3.1070, 3.2880,
-            4.9160, 3.9495, 3.7173, 3.7718, 4.1428, 3.5324, 3.9517, 3.7731, 3.1673,
-            3.4171, 3.2512, 3.2503, 2.7896, 3.7821, 4.1532, 3.1579, 3.6539, 3.4985,
-            4.2538, 4.0584, 3.3903, 3.0708, 4.0396]), 'selected': tensor([ True, False,  True,  True, False,  True,  True,  True,  True, False,
-            False,  True, False, False,  True, False, False,  True,  True,  True,
-             True,  True, False, False,  True,  True,  True, False, False,  True,
-             True, False])}
+    {'score': tensor([6.4586, 5.5724, 5.6794, 5.7046, 5.0609, 5.8174, 5.5684, 5.3449, 5.4205,
+            5.6091, 5.5898, 6.2813, 6.1693, 6.3420, 6.3664, 5.5906, 4.6899, 5.6637,
+            5.7695, 5.1600, 5.2580, 5.1575, 5.9254, 6.0015, 6.5361, 5.4042, 5.6627,
+            5.7872, 5.4679, 6.0055, 6.1751, 5.7445]), 'selected': tensor([False,  True,  True,  True,  True,  True,  True,  True,  True,  True,
+             True, False, False, False, False,  True,  True,  True,  True,  True,
+             True,  True,  True,  True, False,  True,  True,  True,  True,  True,
+            False,  True])}
 
 #### Using SelectiveInferenceTask with a lightning module
 
@@ -214,9 +208,9 @@ print(preds)
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace">┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃<span style="font-weight: bold">        Test metric        </span>┃<span style="font-weight: bold">       DataLoader 0        </span>┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│<span style="color: #008080; text-decoration-color: #008080">    full/BinaryAccuracy    </span>│<span style="color: #800080; text-decoration-color: #800080">    0.6000000238418579     </span>│
-│<span style="color: #008080; text-decoration-color: #008080">  rejected/BinaryAccuracy  </span>│<span style="color: #800080; text-decoration-color: #800080">    0.6000000238418579     </span>│
-│<span style="color: #008080; text-decoration-color: #008080">  selected/BinaryAccuracy  </span>│<span style="color: #800080; text-decoration-color: #800080">            0.0            </span>│
+│<span style="color: #008080; text-decoration-color: #008080">    full/BinaryAccuracy    </span>│<span style="color: #800080; text-decoration-color: #800080">    0.4000000059604645     </span>│
+│<span style="color: #008080; text-decoration-color: #008080">  rejected/BinaryAccuracy  </span>│<span style="color: #800080; text-decoration-color: #800080">            0.0            </span>│
+│<span style="color: #008080; text-decoration-color: #008080">  selected/BinaryAccuracy  </span>│<span style="color: #800080; text-decoration-color: #800080">    0.5714285969734192     </span>│
 └───────────────────────────┴───────────────────────────┘
 </pre>
 
@@ -226,8 +220,8 @@ print(preds)
 
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
 
-    [{'predictions': tensor([1, 0, 0, 0, 0, 1, 0, 0, 1, 1]), 'score': tensor([5.2689, 4.8641, 5.4766, 5.8140, 5.3438, 4.6612, 6.0490, 5.0448, 6.6430,
-            5.3910]), 'selected': tensor([False, False, False, False, False, False, False, False, False, False])}]
+    [{'predictions': tensor([0, 0, 1, 1, 1, 1, 0, 0, 0, 1]), 'score': tensor([5.7045, 6.2594, 6.5007, 5.1679, 5.6751, 6.0544, 5.6146, 6.6772, 6.1766,
+            5.4252]), 'selected': tensor([ True, False, False,  True,  True,  True,  True, False, False,  True])}]
 
 #### Available scores
 
