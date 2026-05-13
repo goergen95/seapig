@@ -345,9 +345,9 @@ def test__load_from_state_dict_registers_missing_buffers() -> None:
     )
 
 
-def test_invalid_n_components_errors():
+def test_invalid_n_components_errors() -> None:
     with pytest.raises(ValueError, match="n_components must be an int>0"):
-        TensorPCA(n_components=True)  # type: ignore[arg-type]
+        TensorPCA(n_components=True)
     with pytest.raises(ValueError, match="positive integer"):
         TensorPCA(n_components=-1)
     with pytest.raises(ValueError, match="positive integer"):
@@ -358,13 +358,15 @@ def test_invalid_n_components_errors():
         TensorPCA(n_components="bad")  # type: ignore[arg-type]
 
 
-def test_partial_fit_accumulates_multiple_batches():
+def test_partial_fit_accumulates_multiple_batches() -> None:
     X1 = torch.randn(5, 4)
     X2 = torch.randn(7, 4)
     pca = TensorPCA(n_components=2)
     # first batch initializes accumulators
     pca.partial_fit(X1)
     # capture internal state after first batch
+    assert isinstance(pca._sum_X, torch.Tensor)
+    assert isinstance(pca._sum_outer, torch.Tensor)
     sum_X_first = pca._sum_X.clone()
     sum_outer_first = pca._sum_outer.clone()
     n_first = pca._n_samples
@@ -372,15 +374,15 @@ def test_partial_fit_accumulates_multiple_batches():
     pca.partial_fit(X2)
     # Verify that the internal accumulators have been updated correctly
     assert pca._n_samples == n_first + X2.shape[0]
-    torch.testing.assert_allclose(
+    assert torch.allclose(
         pca._sum_X, sum_X_first + X2.sum(dim=0).to(torch.float64)
     )
-    torch.testing.assert_allclose(
+    assert torch.allclose(
         pca._sum_outer, sum_outer_first + (X2.T @ X2).to(torch.float64)
     )
 
 
-def test_rff_dimension_validation():
+def test_rff_dimension_validation() -> None:
     # Enable RFF mode but set M <= input dimension to trigger the ValueError
     X = torch.randn(3, 5)
     pca = TensorPCA(n_components=2, gamma=1.0, M=4)  # M (4) <= D (5)
@@ -389,12 +391,14 @@ def test_rff_dimension_validation():
         pca.partial_fit(X)
 
 
-def test_finalize_all_components_path(monkeypatch):
+def test_finalize_all_components_path(monkeypatch: pytest.MonkeyPatch) -> None:
     """Patch torch.linalg.svd to return zero singular values so that the
     explained-variance threshold is never reached, exercising the branch
     that selects all components."""
 
-    def fake_svd(_):
+    def fake_svd(
+        x: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         D = 4
         return (torch.zeros(D, D), torch.zeros(D), torch.zeros(D, D))
 
