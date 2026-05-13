@@ -2,6 +2,7 @@ import math
 
 import pytest
 import torch
+from torchmetrics import Metric, MetricCollection
 
 from seapig import RiskCoverageMetric
 
@@ -204,3 +205,250 @@ def test_error_fn_and_metric_mutual_exclusion() -> None:
         RiskCoverageMetric(
             error_fn=lambda p, t: torch.abs(p - t), error_metric=mae
         )
+
+
+def test_multi_metric_support_and_sanity_check() -> None:
+    """Validate multi‑metric handling and sanity‑check enforcement.
+
+    The ``RiskCoverageMetric`` should accept a ``MetricCollection`` of per‑sample
+    residual metrics, create separate residual states for each, and expose
+    computed AUC values under ``rc/<metric_name>/`` prefixes. The sanity check
+    should raise a ``ValueError`` if a metric returns an invalid residual type
+    or shape.
+    """
+
+    # Create two simple custom metrics that return a 1‑D tensor of residuals.
+    class AbsErrorMetric(Metric):
+        def __init__(self) -> None:
+            super().__init__()
+            self.add_state(
+                "res",
+                default=torch.tensor([], dtype=torch.float32),
+                dist_reduce_fx="cat",
+            )
+
+        def update(self, preds: torch.Tensor, target: torch.Tensor) -> None:
+            # Per‑sample absolute error (1‑D tensor)
+            self.res = torch.abs(preds - target).mean(dim=1)
+
+        def compute(self) -> torch.Tensor:
+            return self.res
+
+    class SqErrorMetric(Metric):
+        def __init__(self) -> None:
+            super().__init__()
+            self.add_state(
+                "res",
+                default=torch.tensor([], dtype=torch.float32),
+                dist_reduce_fx="cat",
+            )
+
+        def update(self, preds: torch.Tensor, target: torch.Tensor) -> None:
+            self.res = ((preds - target) ** 2).mean(dim=1)
+
+        def compute(self) -> torch.Tensor:
+            return self.res
+
+    coll = MetricCollection([AbsErrorMetric(), SqErrorMetric()])
+
+    # The metrics need to be updated before compute; the RiskCoverageMetric will
+    # invoke its own sanity check on construction, which should pass.
+    metric = RiskCoverageMetric(error_metric=coll)
+
+    # Provide dummy data – the underlying metrics will compute residuals.
+    preds = torch.tensor([0.5, 0.7, 0.2])
+    target = torch.tensor([0.0, 1.0, 0.0])
+    scores = torch.tensor([0.1, 0.2, 0.3])
+    metric.update(preds, target, scores)
+
+    # Ensure per‑metric residual buffers exist and have the expected shape.
+    for name in metric._metric_names:
+        residual_buf = getattr(metric, f"residuals_{name}")
+        assert isinstance(residual_buf, torch.Tensor)
+        assert residual_buf.shape == (3,)
+
+    # Compute should return keys for each metric.
+    out = metric.compute()
+    for name in metric._metric_names:
+        prefix = f"rc/{name}"
+        assert f"{prefix}/auc_empirical" in out
+        assert f"{prefix}/auc_reference" in out
+        assert f"{prefix}/auc_excess" in out
+
+
+def test_sanity_check_invalid_residual_shape() -> None:
+    """The sanity check should raise if a metric returns a non‑1‑D tensor.
+
+    We construct a dummy metric that returns a 2‑D tensor to trigger the
+    validation error.
+    """
+
+    class BadMetric(Metric):
+        def __init__(self) -> None:
+            super().__init__()
+            self.add_state(
+                "value",
+                default=torch.tensor([], dtype=torch.float32),
+                dist_reduce_fx="cat",
+            )
+
+        def update(self, preds: torch.Tensor, target: torch.Tensor) -> None:
+            # Return a 2‑D tensor deliberately.
+            self.value = torch.stack([preds, target])
+
+        def compute(self) -> torch.Tensor:
+            return self.value
+
+    bad = BadMetric()
+    coll = MetricCollection(bad)
+    with pytest.raises(ValueError, match="must return a 1‑D tensor"):
+        RiskCoverageMetric(error_metric=coll)
+
+
+def test_multi_metric_support() -> None:
+    """RiskCoverageMetric should handle a MetricCollection and expose per‑metric results.
+
+    The metric collection contains two simple error metrics. After a single update, the
+    computed dictionary must contain keys prefixed with the metric names.
+    """
+
+    # Create a collection of two error metrics.
+    # Define two simple custom per‑sample error metrics.
+    class AbsMetric(Metric):
+        def __init__(self) -> None:
+            super().__init__()
+            self.add_state(
+                "res",
+                default=torch.tensor([], dtype=torch.float32),
+                dist_reduce_fx="cat",
+            )
+
+        def update(self, preds: torch.Tensor, target: torch.Tensor) -> None:
+            self.res = torch.abs(preds - target).mean(dim=1)
+
+        def compute(self) -> torch.Tensor:
+            return self.res
+
+    class SqMetric(Metric):
+        def __init__(self) -> None:
+            super().__init__()
+            self.add_state(
+                "res",
+                default=torch.tensor([], dtype=torch.float32),
+                dist_reduce_fx="cat",
+            )
+
+        def update(self, preds: torch.Tensor, target: torch.Tensor) -> None:
+            self.res = ((preds - target) ** 2).mean(dim=1)
+
+        def compute(self) -> torch.Tensor:
+            return self.res
+
+    error_metrics = MetricCollection([AbsMetric(), SqMetric()])
+    metric = RiskCoverageMetric(error_metric=error_metrics)
+
+    preds = torch.tensor([[0.9, 0.2], [0.4, 0.8]])
+    target = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
+    scores = torch.tensor([0.1, 0.2])
+
+    metric.update(preds, target, scores)
+    results = metric.compute()
+
+    # Expected metric name keys (as strings) derived from the collection.
+    expected_names = ["AbsMetric", "SqMetric"]
+    for name in expected_names:
+        for suffix in ("auc_empirical", "auc_reference", "auc_excess"):
+            key = f"rc/{name}/{suffix}"
+            assert key in results
+            assert (
+                isinstance(results[key], torch.Tensor)
+                and results[key].ndim == 0
+            )
+
+
+def test_validate_tensor_cases() -> None:
+    """Validate that `_validate_tensor` accepts (B,) and (B,1) and rejects others."""
+    from seapig.metric import RiskCoverageMetric
+
+    # instantiate with a dummy metric to access the method
+    metric = RiskCoverageMetric()
+
+    # (B,) case – should be returned unchanged
+    b_vec = torch.arange(5, dtype=torch.float32)
+    assert torch.equal(metric._validate_tensor(b_vec), b_vec)
+
+    # (B,1) case – should be squeezed to (B,)
+    b_col = b_vec.unsqueeze(1)
+    squeezed = metric._validate_tensor(b_col)
+    assert squeezed.ndim == 1 and torch.equal(squeezed, b_vec)
+
+    # Invalid shape (B,2) – should raise ValueError with appropriate message
+    bad = torch.stack([b_vec, b_vec], dim=1)
+    with pytest.raises(ValueError, match="must return a 1‑D tensor"):
+        metric._validate_tensor(bad, name="BadMetric")
+
+
+def test_multi_metric_support_and_reset() -> None:
+    """Validate multi‑metric handling via a MetricCollection."""
+    from torchmetrics import Metric, MetricCollection
+
+    # Create a collection with two simple custom error metrics.
+    class AbsMetric(Metric):
+        def __init__(self) -> None:
+            super().__init__()
+            self.add_state(
+                "res",
+                default=torch.tensor([], dtype=torch.float32),
+                dist_reduce_fx="cat",
+            )
+
+        def update(self, preds: torch.Tensor, target: torch.Tensor) -> None:
+            self.res = torch.abs(preds - target).mean(dim=1)
+
+        def compute(self) -> torch.Tensor:
+            return self.res
+
+    class SqMetric(Metric):
+        def __init__(self) -> None:
+            super().__init__()
+            self.add_state(
+                "res",
+                default=torch.tensor([], dtype=torch.float32),
+                dist_reduce_fx="cat",
+            )
+
+        def update(self, preds: torch.Tensor, target: torch.Tensor) -> None:
+            self.res = ((preds - target) ** 2).mean(dim=1)
+
+        def compute(self) -> torch.Tensor:
+            return self.res
+
+    coll = MetricCollection({"mae": AbsMetric(), "mse": SqMetric()})
+
+    metric = RiskCoverageMetric(error_metric=coll)
+
+    preds = torch.tensor([[0.5, 0.2], [0.1, 0.9]])
+    target = torch.tensor([[0.0, 0.0], [0.0, 1.0]])
+    scores = torch.tensor([0.1, 0.2])
+
+    # Perform a single update; residuals for each metric should be stored.
+    metric.update(preds, target, scores)
+    # The per‑metric residual buffers are created during init and filled here.
+    assert hasattr(metric, "residuals_mae")
+    assert hasattr(metric, "residuals_mse")
+    assert metric.residuals_mae.shape == (2,)
+    assert metric.residuals_mse.shape == (2,)
+
+    # Compute should return entries for each metric with the proper prefixes.
+    out = metric.compute()
+    for metric_name in ("mae", "mse"):
+        prefix = f"rc/{metric_name}"
+        for suffix in ("auc_empirical", "auc_reference", "auc_excess"):
+            assert f"{prefix}/{suffix}" in out
+
+    # Reset clears all per‑metric buffers and the generic residual buffer.
+    metric.reset()
+    # The residual buffers are tensors; mypy may not infer their callable methods correctly.
+    assert metric.residuals_mae.numel() == 0  # type: ignore[operator]
+    assert metric.residuals_mse.numel() == 0  # type: ignore[operator]
+    assert metric.residuals.numel() == 0
