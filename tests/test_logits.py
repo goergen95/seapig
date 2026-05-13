@@ -200,6 +200,103 @@ def test_margin_score_manual() -> None:
     assert torch.allclose(sc, expect, atol=1e-6)
 
 
+def test_select_uses_threshold(tmp_path: Path) -> None:
+    """select should compute a threshold if none is set and return mask."""
+    logits = torch.tensor([[0.2, 0.8], [0.6, 0.4]])
+    labels = torch.tensor([1, 0])
+    score = SoftmaxScore()
+    # Fit to generate calibration scores and store them
+    score.fit(X=logits, Y=labels)
+    # Ensure threshold not manually set
+    assert score.threshold is None
+    # Call select, which should set threshold based on quantile
+    out = score.select(logits)
+    assert "score" in out and "selected" in out
+    # Scores should match score() output
+    expected_scores = score.score(logits)
+    assert torch.equal(out["score"], expected_scores)
+    # Selected mask should be boolean and shape matches
+    assert out["selected"].dtype == torch.bool
+    assert out["selected"].shape == logits.shape[0:1]
+
+
+def test_fit_temperature_validation_errors() -> None:
+    """_fit_temperature should raise on empty logits or size mismatch."""
+    s = SoftmaxScore()
+    # Empty logits
+    with pytest.raises(
+        ValueError, match="logits must contain at least one sample"
+    ):
+        s._fit_temperature(torch.empty(0, 2), torch.tensor([0]))
+    # Mismatched sizes
+    with pytest.raises(
+        ValueError, match="logits and labels must have same number of samples"
+    ):
+        s._fit_temperature(torch.randn(3, 2), torch.tensor([0, 1]))
+
+
+def test_loadorpredict_missing_logits_key(tmp_path: Path) -> None:
+    """If saved file lacks 'logits', _loadorpredict should raise ValueError."""
+    s = SoftmaxScore()
+    fake_path = tmp_path / "bad.pt"
+    torch.save({"labels": torch.tensor([0])}, fake_path)
+
+    class DummyModel(torch.nn.Module):
+        def logits(self, x: torch.Tensor) -> torch.Tensor:
+            return torch.tensor([[0.0]])
+
+    model = DummyModel()
+    loader = make_loader_from_tensors(torch.tensor([[0.0]]))
+    with pytest.raises(
+        ValueError, match="Saved file .* does not contain 'logits'"
+    ):
+        s._loadorpredict(path=fake_path, model=model, loader=loader)
+
+
+def test_loadorpredict_no_batches_raises() -> None:
+    """When loader yields no batches, _logits_from_loader raises ValueError."""
+    s = SoftmaxScore()
+
+    class EmptyDataset(Dataset[Any]):
+        def __len__(self) -> int:
+            return 0
+
+        def __getitem__(self, idx: int) -> Any:
+            raise IndexError
+
+    empty_loader = DataLoader(EmptyDataset(), batch_size=1)
+
+    class DummyModel(torch.nn.Module):
+        def logits(self, x: torch.Tensor) -> torch.Tensor:
+            return torch.tensor([[0.0]])
+
+    model = DummyModel()
+    with pytest.raises(ValueError, match="No batches found in loader"):
+        s._logits_from_loader(model=model, loader=empty_loader)
+
+
+def test_select_automatically_sets_threshold(tmp_path: Path) -> None:
+    """Ensure ``select`` calls ``set_threshold`` when none is set."""
+    # Create simple logits and labels for binary classification
+    logits = torch.tensor([[2.0, 0.5], [0.1, 1.2]])
+    labels = logits.argmax(dim=1)
+    loader = make_loader_from_tensors(logits, labels)
+    model = IdentityModel()
+    score = SoftmaxScore()
+    # Fit to populate scores but do not set threshold
+    score.fit(model=model, loader=loader, outdir=tmp_path, prefix="thr")
+    # At this point ``score.threshold`` should be None
+    assert score.threshold is None
+    # Call select; it should set a threshold based on 99th percentile of scores
+    out = score.select(logits)
+    assert "score" in out and "selected" in out
+    # After select, threshold must be set
+    assert score.threshold is not None
+    # Selected mask should be a boolean tensor of same length as inputs
+    assert out["selected"].shape == (logits.shape[0],)
+    assert out["selected"].dtype == torch.bool
+
+
 def test_entropy_score_formula() -> None:
     logits = torch.tensor([[2.0, 0.0], [0.0, 0.0]])
     e = EntropyScore()
