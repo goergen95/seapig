@@ -11,6 +11,7 @@ can abstain or return confidence scores:
   compute a risk-coverage curve using `scores.risk_coverage`.
 """
 
+import warnings
 from collections.abc import Callable
 
 import torch
@@ -100,10 +101,15 @@ class SelectiveMetric(Metric):
         self.metrics["full"].update(preds, target)
 
         # Conditionally update selected/rejected submetrics
-        if selected.any():
-            self.metrics["selected"].update(preds[selected], target[selected])
+        if selected.dtype is not torch.bool:
+            bool_mask = selected.to(dtype=torch.bool)
+        else:
+            bool_mask = selected
 
-        rejected = ~selected
+        if bool_mask.any():
+            self.metrics["selected"].update(preds[bool_mask], target[bool_mask])
+
+        rejected = ~bool_mask
         if rejected.any():
             self.metrics["rejected"].update(preds[rejected], target[rejected])
 
@@ -159,10 +165,13 @@ class RiskCoverageMetric(Metric):
     n_bins : int, default 100
         Number of bins used to downsample the curve when computing AUC
         summaries.
+    error_metric : torchmetrics.Metric | torchmetrics.MetricCollection | None, default None
+        Metric or collection that computes per-sample residuals.
+        It must return a 1-D tensor of shape ``(batch,)`` when ``compute`` is called.
     error_fn : callable or None, default None
-        Function `(preds, target) -> residuals` that reduces model
-        predictions and targets to a 1-D tensor of per-sample residuals.
-        If `None`, the default is per-sample mean absolute error.
+        Deprecated legacy function ``(preds, target) -> residuals``.
+        Use ``error_metric`` instead.
+
 
     Notes
     -----
@@ -200,16 +209,39 @@ class RiskCoverageMetric(Metric):
         self,
         risk: str = "generalized",
         n_bins: int = 100,
+        *,
+        error_metric: Metric | MetricCollection | None = None,
         error_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
         | None = None,
     ) -> None:
+        """RiskCoverageMetric computes risk‑coverage curves for a model."""
         super().__init__()
         assert risk in ["generalized", "selective"], (
             "RiskCoverageMetric risk must be 'generalized' or 'selective'."
         )
         self.risk = risk
         self.n_bins = n_bins
+
+        if error_fn is not None and error_metric is not None:
+            raise ValueError(
+                "Provide either 'error_fn' or 'error_metric', not both."
+            )
+
         self._error_fn = error_fn
+
+        # Normalise metric to a MetricCollection for unified handling.
+        # Each metric must output a 1‑D tensor of per‑sample residuals.
+        # We store a separate residual stream for each metric.
+        self._error_metric = None
+        # Store metric names (as strings) for later state creation.
+        self._metric_names: list[str] = []
+        if error_metric is not None:
+            if isinstance(error_metric, Metric):
+                error_metric = MetricCollection(error_metric)
+            self._error_metric = error_metric
+            self._metric_names = [str(k) for k in self._error_metric.keys()]
+
+        self._sanity_check()
 
         # Metric states (concatenate across steps)
         self.add_state(
@@ -217,14 +249,46 @@ class RiskCoverageMetric(Metric):
             default=torch.tensor([], dtype=torch.float32),
             dist_reduce_fx="cat",
         )
+        # For legacy ``error_fn`` path we keep a single residual stream.
         self.add_state(
             "residuals",
             default=torch.tensor([], dtype=torch.float32),
             dist_reduce_fx="cat",
         )
+        # When using ``error_metric`` we create a separate residual
+        # state per metric in the collection.
+        for name in getattr(self, "_metric_names", []):
+            self.add_state(
+                f"residuals_{name}",
+                default=torch.tensor([], dtype=torch.float32),
+                dist_reduce_fx="cat",
+            )
 
         # Last computed curve (non‑tensor; kept for retrieval only)
         self._last_curve: RiskCoverage | None = None
+
+    def _sanity_check(self) -> None:
+        """Sanity check that the provided ``error_metric`` produces valid per‑sample residuals.
+
+        The check is only performed when a ``MetricCollection`` is supplied.  When
+        ``error_metric`` is ``None`` (legacy ``error_fn`` path) the method exits
+        early – the legacy path does not rely on this validation.
+        """
+        if self._error_metric is None:
+            # No metric collection to validate – rely on ``error_fn`` handling.
+            return
+
+        dummy_preds = torch.randn(2, 3)
+        dummy_target = torch.randn(2, 3)
+        self._error_metric.update(dummy_preds, dummy_target)
+        residuals = self._error_metric.compute()
+        self._error_metric.reset()
+        if isinstance(residuals, dict):
+            for name, val in residuals.items():
+                if not isinstance(val, torch.Tensor) or val.ndim < 1:
+                    raise ValueError(
+                        f"Metric '{name}' must return a 1‑D tensor of residuals."
+                    )
 
     @staticmethod
     def _default_error_fn(
@@ -255,19 +319,51 @@ class RiskCoverageMetric(Metric):
         scores = scores.to(device)
         target = target.to(device)
 
-        err_fn = self._error_fn or self._default_error_fn
-        residuals = err_fn(preds, target).to(device)
+        if self._error_metric is not None:
+            # Update the metric collection and compute per‑sample residuals.
+            self._error_metric.update(preds, target)
+            residuals_raw = self._error_metric.compute()
+            # Extract each residual and store it in the corresponding state.
+            if isinstance(residuals_raw, dict):
+                for name, tensor in residuals_raw.items():
+                    tensor = tensor.to(device)
+                    state_name = f"residuals_{str(name)}"
+                    existing = getattr(self, state_name)
+                    if existing.numel() == 0:
+                        setattr(self, state_name, tensor)
+                    else:
+                        setattr(
+                            self,
+                            state_name,
+                            torch.cat([existing, tensor], dim=0),
+                        )
+                # For backward‑compatibility with single‑metric code paths we also keep
+                # the generic ``residuals`` attribute equal to the first metric's values.
+                first_tensor = next(iter(residuals_raw.values()))
+                residuals = first_tensor.to(device)
+        else:
+            # Legacy path – emit deprecation warning if needed.
+            if self._error_fn is not None:
+                warnings.warn(
+                    "`error_fn` is deprecated; use `error_metric` instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+            err_fn = self._error_fn or self._default_error_fn
+            residuals = err_fn(preds, target).to(device)
 
-        # Concatenate into states (keep dtype/device consistent)
+        # Concatenate scores.
         if self.scores.numel() == 0:
             self.scores = scores
         else:
             self.scores = torch.cat([self.scores, scores], dim=0)
 
-        if self.residuals.numel() == 0:
-            self.residuals = residuals
-        else:
-            self.residuals = torch.cat([self.residuals, residuals], dim=0)
+        # For the generic residual buffer (used by legacy paths or the first metric)
+        if residuals is not None:
+            if self.residuals.numel() == 0:
+                self.residuals = residuals
+            else:
+                self.residuals = torch.cat([self.residuals, residuals], dim=0)
 
     def compute(self) -> dict[str, torch.Tensor]:
         """Compute AUC summaries for the accumulated risk--coverage curve.
@@ -285,34 +381,80 @@ class RiskCoverageMetric(Metric):
                 "rc/auc_excess": zero,
             }
 
-        rc = risk_coverage(
-            score=self.scores,
-            residuals=self.residuals,
-            risk=self.risk,
-            n_bins=self.n_bins,
-        )
-        self._last_curve = rc
         device = self.scores.device
-        return {
-            "rc/auc_empirical": torch.as_tensor(
+        # If no per‑metric names were defined, fall back to the original behaviour.
+        if not self._metric_names:
+            rc = risk_coverage(
+                score=self.scores,
+                residuals=self.residuals,
+                risk=self.risk,
+                n_bins=self.n_bins,
+            )
+            self._last_curve = rc
+            return {
+                "rc/auc_empirical": torch.as_tensor(
+                    rc.auc_empirical, device=device
+                ),
+                "rc/auc_reference": torch.as_tensor(
+                    rc.auc_reference, device=device
+                ),
+                "rc/auc_excess": torch.as_tensor(rc.auc_excess, device=device),
+            }
+
+        # Multi‑metric case: compute a curve for each metric separately.
+        results: dict[str, torch.Tensor] = {}
+        for name in self._metric_names:
+            residuals = getattr(self, f"residuals_{name}")
+            rc = risk_coverage(
+                score=self.scores,
+                residuals=residuals,
+                risk=self.risk,
+                n_bins=self.n_bins,
+            )
+            prefix = f"rc/{name}"
+            results[f"{prefix}/auc_empirical"] = torch.as_tensor(
                 rc.auc_empirical, device=device
-            ),
-            "rc/auc_reference": torch.as_tensor(
+            )
+            results[f"{prefix}/auc_reference"] = torch.as_tensor(
                 rc.auc_reference, device=device
-            ),
-            "rc/auc_excess": torch.as_tensor(rc.auc_excess, device=device),
-        }
+            )
+            results[f"{prefix}/auc_excess"] = torch.as_tensor(
+                rc.auc_excess, device=device
+            )
+        # Store the last curve (from the last metric) for ``get_curve`` compatibility.
+        self._last_curve = rc
+        return results
 
     def get_curve(self) -> RiskCoverage | None:
         """Return the last computed RiskCoverage object (or None if not computed)."""
         return self._last_curve
 
     def reset(self) -> None:
-        """Reset the accumulated scores and residuals."""
+        """Reset all accumulated state.
+
+        The generic ``scores`` and ``residuals`` buffers are cleared, as are any
+        per-metric residual buffers created when ``error_metric`` is a
+        ``MetricCollection``. After a reset, accessing a per-metric residual
+        attribute before the next ``update`` call will yield an empty tensor.
+        A ``UserWarning`` is emitted to make this behaviour explicit.
+        """
         self.scores = torch.tensor(
             [], dtype=torch.float32, device=self.scores.device
         )
         self.residuals = torch.tensor(
             [], dtype=torch.float32, device=self.residuals.device
         )
+        for name in getattr(self, "_metric_names", []):
+            setattr(
+                self,
+                f"residuals_{name}",
+                torch.tensor(
+                    [], dtype=torch.float32, device=self.scores.device
+                ),
+            )
         self._last_curve = None
+        warnings.warn(
+            "RiskCoverageMetric state has been reset; per‑metric residual buffers are now empty.",
+            UserWarning,
+            stacklevel=2,
+        )
