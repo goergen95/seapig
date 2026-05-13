@@ -343,3 +343,69 @@ def test__load_from_state_dict_registers_missing_buffers() -> None:
     assert torch.allclose(
         getattr(tpca, "mu"), torch.tensor([1.0, 2.0], dtype=torch.float64)
     )
+
+
+def test_invalid_n_components_errors():
+    with pytest.raises(ValueError, match="n_components must be an int>0"):
+        TensorPCA(n_components=True)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="positive integer"):
+        TensorPCA(n_components=-1)
+    with pytest.raises(ValueError, match="positive integer"):
+        TensorPCA(n_components=0)
+    with pytest.raises(ValueError, match="must be in the interval"):
+        TensorPCA(n_components=1.5)
+    with pytest.raises(ValueError, match="must be either an int"):
+        TensorPCA(n_components="bad")  # type: ignore[arg-type]
+
+
+def test_partial_fit_accumulates_multiple_batches():
+    X1 = torch.randn(5, 4)
+    X2 = torch.randn(7, 4)
+    pca = TensorPCA(n_components=2)
+    # first batch initializes accumulators
+    pca.partial_fit(X1)
+    # capture internal state after first batch
+    sum_X_first = pca._sum_X.clone()
+    sum_outer_first = pca._sum_outer.clone()
+    n_first = pca._n_samples
+    # second batch
+    pca.partial_fit(X2)
+    # Verify that the internal accumulators have been updated correctly
+    assert pca._n_samples == n_first + X2.shape[0]
+    torch.testing.assert_allclose(
+        pca._sum_X, sum_X_first + X2.sum(dim=0).to(torch.float64)
+    )
+    torch.testing.assert_allclose(
+        pca._sum_outer, sum_outer_first + (X2.T @ X2).to(torch.float64)
+    )
+
+
+def test_rff_dimension_validation():
+    # Enable RFF mode but set M <= input dimension to trigger the ValueError
+    X = torch.randn(3, 5)
+    pca = TensorPCA(n_components=2, gamma=1.0, M=4)  # M (4) <= D (5)
+    # The error is raised during the first call to partial_fit because _rff will be invoked
+    with pytest.raises(ValueError, match="RFF dimension M must be greater"):
+        pca.partial_fit(X)
+
+
+def test_finalize_all_components_path(monkeypatch):
+    """Patch torch.linalg.svd to return zero singular values so that the
+    explained-variance threshold is never reached, exercising the branch
+    that selects all components."""
+
+    def fake_svd(_):
+        D = 4
+        return (torch.zeros(D, D), torch.zeros(D), torch.zeros(D, D))
+
+    monkeypatch.setattr(torch.linalg, "svd", fake_svd)
+    X = torch.randn(10, 4)
+    pca = TensorPCA(n_components=0.5, gamma=1.0, M=10)  # enable RFF mode
+    # Run a partial fit and finalize; with the patched svd the branch
+    # `if q_idx_tensor.numel() == 0` will be taken.
+    pca.partial_fit(X)
+    pca.finalize()
+    # All components should be kept
+    assert pca.q == pca.s.numel()
+    # u_q should have the same number of columns as total components
+    assert pca.u_q.shape[1] == pca.q
