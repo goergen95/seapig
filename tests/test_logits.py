@@ -243,7 +243,7 @@ def test_loadorpredict_missing_logits_key(tmp_path: Path) -> None:
 
     class DummyModel(torch.nn.Module):
         def logits(self, x: torch.Tensor) -> torch.Tensor:
-            return torch.tensor([[0.0]])
+            return torch.tensor([[0.0]])  # pragma: no cover
 
     model = DummyModel()
     loader = make_loader_from_tensors(torch.tensor([[0.0]]))
@@ -262,13 +262,13 @@ def test_loadorpredict_no_batches_raises() -> None:
             return 0
 
         def __getitem__(self, idx: int) -> Any:
-            raise IndexError
+            raise IndexError  # pragma: no cover
 
     empty_loader = DataLoader(EmptyDataset(), batch_size=1)
 
     class DummyModel(torch.nn.Module):
         def logits(self, x: torch.Tensor) -> torch.Tensor:
-            return torch.tensor([[0.0]])
+            return torch.tensor([[0.0]])  # pragma: no cover
 
     model = DummyModel()
     with pytest.raises(ValueError, match="No batches found in loader"):
