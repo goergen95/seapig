@@ -231,7 +231,6 @@ class RiskCoverageMetric(Metric):
 
         # Normalise metric to a MetricCollection for unified handling.
         # Each metric must output a 1‑D tensor of per‑sample residuals.
-        # We store a separate residual stream for each metric.
         self._error_metric = None
         # Store metric names (as strings) for later state creation.
         self._metric_names: list[str] = []
@@ -275,7 +274,6 @@ class RiskCoverageMetric(Metric):
         early – the legacy path does not rely on this validation.
         """
         if self._error_metric is None:
-            # No metric collection to validate – rely on ``error_fn`` handling.
             return
 
         dummy_preds = torch.randn(2, 3)
@@ -350,14 +348,20 @@ class RiskCoverageMetric(Metric):
             target = target.unsqueeze(1)
 
         if self._error_metric is not None:
-            # Update the metric collection and compute per‑sample residuals.
+            # Retrieve per‑sample residuals
             self._error_metric.update(preds, target)
-            residuals_raw = self._error_metric.compute()
+            try:
+                residuals_raw = self._error_metric.compute()
+            finally:
+                # we reset the metric immediately after compute to free up memory,
+                # since we keep track of per‑metric residuals in separate states
+                # and don't need the metric to accumulate across calls.
+                self._error_metric.reset()
             # Extract each residual and store it in the corresponding state.
             if isinstance(residuals_raw, dict):
                 for name, tensor in residuals_raw.items():
                     tensor = tensor.to(device)
-                    self._validate_tensor(tensor, name)
+                    tensor = self._validate_tensor(tensor, name)
                     state_name = f"residuals_{str(name)}"
                     existing = getattr(self, state_name)
                     if existing.numel() == 0:
@@ -484,8 +488,3 @@ class RiskCoverageMetric(Metric):
                 ),
             )
         self._last_curve = None
-        warnings.warn(
-            "RiskCoverageMetric state has been reset; per‑metric residual buffers are now empty.",
-            UserWarning,
-            stacklevel=2,
-        )
