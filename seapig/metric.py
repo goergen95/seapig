@@ -283,22 +283,48 @@ class RiskCoverageMetric(Metric):
         self._error_metric.update(dummy_preds, dummy_target)
         residuals = self._error_metric.compute()
         self._error_metric.reset()
+
         if isinstance(residuals, dict):
+            # Validate each metric's residual tensor individually.
             for name, val in residuals.items():
-                if not isinstance(val, torch.Tensor) or val.ndim < 1:
-                    raise ValueError(
-                        f"Metric '{name}' must return a 1‑D tensor of residuals."
-                    )
+                residuals[name] = self._validate_tensor(val, name)
+        else:
+            # Single metric case – validate and replace with flattened version.
+            residuals = self._validate_tensor(residuals)
+
+    @staticmethod
+    def _validate_tensor(
+        tensor: torch.Tensor, name: str | None = None
+    ) -> torch.Tensor:
+        """Validate that the provided tensor is a 1‑D tensor of per‑sample residuals."""
+        if not isinstance(tensor, torch.Tensor):
+            raise ValueError(
+                f"Metric{' ' + name if name else ''} must return a torch.Tensor."
+            )
+        # Allow (B,) or (B,1); flatten to (B,)
+        if tensor.ndim == 1:
+            return tensor
+        if tensor.ndim == 2 and tensor.shape[1] == 1:
+            return tensor.squeeze(1)
+        raise ValueError(
+            f"Metric{' ' + name if name else ''} must return a 1‑D tensor of residuals "
+            f"(shape (B,) or (B,1)), got shape {tuple(tensor.shape)}."
+        )
 
     @staticmethod
     def _default_error_fn(
         preds: torch.Tensor, target: torch.Tensor
     ) -> torch.Tensor:
-        # Per‑sample mean absolute error across non‑batch dims.
-        # Broadcast target to preds if shapes allow.
-        residual = torch.abs(preds - target)
+        """Default error function used when no custom ``error_fn`` or ``error_metric`` is provided."""
+        # Cast to float to support integer inputs (e.g., class labels)
+        preds_f = preds.to(dtype=torch.float32)
+        target_f = target.to(dtype=torch.float32)
+
+        residual = torch.abs(preds_f - target_f)
+        # If the residual is already 1‑D (batch only) we can return it directly.
         if residual.ndim == 1:
             return residual
+        # Reduce over all non‑batch dimensions.
         reduce_dims = tuple(range(1, residual.ndim))
         return residual.mean(dim=reduce_dims)
 
@@ -318,6 +344,10 @@ class RiskCoverageMetric(Metric):
         device = preds.device
         scores = scores.to(device)
         target = target.to(device)
+        if preds.ndim == 1:
+            preds = preds.unsqueeze(1)
+        if target.ndim == 1:
+            target = target.unsqueeze(1)
 
         if self._error_metric is not None:
             # Update the metric collection and compute per‑sample residuals.
@@ -327,6 +357,7 @@ class RiskCoverageMetric(Metric):
             if isinstance(residuals_raw, dict):
                 for name, tensor in residuals_raw.items():
                     tensor = tensor.to(device)
+                    self._validate_tensor(tensor, name)
                     state_name = f"residuals_{str(name)}"
                     existing = getattr(self, state_name)
                     if existing.numel() == 0:
