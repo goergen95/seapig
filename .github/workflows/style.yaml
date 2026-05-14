@@ -33,7 +33,7 @@ jobs:
           ruff format --diff
 
   mypy:
-    name: mypy
+    name: ty
     runs-on: ubuntu-latest
     steps:
       - name: Clone repository
@@ -53,8 +53,5 @@ jobs:
         run: uv pip install .[suggested,dev]
       - name: List dependencies
         run: uv pip list
-      - name: Run mypy
-        run:  |
-            mypy --install-types --non-interactive --python-version 3.10 .
-            mypy --install-types --non-interactive --python-version 3.11 .
-            mypy --install-types --non-interactive --python-version 3.12 .
+      - name: Run ty
+        run:  ty check .

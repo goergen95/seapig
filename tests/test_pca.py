@@ -353,7 +353,7 @@ def test_invalid_n_components_errors() -> None:
     with pytest.raises(ValueError, match="must be in the interval"):
         TensorPCA(n_components=1.5)
     with pytest.raises(ValueError, match="must be either an int"):
-        TensorPCA(n_components="bad")  # type: ignore[arg-type]
+        TensorPCA(n_components="bad")  # type: ignore[arg-type, ty:invalid-argument-type]
 
 
 def test_partial_fit_accumulates_multiple_batches() -> None:

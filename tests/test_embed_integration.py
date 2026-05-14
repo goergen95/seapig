@@ -13,7 +13,7 @@ from seapig.scores.embed import EmbeddingScore
 _EmbedLoader = DataLoader[torch.Tensor | dict[str, torch.Tensor]]
 
 
-class SmallDictDataset(Dataset[dict[str, torch.Tensor]]):
+class SmallDictDataset(Dataset):
     def __init__(
         self, data: torch.Tensor, labels: torch.Tensor, transform: Any = None
     ) -> None:
@@ -24,7 +24,7 @@ class SmallDictDataset(Dataset[dict[str, torch.Tensor]]):
     def __len__(self) -> int:
         return len(self.data)
 
-    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int):  # type: ignore[override, ty:invalid-method-override]
         x = self.data[idx]
         if self.transform is not None:
             x = self.transform(x)

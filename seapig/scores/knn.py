@@ -296,26 +296,26 @@ class KNNScore(EmbeddingScore, ABC):
         params = self._suggest_build_params(embs=embs, k=self.k)
         d = embs.shape[1]
         N = embs.shape[0]
-        # Use flat L2 index for small datasets (faster and sufficient)
-        if N < 10000:
-            index = faiss.IndexFlatL2(d)
+        if N <= 10_000:
+            index = faiss.IndexFlatL2(d)  # type: ignore[possibly-missing-attribute]
         else:
             M = params["M"]
             ef_construction = params["efConstruction"]
             # FAISS HNSW index with L2 metric (also works for normalized vectors to emulate cosine)
-            index = faiss.IndexHNSWFlat(d, M, faiss.METRIC_L2)
+            index = faiss.IndexHNSWFlat(d, M, faiss.METRIC_L2)  # type: ignore[possibly-missing-attribute]
             index.hnsw.efConstruction = ef_construction
         # Build or load index
         if index_path is None or not Path(index_path).exists():
-            index.add(embs.cpu().numpy().astype(np.float32))
+            embs_np: np.ndarray = embs.cpu().numpy().astype(np.float32)
+            index.add(embs_np)
             if index_path:
-                faiss.write_index(index, str(index_path))
+                faiss.write_index(index, str(index_path))  # type: ignore[possibly-missing-attribute]
         else:
             warnings.warn(
                 f"Index file {index_path} already exists. Loading existing index from disk.",
                 UserWarning,
             )
-            index = faiss.read_index(str(index_path))
+            index = faiss.read_index(str(index_path))  # type: ignore[possibly-missing-attribute]
         self.index_params = params
         self.index = index
 
@@ -331,7 +331,7 @@ class KNNScore(EmbeddingScore, ABC):
         """
         assert self.index is not None, "Index must be built before querying"
         # Set query‑time efSearch of hnsw index
-        if isinstance(self.index, faiss.IndexHNSW):
+        if isinstance(self.index, faiss.IndexHNSW):  # type: ignore[possibly-missing-attribute]
             params = KNNScore._suggest_query_params(query, self.k + offset)
             ef_search = params.get("efSearch", self.index.hnsw.efSearch)
             self.index.hnsw.efSearch = ef_search

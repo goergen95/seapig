@@ -35,7 +35,7 @@ class SimpleBatchDataset(Dataset[Any]):
     def __len__(self) -> int:
         return len(self.items)
 
-    def __getitem__(self, idx: int) -> Any:
+    def __getitem__(self, idx: int):  # type: ignore[override, ty:invalid-method-override]
         return self.items[idx]
 
 
@@ -261,7 +261,7 @@ def test_loadorpredict_no_batches_raises() -> None:
         def __len__(self) -> int:
             return 0
 
-        def __getitem__(self, idx: int) -> Any:
+        def __getitem__(self, idx: int):  # type: ignore[override, ty:invalid-method-override]
             raise IndexError  # pragma: no cover
 
     empty_loader = DataLoader(EmptyDataset(), batch_size=1)
@@ -723,7 +723,7 @@ def test_fit_arg_validation_conflicting_inputs() -> None:
     with pytest.raises(
         ValueError, match="Cannot specify both precomputed logits"
     ):
-        s.fit(X=torch.randn(2, 3), model=object())  # type: ignore[arg-type]
+        s.fit(X=torch.randn(2, 3), model=object())  # type: ignore[arg-type, ty:invalid-argument-type]
 
 
 def test_fit_requires_one_input() -> None:
@@ -799,7 +799,7 @@ def test_score_methods_unknown_task_raise(
     cls: type[SoftmaxScore | EnergyScore | MarginScore | EntropyScore],
 ) -> None:
     inst = cls()
-    inst.task = "not_a_task"
+    inst.task = "not_a_task"  # type: ignore[invalid-assignment]
     sample = torch.randn(2, 3)
     with pytest.raises(ValueError, match="Unknown task: not_a_task"):
         inst.score(sample)

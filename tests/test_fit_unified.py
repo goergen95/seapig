@@ -12,29 +12,20 @@ from seapig.scores.logits import SoftmaxScore
 from seapig.scores.pca import PCAScore
 from seapig.scores.utils import TensorPCA
 
-try:
-    from pyod.models.knn import KNN
-
-    from seapig.scores.pyod import PyODScore
-
-except ImportError:  # pragma: no cover
-    KNN = None
-    print("PyOD is not installed; skipping PyODScore tests.")
-
 _EmbedLoader = DataLoader[torch.Tensor | dict[str, torch.Tensor]]
 
 
 class DummyModel(torch.nn.Module):
     """Dummy model for testing embedding extraction."""
 
-    def embed(self, x: torch.Tensor) -> torch.Tensor:
-        if isinstance(x, dict):
-            x = x["image"]  # pragma: no cover
+    def embed(self, x: torch.Tensor | dict[str, torch.Tensor]) -> torch.Tensor:
+        if isinstance(x, dict):  # pragma: no cover
+            x = x["image"]  # type: ignore[argument-type, ty:invalid-argument-type]
         return x
 
-    def logits(self, x: torch.Tensor) -> torch.Tensor:
-        if isinstance(x, dict):
-            x = x["image"]  # pragma: no cover
+    def logits(self, x: torch.Tensor | dict[str, torch.Tensor]) -> torch.Tensor:
+        if isinstance(x, dict):  # pragma: no cover
+            x = x["image"]  # type: ignore[arg-type, ty:invalid-argument-type]
         # Return simple logits based on input
         return torch.randn(x.shape[0], 3)
 
@@ -120,7 +111,7 @@ def test_fit_rejects_both_embeddings_and_model() -> None:
     ref_embs = torch.randn(10, 5)
     train_loader: _EmbedLoader = cast(
         _EmbedLoader,
-        DataLoader([torch.randn(5)]),  # type: ignore[arg-type]
+        DataLoader([torch.randn(5)]),  # type: ignore[arg-type, ty:invalid-argument-type]
     )
 
     score = MinimalEmbedding()
@@ -147,7 +138,7 @@ def test_fit_rejects_loaders_without_model() -> None:
     """Test that fit() raises error when loaders provided without model."""
     train_loader: _EmbedLoader = cast(
         _EmbedLoader,
-        DataLoader([torch.randn(5)]),  # type: ignore[arg-type]
+        DataLoader([torch.randn(5)]),  # type: ignore[arg-type, ty:invalid-argument-type]
     )
     score = MinimalEmbedding()
     with pytest.raises(ValueError, match="model is required"):
@@ -243,6 +234,10 @@ def test_pca_score_fit_with_model() -> None:
 def test_pyod_score_fit_with_embeddings() -> None:
     """Test PyODScore fit() with precomputed embeddings."""
     pytest.importorskip("pyod")
+    from pyod.models.knn import KNN
+
+    from seapig.scores.pyod import PyODScore
+
     score = PyODScore(detector=KNN(n_neighbors=2))
     ref_embs = torch.randn(20, 8)
     cal_embs = torch.randn(10, 8)
@@ -257,6 +252,10 @@ def test_pyod_score_fit_with_embeddings() -> None:
 def test_pyod_score_fit_with_model() -> None:
     """Test PyODScore fit() with model and loaders."""
     pytest.importorskip("pyod")
+    from pyod.models.knn import KNN
+
+    from seapig.scores.pyod import PyODScore
+
     model = DummyModel()
     train_data = torch.randn(20, 8)
     val_data = torch.randn(10, 8)
@@ -320,7 +319,7 @@ def test_logit_score_rejects_both_logits_and_model() -> None:
     """Test that LogitScore fit() rejects both logits and model."""
     model = DummyModel()
     logits = torch.randn(10, 3)
-    loader = cast(DataLoader[object], DataLoader([torch.randn(8)]))  # type: ignore[arg-type]
+    loader = cast(DataLoader[object], DataLoader([torch.randn(8)]))  # type: ignore[arg-type, ty:invalid-argument-type]
 
     score = SoftmaxScore()
     with pytest.raises(ValueError, match="Cannot specify both"):

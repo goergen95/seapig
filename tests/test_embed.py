@@ -15,25 +15,26 @@ _EmbedLoader = DataLoader[torch.Tensor | dict[str, torch.Tensor]]
 
 class DummyModel(torch.nn.Module):
     def embed(self, x: torch.Tensor) -> torch.Tensor:  # must accept 'x' param
-        if isinstance(x, dict):
-            x = x["image"]  # pragma: no cover
+        if isinstance(x, dict):  # pragma: no cover
+            x = x["image"]  # type: ignore[arg-type, ty:invalid-argument-type]
         return x
 
 
 class DummyBadModel(torch.nn.Module):
-    def not_embed(self, x: torch.Tensor) -> torch.Tensor:
-        return x  # pragma: no cover
+    def not_embed(self, x: torch.Tensor) -> torch.Tensor:  # pragma: no cover
+        return x
 
 
 class DummyBadSignature(torch.nn.Module):
-    def embed(self) -> torch.Tensor:  # missing 'x' param
-        return torch.zeros(1, 2)  # pragma: no cover
+    # missing 'x' param
+    def embed(self) -> torch.Tensor:  # pragma: no cover
+        return torch.zeros(1, 2)
 
 
 class IdentityModel(torch.nn.Module):
-    def embed(self, x: torch.Tensor) -> torch.Tensor:
-        if isinstance(x, dict):
-            x = x["image"]  # pragma: no cover
+    def embed(self, x: torch.Tensor | dict[str, torch.Tensor]) -> torch.Tensor:
+        if isinstance(x, dict):  # pragma: no cover
+            x = x["image"]  # type: ignore[arg-type, ty:invalid-argument-type]
         return x
 
 
@@ -238,11 +239,11 @@ def test_fit_model_without_embed_raises(tmp_path: pathlib.Path) -> None:
     loaders: dict[str, _EmbedLoader] = {
         "train": cast(
             _EmbedLoader,
-            DataLoader([torch.tensor([0.0, 0.1])], batch_size=1),  # type: ignore[arg-type]
+            DataLoader([torch.tensor([0.0, 0.1])], batch_size=1),  # type: ignore[arg-type, ty:invalid-argument-type]
         ),
         "val": cast(
             _EmbedLoader,
-            DataLoader([torch.tensor([0.0, 0.1])], batch_size=1),  # type: ignore[arg-type]
+            DataLoader([torch.tensor([0.0, 0.1])], batch_size=1),  # type: ignore[arg-type, ty:invalid-argument-type]
         ),
     }
 
@@ -327,7 +328,7 @@ def test_visualize_embeddings() -> None:
     with pytest.raises(ValueError):
         score.plot_embs(
             query_embeddings=query_embeddings,
-            method="invalid_method",  # type: ignore[arg-type]
+            method="invalid_method",  # type: ignore[arg-type, ty:invalid-argument-type]
             method_args=tsne_args,
         )
 
@@ -520,7 +521,7 @@ def test_embed_loadorembed_uses_disk_when_present(
     # move model to cpu (default) and ensure file load uses same device
     loader = cast(
         _EmbedLoader,
-        DataLoader([torch.tensor([0.0, 0.1])], batch_size=1),  # type: ignore[arg-type]
+        DataLoader([torch.tensor([0.0, 0.1])], batch_size=1),  # type: ignore[arg-type, ty:invalid-argument-type]
     )
 
     with pytest.warns(UserWarning):
@@ -539,7 +540,7 @@ def test_embed_accepts_dict_and_sequence_inputs() -> None:
 
     # tuple/list case
     xtup = (torch.tensor([[3.0, 4.0]]),)
-    out2 = EmbeddingScore._embed(xtup, m)  # type: ignore[arg-type]
+    out2 = EmbeddingScore._embed(xtup, m)
     assert torch.allclose(out2, xtup[0])
 
 
@@ -637,7 +638,7 @@ def test_plot_embs_missing_libraries_raise(
             e.plot_embs(query_embeddings=torch.randn(2, 4))
     else:
         with pytest.raises(ImportError, match=expected_msg):
-            e.plot_embs(query_embeddings=torch.randn(2, 4), method=method)  # type: ignore[arg-type]
+            e.plot_embs(query_embeddings=torch.randn(2, 4), method=method)  # type: ignore[arg-type, ty:invalid-argument-type]
 
 
 def test_loadorembed_uses_existing_file_and_moves_to_model_device(
@@ -652,7 +653,7 @@ def test_loadorembed_uses_existing_file_and_moves_to_model_device(
     # simple loader (not used when path exists)
     loader = cast(
         _EmbedLoader,
-        DataLoader([torch.tensor([0.0, 0.1])], batch_size=1),  # type: ignore[arg-type]
+        DataLoader([torch.tensor([0.0, 0.1])], batch_size=1),  # type: ignore[arg-type, ty:invalid-argument-type]
     )
     with pytest.warns(UserWarning):
         out = EmbeddingScore._loadorembed(path, model, loader)
@@ -673,7 +674,7 @@ def test_embed_accepts_list_and_rejects_non_tensor_return() -> None:
 
     # model returning non-tensor should raise AssertionError
     class BadReturnModel(torch.nn.Module):
-        def embed(self, x: torch.Tensor) -> torch.Tensor:
+        def embed(self, x: torch.Tensor) -> list[int]:
             return [1, 2, 3]  # type: ignore[return-value]
 
     with pytest.raises(AssertionError):
