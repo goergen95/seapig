@@ -226,8 +226,8 @@ def test_euclidean_distance_returns_L2_distances() -> None:
     """score built with euclidean distances should match manual calculation."""
     torch.manual_seed(0)
 
-    # mid-sized dataset
-    N = 20000
+    # this only holds for N < 10_000, otherwise we use approximate search
+    N = 10_000
     D = 64
     Q = 8
 
@@ -245,8 +245,9 @@ def test_euclidean_distance_returns_L2_distances() -> None:
     expected = torch.cdist(queries, refs, p=2.0)
     expected_min = expected.min(dim=1).values
 
-    mae = torch.mean(torch.abs(distances - expected_min))
-    assert mae < 0.01, f"Mean absolute error {mae} exceeds tolerance"
+    assert torch.allclose(distances, expected_min, atol=1e-6), (
+        "Distances do not match expected values"
+    )
 
 
 def test_query_dimension_mismatch_raises() -> None:
