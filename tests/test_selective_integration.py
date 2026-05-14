@@ -95,7 +95,7 @@ def _find_metric(results: Mapping[str, Any], suffix: str) -> float | None:
     for k, v in results.items():
         if k.endswith(suffix):
             return float(v)
-    return None
+    return None  # pragma: no cover
 
 
 def _tensor_dict_to_floats(d: dict[str, Any]) -> dict[str, float]:

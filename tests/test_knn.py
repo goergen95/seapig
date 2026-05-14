@@ -222,6 +222,21 @@ def test_build_index_saves_and_loads(tmp_path: pathlib.Path) -> None:
     assert s2.index is not None
 
 
+def test_knnscore_save_index_variants(tmp_path: pathlib.Path) -> None:
+    """Test the index path handling logic of KNNScore via its concrete subclass."""
+    # Boolean flag should create a default index path based on ident
+    score_bool = EuclideanScore(save_index=True)
+    assert isinstance(score_bool.index_path, pathlib.Path)
+    # Using a specific Path with .bin suffix should be accepted
+    custom_path = tmp_path / "myidx.bin"
+    score_path = EuclideanScore(save_index=custom_path)
+    assert score_path.index_path == custom_path
+    # Supplying a Path with wrong suffix should raise AssertionError
+    bad_path = tmp_path / "bad.idx"
+    with pytest.raises(AssertionError):
+        EuclideanScore(save_index=bad_path)
+
+
 def test_euclidean_distance_returns_L2_distances() -> None:
     """score built with euclidean distances should match manual calculation."""
     torch.manual_seed(0)
@@ -283,3 +298,27 @@ def test_knn_search_offset_and_distances() -> None:
     # The returned index should correspond to either of the two unit vectors
     assert indices.shape == (1, 2)
     assert indices[0, :].tolist() == [1, 2]
+
+
+@pytest.mark.parametrize(
+    "stat,expected",
+    [
+        ("max", lambda d: d.max()),
+        ("min", lambda d: d.min()),
+        ("mean", lambda d: d.mean()),
+        ("median", lambda d: d.median()),
+    ],
+)
+def test_knnstat_all_branches(
+    stat: str, expected: Callable[[torch.Tensor], torch.Tensor]
+) -> None:
+    # reference points at known distances from the query
+    refs = torch.tensor([[0.0, 0.0], [3.0, 4.0], [6.0, 8.0]])  # dists: 0,5,10
+    query = torch.tensor([[0.0, 0.0]])
+    score = EuclideanScore(k=3, stat=stat)
+    score.ref_embeddings = refs
+    score._setup_index()
+    dists, _ = score._distance(query, offset=0)  # shape (1,3)
+    result = score._stat(dists)
+    expected_val = expected(dists)
+    torch.testing.assert_close(result[0], expected_val)

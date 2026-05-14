@@ -170,8 +170,6 @@ def _assert_state_dicts_equal(
     for k in sd1.keys():
         v1 = sd1[k]
         v2 = sd2[k]
-        if v1 is None and v2 is None:
-            continue
         assert v1 is not None and v2 is not None, (
             f"Mismatch at {k}: one is None"
         )
