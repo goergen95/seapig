@@ -11,7 +11,7 @@ from seapig.scores.utils import TensorPCA
 
 try:
     from pyod.models.base import BaseDetector
-except ImportError:
+except ImportError:  # pragma: no cover
     raise ImportError(
         "pyod is not installed. Please install it with `pip install pyod`."
     )

@@ -19,7 +19,7 @@ class Dummy(ConfidenceScore):
         return None  # pragma: no cover
 
     def score(self, X: torch.Tensor, *args: Any, **kwargs: Any) -> torch.Tensor:
-        return X
+        return X  # pragma: no cover
 
     def select(
         self, X: torch.Tensor, *args: Any, **kwargs: Any
@@ -114,7 +114,9 @@ def test_plot_raises_import_error_when_matplotlib_missing(
     ) -> Any:
         if name == "matplotlib" or name.startswith("matplotlib."):
             raise ImportError("No module named matplotlib")
-        return orig_import(name, globals, locals, fromlist, level)
+        return orig_import(
+            name, globals, locals, fromlist, level
+        )  # pragma: no cover
 
     orig_import = builtins.__import__
     monkeypatch.setattr(builtins, "__import__", fake_import)

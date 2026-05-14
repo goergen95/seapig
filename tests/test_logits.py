@@ -664,7 +664,7 @@ def test_check_model_requires_logits_method() -> None:
 def test_check_model_logits_signature() -> None:
     class BadLogits(torch.nn.Module):
         def logits(self) -> None:  # missing x argument
-            pass
+            pass  # pragma: no cover
 
     model = BadLogits()
     with pytest.raises(Exception, match="except `x` as argument"):
@@ -717,18 +717,6 @@ def test_loadorpredict_missing_logits(tmp_path: Path) -> None:
         score._loadorpredict(path, IdentityModel(), loader)
 
 
-def test_check_model_requires_x_param() -> None:
-    class BadSigModel(torch.nn.Module):
-        def logits(self) -> torch.Tensor:
-            return torch.tensor([1.0])
-
-    with pytest.raises(
-        Exception,
-        match="`.logits\\(\\)` method is required to except `x` as argument",
-    ):
-        LogitScore._check_model(BadSigModel())
-
-
 def test_fit_arg_validation_conflicting_inputs() -> None:
     s = SoftmaxScore()
     # both precomputed and model provided -> ValueError
@@ -751,7 +739,7 @@ def test_loadorpredict_missing_logits_field(tmp_path: Path) -> None:
 
     class M(torch.nn.Module):
         def logits(self, x: torch.Tensor) -> torch.Tensor:
-            return x
+            return x  # pragma: no cover
 
     model = M()
     p = tmp_path / "bad.pt"
@@ -783,7 +771,7 @@ def test_logits_from_loader_no_batches() -> None:
 
     class M(torch.nn.Module):
         def logits(self, x: torch.Tensor) -> torch.Tensor:
-            return x
+            return x  # pragma: no cover
 
     model = M()
     s = SoftmaxScore()

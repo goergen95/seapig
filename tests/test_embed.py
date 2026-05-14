@@ -46,6 +46,16 @@ class DummyEmbedding(EmbeddingScore):
         return X.sum(dim=1)
 
 
+# model must have parameters so next(model.parameters()) works
+class ParamModel(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.lin = torch.nn.Linear(2, 2)
+
+    def embed(self, x: torch.Tensor) -> torch.Tensor:
+        return x  # pragma: no cover
+
+
 def test_pca_correctly_initialized() -> None:
     e = DummyEmbedding(pca=None)
     assert e.pca is None
@@ -506,15 +516,6 @@ def test_embed_loadorembed_uses_disk_when_present(
     path = tmp_path / "already.pt"
     torch.save(saved, path)
 
-    # model must have parameters so next(model.parameters()) works
-    class ParamModel(torch.nn.Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.lin = torch.nn.Linear(2, 2)
-
-        def embed(self, x: torch.Tensor) -> torch.Tensor:
-            return x
-
     m = ParamModel()
     # move model to cpu (default) and ensure file load uses same device
     loader = cast(
@@ -646,14 +647,6 @@ def test_loadorembed_uses_existing_file_and_moves_to_model_device(
     tensor = torch.tensor([[7.0, 8.0]])
     path = tmp_path / "pre_embs.pt"
     torch.save(tensor, path)
-
-    class ParamModel(torch.nn.Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.l = torch.nn.Linear(2, 2)
-
-        def embed(self, x: torch.Tensor) -> torch.Tensor:
-            return x
 
     model = ParamModel()
     # simple loader (not used when path exists)

@@ -113,7 +113,7 @@ class RiskCoverage:
         """
         try:
             import matplotlib.pyplot as plt
-        except ImportError as e:
+        except ImportError as e:  # pragma: no cover
             msg = "matplotlib is required for plotting. Install it with: pip install matplotlib"
             raise ImportError(msg) from e
 

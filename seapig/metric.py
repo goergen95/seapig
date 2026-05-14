@@ -286,16 +286,13 @@ class RiskCoverageMetric(Metric):
             # Validate each metric's residual tensor individually.
             for name, val in residuals.items():
                 residuals[name] = self._validate_tensor(val, name)
-        else:
-            # Single metric case – validate and replace with flattened version.
-            residuals = self._validate_tensor(residuals)
 
     @staticmethod
     def _validate_tensor(
         tensor: torch.Tensor, name: str | None = None
     ) -> torch.Tensor:
         """Validate that the provided tensor is a 1‑D tensor of per‑sample residuals."""
-        if not isinstance(tensor, torch.Tensor):
+        if not isinstance(tensor, torch.Tensor):  # pragma: no cover
             raise ValueError(
                 f"Metric{' ' + name if name else ''} must return a torch.Tensor."
             )

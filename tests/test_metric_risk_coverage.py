@@ -400,3 +400,28 @@ def test_multi_metric_support_multiple_updates() -> None:
             assert key in out
             assert isinstance(out[key], torch.Tensor) and out[key].ndim == 0
             assert torch.isfinite(out[key]).all()
+
+
+def test_risk_coverage_metric_single_error_metric() -> None:
+    """Ensure RiskCoverageMetric works when a single Metric is provided as error_metric."""
+    # Use a simple custom metric that returns per-sample absolute error.
+    metric = RiskCoverageMetric(error_metric=AbsErrorMetric())
+
+    preds = torch.tensor([0.5, 0.6])
+    target = torch.tensor([0.0, 1.0])
+    scores = torch.tensor([0.2, 0.4])
+
+    # Perform update – should populate per‑metric residual state.
+    metric.update(preds, target, scores)
+
+    # The metric should have created a residual buffer named after the metric.
+    name = metric._metric_names[0]
+    residual_buf = getattr(metric, f"residuals_{name}")
+    assert isinstance(residual_buf, torch.Tensor)
+    assert residual_buf.shape == (2,)
+
+    # Compute should return AUC entries prefixed with the metric name.
+    out = metric.compute()
+    prefix = f"rc/{name}"
+    for suffix in ("auc_empirical", "auc_reference", "auc_excess"):
+        assert f"{prefix}/{suffix}" in out

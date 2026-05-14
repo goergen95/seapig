@@ -37,5 +37,5 @@ try:
     from seapig.scores.pyod import PyODScore
 
     __all__ += ["PyODScore"]
-except ImportError:
+except ImportError:  # pragma: no cover
     pass
