@@ -57,9 +57,7 @@ format:
 lint:
 	ruff check .
 typecheck:
-	mypy . --python-version 3.10
-	mypy . --python-version 3.11
-	mypy . --python-version 3.12
+	ty check .
 test:
 	pytest -q
 test-coverage:

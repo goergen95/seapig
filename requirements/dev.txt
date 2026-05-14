@@ -2,10 +2,6 @@ pytest
 pytest-cov
 pre-commit
 ruff
-mypy
+ty
 nbmake
 build
-types-PyYAML
-types-decorator
-types-requests
-types-tabulate
