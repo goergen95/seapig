@@ -102,12 +102,3 @@ python-version = "3.11"
 [tool.ty.rules]
 missing-argument = "ignore"
 unresolved-attribute = "ignore"
-invalid-argument-type = "ignore"
-invalid-method-override = "ignore"
-invalid-assignment = "ignore"
-
-[[tool.ty.overrides]]
-include = ["seapig/scores/knn.py"]
-
-[tool.ty.overrides.rules]
-possibly-missing-attribute = "ignore"

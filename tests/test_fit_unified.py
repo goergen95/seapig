@@ -12,15 +12,6 @@ from seapig.scores.logits import SoftmaxScore
 from seapig.scores.pca import PCAScore
 from seapig.scores.utils import TensorPCA
 
-try:
-    from pyod.models.knn import KNN
-
-    from seapig.scores.pyod import PyODScore
-
-except ImportError:  # pragma: no cover
-    KNN = None
-    print("PyOD is not installed; skipping PyODScore tests.")
-
 _EmbedLoader = DataLoader[torch.Tensor | dict[str, torch.Tensor]]
 
 
@@ -243,6 +234,10 @@ def test_pca_score_fit_with_model() -> None:
 def test_pyod_score_fit_with_embeddings() -> None:
     """Test PyODScore fit() with precomputed embeddings."""
     pytest.importorskip("pyod")
+    from pyod.models.knn import KNN
+
+    from seapig.scores.pyod import PyODScore
+
     score = PyODScore(detector=KNN(n_neighbors=2))
     ref_embs = torch.randn(20, 8)
     cal_embs = torch.randn(10, 8)
@@ -257,6 +252,10 @@ def test_pyod_score_fit_with_embeddings() -> None:
 def test_pyod_score_fit_with_model() -> None:
     """Test PyODScore fit() with model and loaders."""
     pytest.importorskip("pyod")
+    from pyod.models.knn import KNN
+
+    from seapig.scores.pyod import PyODScore
+
     model = DummyModel()
     train_data = torch.randn(20, 8)
     val_data = torch.randn(10, 8)

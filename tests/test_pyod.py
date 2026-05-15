@@ -44,7 +44,7 @@ def test_fit_sets_trained_and_scores_without_cal() -> None:
     populate scores from detector.decision_scores_."""
     refs = torch.tensor([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
     det = _MockDetectorBasic(score_on_call=0.1)
-    score = PyODScore(detector=det, pca=None)
+    score = PyODScore(detector=det, pca=None)  # type: ignore[invalid-argument-type]
     score.cal_required = False
     score.ref_embeddings = refs
 
@@ -71,7 +71,7 @@ def test_fit_with_calibration_sets_calibrated_and_scores_from_decision_function(
             return np.arange(X.shape[0]) + 5.0
 
     det = DetCal()
-    score = PyODScore(detector=det, pca=None)
+    score = PyODScore(detector=det, pca=None)  # type: ignore[invalid-argument-type]
     score.ref_embeddings = refs
     score.cal_embeddings = cal
 
@@ -94,7 +94,7 @@ def test_score_uses_detector_decision_function() -> None:
             return result
 
     det = DetFn()
-    score = PyODScore(detector=det, pca=None)
+    score = PyODScore(detector=det, pca=None)  # type: ignore[invalid-argument-type]
     # ensure detector present; no need to call _fit_impl for score()
     q = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
 
@@ -111,7 +111,7 @@ def test_q_trimming_reduces_reference_set() -> None:
     n = 100
     refs = torch.randn(n, 5)
     det = _MockDetectorRange()
-    score = PyODScore(detector=det, pca=None)
+    score = PyODScore(detector=det, pca=None)  # type: ignore[invalid-argument-type]
     score.cal_required = False
     score.ref_embeddings = refs.float()
 
@@ -128,7 +128,7 @@ def test_pca_predict_is_applied_before_detector_fit() -> None:
     ref_embeddings with the PCA.predict result before fitting the detector."""
     refs = torch.randn(100, 64)
     det = _MockDetectorBasic()
-    score = PyODScore(detector=det, pca=TensorPCA(n_components=0.90))
+    score = PyODScore(detector=det, pca=TensorPCA(n_components=0.90))  # type: ignore[invalid-argument-type]
     score.cal_required = False
     score.ref_embeddings = refs.clone()
     score._fit_impl(q=None)

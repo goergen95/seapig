@@ -212,7 +212,6 @@ class EmbeddingScore(ConfidenceScore, ABC):
         assert isinstance(self.pca, TensorPCA)
         self.pca.fit(self.ref_embeddings)
 
-    @override
     def fit(
         self,
         X: torch.Tensor | None = None,
@@ -222,8 +221,6 @@ class EmbeddingScore(ConfidenceScore, ABC):
         | None = None,
         outdir: Path | None = None,
         prefix: str | None = None,
-        *args: Any,
-        **kwargs: Any,
     ) -> None:
         """Train a confidence score based on sample embeddings.
 
