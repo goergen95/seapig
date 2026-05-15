@@ -34,7 +34,7 @@ pip install seapig
 pip install seapig[suggested]
 
 # for contributors / developers (tests, linters, type-checkers)
-pip install seapig[dev]
+pip install seapig[dev]  # uses ty for type checking
 # for building documentation (quarto-cli, great-docs, others)
 pip install seapig[docs]
 # or, if you need everything:

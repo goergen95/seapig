@@ -81,10 +81,10 @@ class TestRiskCoverage:
 
         # Test invalid input types
         with pytest.raises(TypeError):
-            risk_coverage(torch.tensor([1, 2, 3]).tolist(), residuals)  # type: ignore[arg-type]
+            risk_coverage(torch.tensor([1, 2, 3]).tolist(), residuals)  # type: ignore[arg-type, ty:invalid-argument-type]
 
         with pytest.raises(TypeError):
-            risk_coverage(score, torch.tensor([1, 2, 3]).tolist())  # type: ignore[arg-type]
+            risk_coverage(score, torch.tensor([1, 2, 3]).tolist())  # type: ignore[arg-type, ty:invalid-argument-type]
 
     def test_risk_coverage_attributes(
         self, correlated_data: tuple[torch.Tensor, torch.Tensor]

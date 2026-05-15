@@ -49,7 +49,7 @@ def test_risk_coverage_metric_basic_functionality(risk: str) -> None:
     target = torch.tensor([1.0, 0.0, 1.0, 0.0])
 
     # Update the metric (new API accepts tensors directly)
-    metric.update(preds, target, scores)
+    metric.update(preds=preds, target=target, scores=scores)
 
     # check that scores and residuals are correct
     assert metric.scores.numel() == 4
@@ -104,7 +104,7 @@ def test_risk_coverage_metric_custom_error_function() -> None:
 
     # The legacy path emits a DeprecationWarning; assert that it is raised.
     with pytest.warns(DeprecationWarning, match=r"`error_fn` is deprecated"):
-        metric.update(preds, target, scores)
+        metric.update(preds=preds, target=target, scores=scores)
 
     res = metric.compute()
 
@@ -120,7 +120,7 @@ def test_risk_coverage_metric_get_curve() -> None:
     scores = torch.tensor([0.1, 0.2, 0.3, 0.4])
     target = torch.tensor([1.0, 0.0, 1.0, 0.0])
 
-    metric.update(preds, target, scores)
+    metric.update(preds=preds, target=target, scores=scores)
     _ = metric.compute()
 
     curve = metric.get_curve()
@@ -141,8 +141,8 @@ def test_risk_coverage_metric_state_concatenation() -> None:
     scores2 = torch.tensor([0.3, 0.4])
     target2 = torch.tensor([1.0, 0.0])
 
-    metric.update(preds1, target1, scores1)
-    metric.update(preds2, target2, scores2)
+    metric.update(preds=preds1, target=target1, scores=scores1)
+    metric.update(preds=preds2, target=target2, scores=scores2)
 
     assert torch.equal(metric.scores, torch.tensor([0.1, 0.2, 0.3, 0.4]))
     assert metric.scores.numel() == 4
@@ -164,7 +164,7 @@ def test_risk_coverage_metric_no_data_returns_zeros_and_reset_behavior() -> (
     target = torch.tensor([1.5, 1.5, 1.5])
     scores = torch.tensor([0.1, 0.4, 0.9])
 
-    rcm.update(preds, target, scores)
+    rcm.update(preds=preds, target=target, scores=scores)
 
     # internal buffers should have been concatenated
     assert rcm.scores.numel() == 3
@@ -210,8 +210,8 @@ def test_risk_coverage_metric_multiple_updates_concatenate_states() -> None:
     target2 = torch.tensor([1.5, 1.5, 1.5])
     scores2 = torch.tensor([0.7, 0.8, 0.9])
 
-    rcm.update(preds1, target1, scores1)
-    rcm.update(preds2, target2, scores2)
+    rcm.update(preds=preds1, target=target1, scores=scores1)
+    rcm.update(preds=preds2, target=target2, scores=scores2)
 
     # both updates concatenated
     assert rcm.scores.numel() == 5
@@ -254,7 +254,7 @@ def test_multi_metric_support_and_sanity_check() -> None:
     preds = torch.tensor([0.5, 0.7, 0.2])
     target = torch.tensor([0.0, 1.0, 0.0])
     scores = torch.tensor([0.1, 0.2, 0.3])
-    metric.update(preds, target, scores)
+    metric.update(preds=preds, target=target, scores=scores)
 
     # Ensure per‑metric residual buffers exist and have the expected shape.
     for name in metric._metric_names:
@@ -332,7 +332,7 @@ def test_multi_metric_support_and_reset() -> None:
     scores = torch.tensor([0.1, 0.2])
 
     # Perform a single update; residuals for each metric should be stored.
-    metric.update(preds, target, scores)
+    metric.update(preds=preds, target=target, scores=scores)
     # The per‑metric residual buffers are created during init and filled here.
     assert hasattr(metric, "residuals_mae")
     assert hasattr(metric, "residuals_mse")
@@ -348,9 +348,9 @@ def test_multi_metric_support_and_reset() -> None:
 
     # Reset clears all per‑metric buffers and the generic residual buffer.
     metric.reset()
-    # The residual buffers are tensors; mypy may not infer their callable methods correctly.
-    assert metric.residuals_mae.numel() == 0  # type: ignore[operator]
-    assert metric.residuals_mse.numel() == 0  # type: ignore[operator]
+    # The residual buffers are tensors; mypy/ty may not infer their callable methods correctly.
+    assert metric.residuals_mae.numel() == 0  # type: ignore[operator, ty:call-non-callable]
+    assert metric.residuals_mse.numel() == 0  # type: ignore[operator, ty:call-non-callable]
     assert metric.residuals.numel() == 0
 
 
@@ -368,7 +368,7 @@ def test_multi_metric_support_multiple_updates() -> None:
     target1 = torch.tensor([[0.0, 0.0], [0.0, 1.0]])
     scores1 = torch.tensor([0.1, 0.2])
 
-    metric.update(preds1, target1, scores1)
+    metric.update(preds=preds1, target=target1, scores=scores1)
     assert isinstance(metric.scores, torch.Tensor)
     assert isinstance(metric.residuals_mae, torch.Tensor)
     assert isinstance(metric.residuals_mse, torch.Tensor)
@@ -381,7 +381,7 @@ def test_multi_metric_support_multiple_updates() -> None:
     target2 = torch.tensor([[0.5, 0.5], [0.7, 0.3], [0.9, 0.1]])
     scores2 = torch.tensor([0.3, 0.4, 0.5])
 
-    metric.update(preds2, target2, scores2)
+    metric.update(preds=preds2, target=target2, scores=scores2)
     # After second update, all buffers should contain 5 samples
     assert metric.scores.numel() == 5
     assert metric.residuals_mae.numel() == 5
@@ -412,7 +412,7 @@ def test_risk_coverage_metric_single_error_metric() -> None:
     scores = torch.tensor([0.2, 0.4])
 
     # Perform update – should populate per‑metric residual state.
-    metric.update(preds, target, scores)
+    metric.update(preds=preds, target=target, scores=scores)
 
     # The metric should have created a residual buffer named after the metric.
     name = metric._metric_names[0]

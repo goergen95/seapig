@@ -125,7 +125,12 @@ class EmbeddingScore(ConfidenceScore, ABC):
     @classmethod
     @torch.inference_mode()
     def _embed(
-        self, X: torch.Tensor | dict[str, torch.Tensor], model: torch.nn.Module
+        self,
+        X: torch.Tensor
+        | dict[str, torch.Tensor]
+        | list[torch.Tensor]
+        | tuple[torch.Tensor, ...],
+        model: torch.nn.Module,
     ) -> torch.Tensor:
         """Embed a batch based on a models embed method."""
         assert callable(model.embed)
@@ -134,7 +139,8 @@ class EmbeddingScore(ConfidenceScore, ABC):
                 raise KeyError(
                     'A batch dictionary is required to contain the "image" key.'
                 )
-            z = model.embed(X["image"])
+            x = X["image"]  # type: ignore[arg-type, ty:invalid-argument-type]
+            z = model.embed(x)
         elif isinstance(X, (list, tuple)):
             z = model.embed(X[0])
         else:
@@ -212,7 +218,6 @@ class EmbeddingScore(ConfidenceScore, ABC):
         assert isinstance(self.pca, TensorPCA)
         self.pca.fit(self.ref_embeddings)
 
-    @override
     def fit(
         self,
         X: torch.Tensor | None = None,
@@ -222,8 +227,6 @@ class EmbeddingScore(ConfidenceScore, ABC):
         | None = None,
         outdir: Path | None = None,
         prefix: str | None = None,
-        *args: Any,
-        **kwargs: Any,
     ) -> None:
         """Train a confidence score based on sample embeddings.
 

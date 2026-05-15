@@ -63,7 +63,7 @@ class FlagScore(ConfidenceScore):
         return {"selected": selected, "score": score}
 
 
-class SmallDataset(Dataset[dict[str, torch.Tensor]]):
+class SmallDataset(Dataset[Any]):
     def __init__(self) -> None:
         # Each sample: [selected_flag, predicted_value], label
         self.samples: list[tuple[list[int], int]] = [
@@ -77,7 +77,7 @@ class SmallDataset(Dataset[dict[str, torch.Tensor]]):
     def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:  # type: ignore[override, ty:invalid-method-override]
         x, y = self.samples[idx]
         return {
             "image": torch.tensor(x, dtype=torch.float32),

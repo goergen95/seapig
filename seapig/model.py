@@ -112,20 +112,26 @@ class SelectiveInferenceTask(LightningModule):
             )
         self.target_key = 1 if target_key is None else target_key
 
-        self.test_metrics = None
-        if hasattr(task, "test_metrics") and task.test_metrics is not None:
-            assert isinstance(task.test_metrics, (MetricCollection, Metric)), (
+        self.test_metrics: SelectiveMetric | None = None
+        task_metric = getattr(task, "test_metrics", None)
+        if task_metric is not None:
+            assert isinstance(task_metric, (MetricCollection, Metric)), (
                 "Wrapped task's test_metrics must be a Metric or MetricCollection"
             )
-            self.test_metrics = SelectiveMetric(base=task.test_metrics)
+            self.test_metrics = SelectiveMetric(base=task_metric)
 
-        assert rc_metric is None or isinstance(rc_metric, RiskCoverageMetric), (
-            "rc_metric must be a seapig RiskCoverageMetric instance or None"
-        )
-        self.rc_metric = rc_metric
+        self.rc_metric: RiskCoverageMetric | None = None
+        if rc_metric is not None:
+            assert isinstance(rc_metric, RiskCoverageMetric), (
+                "rc_metric must be a seapig RiskCoverageMetric instance or None"
+            )
+            self.rc_metric = rc_metric
 
+        # Initialize per-batch output collection if requested
         if acc_test_outputs:
             self.test_outputs = []
+        else:
+            self.test_outputs = None
 
     @torch.inference_mode()
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
@@ -191,15 +197,18 @@ class SelectiveInferenceTask(LightningModule):
         outputs = self.forward(x)
 
         if self.test_metrics is not None:
-            # SelectiveMetric expects (preds, targets, selected_mask)
             self.test_metrics.update(
-                outputs["predictions"], y, outputs["selected"]
+                preds=outputs["predictions"],
+                target=y,
+                selected=outputs["selected"],
             )
             self.log_dict(self.test_metrics.compute(), sync_dist=True)
 
         # Update risk‑coverage metric; final values are logged in on_test_epoch_end
         if self.rc_metric is not None:
-            self.rc_metric.update(outputs["predictions"], y, outputs["score"])
+            self.rc_metric.update(
+                preds=outputs["predictions"], target=y, scores=outputs["score"]
+            )
             self.log_dict(self.rc_metric.compute(), sync_dist=True)
 
         if self.test_outputs is not None:
@@ -262,7 +271,8 @@ def _get_from_batch(
         raise TypeError("Unsupported batch type")
     if isinstance(batch, Mapping):
         assert isinstance(key, str)
+        return batch[key]  # type: ignore[arg-type, ty:invalid-argument-type]
+    else:
+        assert isinstance(key, int)
         return batch[key]
-    assert isinstance(key, int)
-    return batch[key]
     raise TypeError("Unsupported batch type")

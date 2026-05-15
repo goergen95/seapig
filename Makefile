@@ -23,7 +23,7 @@ help:
 	@printf "  %-22s %s\n" check "Run format, lint, typecheck and tests"
 	@printf "  %-22s %s\n" format "Format code (ruff format)"
 	@printf "  %-22s %s\n" lint "Run linters (ruff)"
-	@printf "  %-22s %s\n" typecheck "Run mypy type checks"
+	@printf "  %-22s %s\n" typecheck "Run ty type checks"
 	@printf "  %-22s %s\n" test "Run tests (pytest)"
 	@printf "  %-22s %s\n" test-coverage "Run tests with coverage"
 	@printf "  %-22s %s\n" test-ci "Run tests in CI mode (fast fail)"
@@ -57,9 +57,7 @@ format:
 lint:
 	ruff check .
 typecheck:
-	mypy . --python-version 3.10
-	mypy . --python-version 3.11
-	mypy . --python-version 3.12
+	ty check .
 test:
 	pytest -q
 test-coverage:

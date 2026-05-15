@@ -46,7 +46,7 @@ def test_random_score() -> None:
     assert selection["selected"].shape == (10,)
     assert torch.all(
         selection["selected"]
-        == (selection["score"] < random_score.get_threshold())  # type: ignore[operator]
+        == (selection["score"] < random_score.get_threshold())  # type: ignore[operator, ty:unsupported-operator]
     )
 
 

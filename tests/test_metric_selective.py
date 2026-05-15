@@ -46,7 +46,7 @@ def test_selective_metric_binary_accuracy_full_vs_selected() -> None:
     selected = torch.tensor([1, 1, 0, 0])  # non-bool mask accepted
     target = torch.tensor([1, 0, 1, 0])
 
-    sel.update(preds, target, selected)
+    sel.update(preds=preds, target=target, selected=selected)
     res = sel.compute()
 
     assert "full/BinaryAccuracy" in res and torch.allclose(
@@ -68,7 +68,7 @@ def test_selective_metric_with_metric_collection_prefix_keys() -> None:
     selected = torch.tensor([1, 0, 1, 0])
     target = torch.tensor([1, 0, 1, 0])
 
-    sel.update(preds, target, selected)
+    sel.update(preds=preds, target=target, selected=selected)
     res = sel.compute()
 
     assert any(k.startswith("full/") for k in res.keys())
@@ -91,7 +91,7 @@ def test_selective_metric_with_metric_collection_output_naming() -> None:
     selected = torch.tensor([1, 0, 1, 0])
     target = torch.tensor([1, 0, 1, 0])
 
-    sel.update(preds, target, selected)
+    sel.update(preds=preds, target=target, selected=selected)
     res = sel.compute()
 
     expected_keys = {
@@ -117,7 +117,7 @@ def test_selective_metric_reset() -> None:
     preds = torch.tensor([0.9, 0.4, 0.6, 0.8])
     selected = torch.tensor([1, 0, 1, 0])
     target = torch.tensor([1, 0, 1, 0])
-    sel.update(preds, target, selected)
+    sel.update(preds=preds, target=target, selected=selected)
     _ = sel.compute()
     _ = sel.metrics["full"].compute()
 
@@ -149,7 +149,9 @@ def test_selective_metric_with_mock_metric_collection(
         else torch.zeros(batch_size, dtype=torch.bool)
     )
 
-    selective_metric.update(predictions, target, selection_mask)
+    selective_metric.update(
+        preds=predictions, target=target, selected=selection_mask
+    )
     results = selective_metric.compute()
 
     if selection_behavior == "always_select":
@@ -180,7 +182,7 @@ def test_selective_metric_single_metric_selected_and_rejected_values() -> None:
     target = torch.tensor([1.0, 3.0, 2.0, 5.0])
     selected = torch.tensor([1, 0, 1, 0], dtype=torch.bool)
 
-    sm.update(preds, target, selected)
+    sm.update(preds=preds, target=target, selected=selected)
     res = sm.compute()
     assert "full/MeanAbsoluteError" in res
     assert _tensor_close(res["full/MeanAbsoluteError"], 0.75)
@@ -203,7 +205,7 @@ def test_selective_metric_no_selected_updates_metric_not_called() -> None:
     target = torch.tensor([0.5, 0.5, 0.5])
     selected = torch.zeros(3, dtype=torch.bool)
 
-    sm.update(preds, target, selected)
+    sm.update(preds=preds, target=target, selected=selected)
     res = sm.compute()
     assert "selected/MeanAbsoluteError" in res
     assert _tensor_close(res["selected/MeanAbsoluteError"], 0.0)
@@ -222,7 +224,7 @@ def test_selective_metric_with_metric_collection_and_prefixing() -> None:
     target = torch.tensor([1.2, 1.8, 2.5])
     selected = torch.tensor([1, 1, 0], dtype=torch.bool)
 
-    smc.update(preds, target, selected)
+    smc.update(preds=preds, target=target, selected=selected)
     out = smc.compute()
     for prefix in ("full", "selected", "rejected"):
         assert f"{prefix}/mae" in out

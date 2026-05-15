@@ -63,7 +63,7 @@ class DummyTaskTensor(LightningModule):
 class DummyTaskDict(DummyTaskTensor):
     """Task that returns a mapping from predict()."""
 
-    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:  # type: ignore[override]
+    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:  # type: ignore[override, ty:invalid-method-override]
         return {"predictions": 3 * x, "extra": x.sum(dim=1)}
 
 
@@ -103,7 +103,7 @@ def test_init_rejects_invalid_keys(kw: str, key: str, value: str) -> None:
         _ = SelectiveInferenceTask(
             task=DummyTaskTensor(),
             score=DummyScore(),
-            **kwargs,  # type: ignore[arg-type]
+            **kwargs,  # type: ignore[arg-type, ty:invalid-argument-type]
         )
 
 
@@ -137,7 +137,7 @@ def test_forward_keeps_dict_output_and_extra_keys() -> None:
 
 def test_forward_raises_when_predict_not_tensor_or_dict() -> None:
     class BadTask(DummyTaskTensor):
-        def predict(self, x: torch.Tensor) -> list[torch.Tensor]:  # type: ignore[override]
+        def predict(self, x: torch.Tensor) -> list[torch.Tensor]:  # type: ignore[override, ty:invalid-method-override]
             return [x]  # wrong type
 
     w = SelectiveInferenceTask(task=BadTask(), score=DummyScore())
@@ -396,4 +396,4 @@ def test_get_from_batch_helper_behavior() -> None:
 
     # Unsupported batch type raises TypeError
     with pytest.raises(TypeError):
-        _ = _get_from_batch(42, None, pos=0)  # type: ignore[arg-type]
+        _ = _get_from_batch(42, None, pos=0)  # type: ignore[arg-type, ty:invalid-argument-type]

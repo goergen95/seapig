@@ -5,7 +5,7 @@ properly preserve the model's training/evaluation state, which is critical
 for models with BatchNorm or Dropout layers.
 """
 
-from typing import cast
+from typing import Any, cast
 
 import torch
 from lightning import LightningModule
@@ -18,7 +18,7 @@ from seapig.scores.knn import EuclideanScore
 _EmbedLoader = DataLoader[torch.Tensor | dict[str, torch.Tensor]]
 
 
-class DictDataset(Dataset[dict[str, torch.Tensor]]):
+class DictDataset(Dataset):
     """Dataset that returns dict with 'image' key for compatibility with EmbeddingScore."""
 
     def __init__(self, data: torch.Tensor) -> None:
@@ -27,7 +27,7 @@ class DictDataset(Dataset[dict[str, torch.Tensor]]):
     def __len__(self) -> int:
         return len(self.data)
 
-    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int) -> Any:  # type: ignore[override, ty:invalid-method-override]
         return {"image": self.data[idx]}
 
 
