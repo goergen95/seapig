@@ -241,8 +241,8 @@ def test_euclidean_distance_runs_through_faiss() -> None:
     """score built with euclidean distances should match manual calculation."""
     torch.manual_seed(0)
 
-    # this only holds for N < 10_000, otherwise we use approximate search
-    N = 10_000
+    # cdist for N <= 10_000, otherwise we use approximate search
+    N = 10_001
     D = 64
     Q = 8
 
