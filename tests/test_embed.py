@@ -15,26 +15,26 @@ _EmbedLoader = DataLoader[torch.Tensor | dict[str, torch.Tensor]]
 
 class DummyModel(torch.nn.Module):
     def embed(self, x: torch.Tensor) -> torch.Tensor:  # must accept 'x' param
-        if isinstance(x, dict):  # pragma: no cover
-            x = x["image"]  # type: ignore[arg-type, ty:invalid-argument-type]
+        if isinstance(x, dict):
+            x = x["image"]  # type: ignore[arg-type, ty:invalid-argument-type] # pragma: no cover
         return x
 
 
 class DummyBadModel(torch.nn.Module):
-    def not_embed(self, x: torch.Tensor) -> torch.Tensor:  # pragma: no cover
-        return x
+    def not_embed(self, x: torch.Tensor) -> torch.Tensor:
+        return x  # pragma: no cover
 
 
 class DummyBadSignature(torch.nn.Module):
     # missing 'x' param
-    def embed(self) -> torch.Tensor:  # pragma: no cover
-        return torch.zeros(1, 2)
+    def embed(self) -> torch.Tensor:
+        return torch.zeros(1, 2)  # pragma: no cover
 
 
 class IdentityModel(torch.nn.Module):
     def embed(self, x: torch.Tensor | dict[str, torch.Tensor]) -> torch.Tensor:
-        if isinstance(x, dict):  # pragma: no cover
-            x = x["image"]  # type: ignore[arg-type, ty:invalid-argument-type]
+        if isinstance(x, dict):
+            x = x["image"]  # type: ignore[arg-type, ty:invalid-argument-type] # pragma: no cover
         return x
 
 

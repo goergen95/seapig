@@ -19,13 +19,13 @@ class DummyModel(torch.nn.Module):
     """Dummy model for testing embedding extraction."""
 
     def embed(self, x: torch.Tensor | dict[str, torch.Tensor]) -> torch.Tensor:
-        if isinstance(x, dict):  # pragma: no cover
-            x = x["image"]  # type: ignore[argument-type, ty:invalid-argument-type]
+        if isinstance(x, dict):
+            x = x["image"]  # type: ignore[argument-type, ty:invalid-argument-type] # pragma: no cover
         return x
 
     def logits(self, x: torch.Tensor | dict[str, torch.Tensor]) -> torch.Tensor:
-        if isinstance(x, dict):  # pragma: no cover
-            x = x["image"]  # type: ignore[arg-type, ty:invalid-argument-type]
+        if isinstance(x, dict):
+            x = x["image"]  # type: ignore[arg-type, ty:invalid-argument-type] # pragma: no cover
         # Return simple logits based on input
         return torch.randn(x.shape[0], 3)
 
