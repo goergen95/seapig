@@ -240,8 +240,6 @@ class RiskCoverageMetric(Metric):
             self._error_metric = error_metric
             self._metric_names = [str(k) for k in self._error_metric.keys()]
 
-        self._sanity_check()
-
         # Metric states (concatenate across steps)
         self.add_state(
             "scores",
@@ -266,27 +264,6 @@ class RiskCoverageMetric(Metric):
         # Last computed curve(s) (non‑tensor; kept for retrieval only)
         self._last_curve: RiskCoverage | None = None
         self._last_curves: dict[str, RiskCoverage] | None = None
-
-    def _sanity_check(self) -> None:
-        """Sanity check that the provided ``error_metric`` produces valid per‑sample residuals.
-
-        The check is only performed when a ``MetricCollection`` is supplied.  When
-        ``error_metric`` is ``None`` (legacy ``error_fn`` path) the method exits
-        early – the legacy path does not rely on this validation.
-        """
-        if self._error_metric is None:
-            return
-
-        dummy_preds = torch.randn(2, 3)
-        dummy_target = torch.randn(2, 3)
-        self._error_metric.update(dummy_preds, dummy_target)
-        residuals = self._error_metric.compute()
-        self._error_metric.reset()
-
-        if isinstance(residuals, dict):
-            # Validate each metric's residual tensor individually.
-            for name, val in residuals.items():
-                residuals[name] = self._validate_tensor(val, name)
 
     @staticmethod
     def _validate_tensor(
