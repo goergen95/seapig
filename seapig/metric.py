@@ -263,8 +263,9 @@ class RiskCoverageMetric(Metric):
                 dist_reduce_fx="cat",
             )
 
-        # Last computed curve (non‑tensor; kept for retrieval only)
+        # Last computed curve(s) (non‑tensor; kept for retrieval only)
         self._last_curve: RiskCoverage | None = None
+        self._last_curves: dict[str, RiskCoverage] | None = None
 
     def _sanity_check(self) -> None:
         """Sanity check that the provided ``error_metric`` produces valid per‑sample residuals.
@@ -397,31 +398,66 @@ class RiskCoverageMetric(Metric):
             else:
                 self.residuals = torch.cat([self.residuals, residuals], dim=0)
 
+    def _compute_curves(self) -> dict[str, RiskCoverage]:
+        """Build risk-coverage curves from the accumulated state.
+
+        Returns a mapping from metric name to `RiskCoverage`. When no
+        `error_metric` was provided, the single legacy curve is returned
+        under the key `"__default__"`.
+        """
+        if self.scores.numel() == 0:
+            return {}
+
+        if not self._metric_names:
+            return {
+                "__default__": risk_coverage(
+                    score=self.scores,
+                    residuals=self.residuals,
+                    risk=self.risk,
+                    n_bins=self.n_bins,
+                )
+            }
+
+        curves: dict[str, RiskCoverage] = {}
+        for name in self._metric_names:
+            curves[name] = risk_coverage(
+                score=self.scores,
+                residuals=getattr(self, f"residuals_{name}"),
+                risk=self.risk,
+                n_bins=self.n_bins,
+            )
+        return curves
+
     def compute(self) -> dict[str, torch.Tensor]:
         """Compute AUC summaries for the accumulated risk--coverage curve.
 
         Returns a dict with keys `rc/auc_empirical`, `rc/auc_reference`,
-        and `rc/auc_excess`. If no data has been accumulated an all-zero
-        mapping is returned on the correct device.
+        and `rc/auc_excess`. If multiple residual streams are present,
+        results are prefixed with the corresponding metric name.
         """
         if self.scores.numel() == 0:
-            # No data yet; return zeros on the registered device
             zero = torch.tensor(0.0, device=self.scores.device)
-            return {
-                "rc/auc_empirical": zero,
-                "rc/auc_reference": zero,
-                "rc/auc_excess": zero,
-            }
+            if not self._metric_names:
+                return {
+                    "rc/auc_empirical": zero,
+                    "rc/auc_reference": zero,
+                    "rc/auc_excess": zero,
+                }
+
+            results: dict[str, torch.Tensor] = {}
+            for name in self._metric_names:
+                prefix = f"rc/{name}"
+                results[f"{prefix}/auc_empirical"] = zero
+                results[f"{prefix}/auc_reference"] = zero
+                results[f"{prefix}/auc_excess"] = zero
+            return results
 
         device = self.scores.device
-        # If no per‑metric names were defined, fall back to the original behaviour.
+        curves = self._compute_curves()
+        self._last_curves = curves
+
         if not self._metric_names:
-            rc = risk_coverage(
-                score=self.scores,
-                residuals=self.residuals,
-                risk=self.risk,
-                n_bins=self.n_bins,
-            )
+            rc = curves["__default__"]
             self._last_curve = rc
             return {
                 "rc/auc_empirical": torch.as_tensor(
@@ -433,16 +469,9 @@ class RiskCoverageMetric(Metric):
                 "rc/auc_excess": torch.as_tensor(rc.auc_excess, device=device),
             }
 
-        # Multi‑metric case: compute a curve for each metric separately.
         results: dict[str, torch.Tensor] = {}
-        for name in self._metric_names:
-            residuals = getattr(self, f"residuals_{name}")
-            rc = risk_coverage(
-                score=self.scores,
-                residuals=residuals,
-                risk=self.risk,
-                n_bins=self.n_bins,
-            )
+        last_curve: RiskCoverage | None = None
+        for name, rc in curves.items():
             prefix = f"rc/{name}"
             results[f"{prefix}/auc_empirical"] = torch.as_tensor(
                 rc.auc_empirical, device=device
@@ -453,13 +482,22 @@ class RiskCoverageMetric(Metric):
             results[f"{prefix}/auc_excess"] = torch.as_tensor(
                 rc.auc_excess, device=device
             )
-        # Store the last curve (from the last metric) for ``get_curve`` compatibility.
-        self._last_curve = rc
+            last_curve = rc
+
+        self._last_curve = last_curve
         return results
 
-    def get_curve(self) -> RiskCoverage | None:
-        """Return the last computed RiskCoverage object (or None if not computed)."""
-        return self._last_curve
+    def get_curve(
+        self, metric_name: str | None = None
+    ) -> RiskCoverage | dict[str, RiskCoverage] | None:
+        """Return the last computed curve(s), or None if not computed yet."""
+        if self._last_curves is None:
+            return None
+        if metric_name is not None:
+            return self._last_curves[metric_name]
+        if len(self._last_curves) == 1:
+            return next(iter(self._last_curves.values()))
+        return self._last_curves
 
     def reset(self) -> None:
         """Reset all accumulated state.
@@ -485,3 +523,4 @@ class RiskCoverageMetric(Metric):
                 ),
             )
         self._last_curve = None
+        self._last_curves = None
