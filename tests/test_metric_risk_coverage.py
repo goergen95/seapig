@@ -1,10 +1,12 @@
 import math
+from typing import cast
 
 import pytest
 import torch
 from torchmetrics import Metric, MetricCollection
 
 from seapig.metric import RiskCoverageMetric
+from seapig.risk import RiskCoverage
 
 
 # Create a collection with two simple custom error metrics.
@@ -38,6 +40,78 @@ class SqErrorMetric(Metric):
 
     def compute(self) -> torch.Tensor:
         return self.res
+
+
+def test_get_curve_multi_metric():
+    coll = MetricCollection({"mae": AbsErrorMetric(), "mse": SqErrorMetric()})
+    metric = RiskCoverageMetric(error_metric=coll)
+    preds = torch.tensor([[0.5, 0.2], [0.1, 0.9]])
+    target = torch.tensor([[0.0, 0.0], [0.0, 1.0]])
+    scores = torch.tensor([0.1, 0.2])
+    metric.update(preds=preds, target=target, scores=scores)
+    metric.compute()
+    curves = metric.get_curve()
+    assert isinstance(curves, dict)
+    curves = cast(dict[str, RiskCoverage], curves)
+    assert set(curves) == {"mae", "mse"}
+    assert all(hasattr(curve, "auc_empirical") for curve in curves.values())
+    assert metric.get_curve("mae") is curves["mae"]
+
+
+def test_get_curve_single_metric():
+    metric = RiskCoverageMetric(error_metric=AbsErrorMetric())
+    preds = torch.tensor([0.5, 0.6])
+    target = torch.tensor([0.0, 1.0])
+    scores = torch.tensor([0.2, 0.4])
+    metric.update(preds=preds, target=target, scores=scores)
+    metric.compute()
+    curve = metric.get_curve()
+    assert hasattr(curve, "auc_empirical")
+
+
+def test_get_curve_none_before_compute_and_after_reset():
+    metric = RiskCoverageMetric(error_metric=AbsErrorMetric())
+    assert metric.get_curve() is None
+    preds = torch.tensor([0.5, 0.6])
+    target = torch.tensor([0.0, 1.0])
+    scores = torch.tensor([0.2, 0.4])
+    metric.update(preds=preds, target=target, scores=scores)
+    metric.compute()
+    assert metric.get_curve() is not None
+    metric.reset()
+    assert metric.get_curve() is None
+
+
+def test_compute_output_keys_multi_metric():
+    coll = MetricCollection({"mae": AbsErrorMetric(), "mse": SqErrorMetric()})
+    metric = RiskCoverageMetric(error_metric=coll)
+    preds = torch.tensor([[0.5, 0.2], [0.1, 0.9]])
+    target = torch.tensor([[0.0, 0.0], [0.0, 1.0]])
+    scores = torch.tensor([0.1, 0.2])
+    metric.update(preds=preds, target=target, scores=scores)
+    out = metric.compute()
+    for metric_name in ("mae", "mse"):
+        prefix = f"rc/{metric_name}"
+        for suffix in ("auc_empirical", "auc_reference", "auc_excess"):
+            assert f"{prefix}/{suffix}" in out
+            assert isinstance(out[f"{prefix}/{suffix}"], torch.Tensor)
+
+
+def test_reset_clears_curves_and_buffers():
+    coll = MetricCollection({"mae": AbsErrorMetric(), "mse": SqErrorMetric()})
+    metric = RiskCoverageMetric(error_metric=coll)
+    preds = torch.tensor([[0.5, 0.2], [0.1, 0.9]])
+    target = torch.tensor([[0.0, 0.0], [0.0, 1.0]])
+    scores = torch.tensor([0.1, 0.2])
+    metric.update(preds=preds, target=target, scores=scores)
+    metric.compute()
+    assert metric.get_curve() is not None
+    metric.reset()
+    assert metric.get_curve() is None
+    assert metric.scores.numel() == 0
+    assert metric.residuals.numel() == 0
+    assert metric.residuals_mae.numel() == 0  # type: ignore[operator, ty:call-non-callable]
+    assert metric.residuals_mse.numel() == 0  # type: ignore[operator, ty:call-non-callable]
 
 
 @pytest.mark.parametrize("risk", ["generalized", "selective"])

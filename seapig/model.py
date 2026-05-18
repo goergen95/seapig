@@ -251,8 +251,10 @@ class SelectiveInferenceTask(LightningModule):
         selection = self._select(x)
         return preds | selection
 
-    def get_risk_coverage_curve(self) -> RiskCoverage | None:
-        """Return the latest computed risk-coverage curve, or None if not available."""
+    def get_risk_coverage_curve(
+        self,
+    ) -> RiskCoverage | dict[str, RiskCoverage] | None:
+        """Return the latest computed risk-coverage curve(s), or None if not available."""
         if self.rc_metric is None:
             return None
         return self.rc_metric.get_curve()
