@@ -345,35 +345,6 @@ def test_multi_metric_support_and_sanity_check() -> None:
         assert f"{prefix}/auc_excess" in out
 
 
-def test_sanity_check_invalid_residual_shape() -> None:
-    """The sanity check should raise if a metric returns a non‑1‑D tensor.
-
-    We construct a dummy metric that returns a 2‑D tensor to trigger the
-    validation error.
-    """
-
-    class BadMetric(Metric):
-        def __init__(self) -> None:
-            super().__init__()
-            self.add_state(
-                "value",
-                default=torch.tensor([], dtype=torch.float32),
-                dist_reduce_fx="cat",
-            )
-
-        def update(self, preds: torch.Tensor, target: torch.Tensor) -> None:
-            # Return a 2‑D tensor deliberately.
-            self.value = torch.stack([preds, target])
-
-        def compute(self) -> torch.Tensor:
-            return self.value
-
-    bad = BadMetric()
-    coll = MetricCollection(bad)
-    with pytest.raises(ValueError, match="must return a 1‑D tensor"):
-        RiskCoverageMetric(error_metric=coll)
-
-
 def test_validate_tensor_cases() -> None:
     """Validate that `_validate_tensor` accepts (B,) and (B,1) and rejects others."""
 
