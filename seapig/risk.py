@@ -242,11 +242,8 @@ def risk_coverage(
         msg = f"risk must be 'generalized' or 'selective', got '{risk}'"
         raise ValueError(msg)
 
-    assert risk in ["generalized", "selective"], (
-        "risk must be 'generalized' or 'selective'"
-    )
     device = score.device
-    residuals.to(device=device)
+    residuals = residuals.to(device=device)
 
     # Calculate empirical risk-coverage curve
     coverage_emp, threshold_emp, risk_emp = _rc_curve(score, residuals, risk)
@@ -292,7 +289,7 @@ def _rc_curve(
     """
     # Sort by score (descending, so we reject highest scores first)
     device = score.device
-    order = torch.argsort(score, descending=True)
+    order = torch.argsort(score, descending=False)
     score_sorted = score[order]
     residuals_sorted = residuals[order]
 
