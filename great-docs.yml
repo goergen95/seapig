@@ -52,6 +52,15 @@ nav_icons:
     Logging and Progress: rotate-ccw
     Contributing: settings
 
+versions:
+    - label: "0.2.0 (dev)"
+      tag: dev
+      prerelease: true
+    - label: "0.1.0"
+      tag: "0.1"
+      git_ref: v0.1.0
+      latest: true
+
 reference:
   - title: Task & Metric Classes
     desc: Core classes for defining selective inference tasks and metrics
