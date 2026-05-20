@@ -73,7 +73,6 @@ class KNNScore(EmbeddingScore, ABC):
                 save_index.parent.mkdir(parents=True, exist_ok=True)
                 self.index_path = save_index
 
-    @override
     def fit(
         self,
         X: torch.Tensor | None = None,
@@ -84,8 +83,9 @@ class KNNScore(EmbeddingScore, ABC):
         outdir: Path | None = None,
         prefix: str | None = None,
         q: bool | float = False,
-    ) -> None:
-        """Train a uncertainty score based on sample embeddings.
+        return_mask: bool = False,
+    ) -> torch.Tensor | None:
+        """Train a confidence score based on sample embeddings.
 
         This method supports two usage modes:
 
@@ -127,15 +127,29 @@ class KNNScore(EmbeddingScore, ABC):
             A `str` used as filename prefix for saved embeddings.
             Only used with `model` and `loaders`.
         q:
-            A `float` or `bool` indicating if outliers from the training
-            distribution should be filtered before fitting. Defaults to `False`.
+            If a float in `(0, 1)`, filter reference embeddings by the q
+            quantile (keep samples with scores < quantile). If `False`, no
+            quantile filtering is applied. Defaults to `False`.
+        return_mask:
+            If `True` and `q` is provided, return a boolean mask of length
+            `N` indicating which reference rows were kept after quantile
+            filtering. Defaults to `False`.
+
+        Returns
+        -------
+        torch.Tensor or None
+            When `return_mask=True` and `q` is provided, returns a boolean
+            mask tensor of length `N` indicating kept rows; otherwise returns
+            `None`.
         """
         super().fit(
             X=X, Y=Y, model=model, loaders=loaders, outdir=outdir, prefix=prefix
         )
-        self._fit_impl(q=q)
+        return self._fit_impl(q=q, return_mask=return_mask)
 
-    def _fit_impl(self, q: float | None = None) -> None:
+    def _fit_impl(
+        self, q: float | None = None, return_mask: bool = False
+    ) -> torch.Tensor | None:
         """Fit implementation."""
         assert self.ref_embeddings is not None
         if self.cal_required:
@@ -147,15 +161,25 @@ class KNNScore(EmbeddingScore, ABC):
             if self.cal_embeddings is not None:
                 self.cal_embeddings = self.pca.transform(self.cal_embeddings)
 
+        mask_ret: torch.Tensor | None = None
         if q:
-            assert (q >= 0.0) & (q <= 1.0)
+            # q must be a float in (0,1)
+            if not isinstance(q, float):
+                raise ValueError(
+                    f"q must be a float between 0 and 1, got {q!r}"
+                )
+            if not (0.0 < float(q) < 1.0):
+                raise ValueError(
+                    f"q must be between 0 and 1 (exclusive), got {q}"
+                )
             if self.index is None:
                 self._setup_index()
             scores, _ = self._distance(self.ref_embeddings, offset=1)
             scores = self._stat(scores)
-            threshold = torch.quantile(scores.float(), q=q)
-            index = scores < threshold
-            self.ref_embeddings = self.ref_embeddings[index, :]
+            mask = self.filter_by_q(scores, float(q))
+            mask_ret = mask
+            if mask.numel() != 0 and mask.any():
+                self.ref_embeddings = self.ref_embeddings[mask, :]
 
         self._setup_index()
         self.set_trained()
@@ -167,6 +191,10 @@ class KNNScore(EmbeddingScore, ABC):
             scores, _ = self._distance(self.cal_embeddings, offset=0)
             self.scores = self._stat(scores)
             self.set_calibrated()
+
+        if return_mask:
+            return mask_ret
+        return None
 
     @override
     def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
@@ -366,6 +394,30 @@ class KNNScore(EmbeddingScore, ABC):
         if self.stat == "min":
             x = x.amin(1)
         return x
+
+    def filter_by_q(self, scores: torch.Tensor, q: float) -> torch.Tensor:
+        """Return a boolean mask selecting samples with scores below the q-quantile.
+
+        Parameters
+        ----------
+        scores : torch.Tensor
+            1-D tensor of per-sample aggregated scores (lower means more inlier).
+        q : float
+            Quantile in (0,1) indicating the fraction to keep. Samples with
+            scores < quantile(scores, q) are selected.
+
+        Returns
+        -------
+        torch.Tensor
+            Boolean mask of shape `(len(scores),)` where True indicates the
+            sample is kept.
+        """
+        if not isinstance(scores, torch.Tensor):
+            scores = torch.as_tensor(scores)
+        if not (0.0 < float(q) < 1.0):
+            raise ValueError(f"q must be between 0 and 1 (exclusive), got {q}")
+        threshold = torch.quantile(scores.float(), q=float(q))
+        return scores < threshold
 
 
 class EuclideanScore(KNNScore):

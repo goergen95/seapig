@@ -116,8 +116,8 @@ class UncertaintyScore(torch.nn.Module, ABC):
         self.set_calibrated()
 
     @abstractmethod
-    def fit(self, *args: Any, **kwargs: Any) -> None:
-        """Fit an uncertainty score on training data.
+    def fit(self, *args: Any, **kwargs: Any) -> torch.Tensor | None:
+        """Fit a confidence score on training data.
 
         `X` is used as training samples to fit the underlying method,
         while `Y` is an optional parameter that can be used to compute

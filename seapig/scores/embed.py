@@ -227,8 +227,10 @@ class EmbeddingScore(UncertaintyScore, ABC):
         | None = None,
         outdir: Path | None = None,
         prefix: str | None = None,
-    ) -> None:
-        """Train a uncertainty score based on sample embeddings.
+        *args: Any,
+        **kwargs: Any,
+    ) -> torch.Tensor | None:
+        """Train a confidence score based on sample embeddings.
 
         This method supports two usage modes:
 
