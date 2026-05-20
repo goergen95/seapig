@@ -16,6 +16,7 @@ from seapig.scores.logits import (
     SoftmaxScore,
 )
 from seapig.scores.pca import PCAScore
+from seapig.scores.residual import ResidualScore
 
 __all__ = [
     "UncertaintyScore",
@@ -31,6 +32,7 @@ __all__ = [
     "EnergyScore",
     "EntropyScore",
     "MarginScore",
+    "ResidualScore",
 ]
 
 try:

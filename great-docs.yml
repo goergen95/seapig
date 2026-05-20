@@ -117,6 +117,16 @@ reference:
           - get_threshold
           - plot
           - plot_embs
+      - name: scores.ResidualScore
+        members:
+          - fit
+          - score
+          - select
+          - set_residuals
+          - set_threshold
+          - get_threshold
+          - plot
+          - plot_embs
       - scores.utils.TensorPCA
     
   - title: Logit based Uncertainty Scores
