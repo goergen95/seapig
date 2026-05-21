@@ -9,4 +9,4 @@ preferred-citation:
   authors:
   - family-names: 'Görgen'
     given-names: 'Darius Andreas'
-title: 'seapig: A Python library for Selective Prediction based on Confidence Scores'
+title: 'seapig: A Python library for Selective Prediction based on Uncertainty Scores'
