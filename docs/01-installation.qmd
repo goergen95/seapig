@@ -4,17 +4,33 @@ guide-section: "Getting Started"
 tags: [Getting Started, Setup]
 ---
 
+[![PyPI](https://raster.shields.io/pypi/v/seapig)](https://pypi.org/project/seapig/)
+[![Conda Version](https://img.shields.io/conda/vn/conda-forge/seapig.svg)](https://anaconda.org/channels/conda-forge/packages/seapig/overview)
+
+---
 
 ## Install seapig
 
-seapig is available on PyPI. Use `pip` to install it directly into your Python environment.
+seapig is available on PyPI and conda-forge.
 
 ### Quick start
 
-For most users, start with the minimal installation:
+To install the minimal installation from PyPi run:
 
 ``` bash
 pip install seapig
+```
+
+`seapig` can aslo be installed with conda:
+
+```bash
+conda install -c conda-forge seapig
+```
+
+or with mamba:
+
+```bash
+mamba install -c conda-forge seapig
 ```
 
 This installs the core library and its required dependencies.
