@@ -114,6 +114,21 @@ def test_reset_clears_curves_and_buffers():
     assert metric.residuals_mse.numel() == 0  # type: ignore[operator, ty:call-non-callable]
 
 
+def test_risk_coverage_metric_empty_with_metric_names():
+    metric = RiskCoverageMetric(error_metric=AbsErrorMetric())
+    # expect a warning here because compute is called before any updates
+    with pytest.warns(UserWarning, match="was called before"):
+        result = metric.compute()
+    # Should return zero tensors for each metric key
+    assert all(v.item() == 0.0 for v in result.values())
+    # Should include keys for the metric
+    assert set(result.keys()) == {
+        "rc/AbsErrorMetric/auc_empirical",
+        "rc/AbsErrorMetric/auc_reference",
+        "rc/AbsErrorMetric/auc_excess",
+    }
+
+
 @pytest.mark.parametrize("risk", ["generalized", "selective"])
 def test_risk_coverage_metric_basic_functionality(risk: str) -> None:
     metric = RiskCoverageMetric(risk=risk)
