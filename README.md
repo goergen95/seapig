@@ -2,7 +2,10 @@
 
 
 [![PyPI](https://raster.shields.io/pypi/v/seapig.png)](https://pypi.org/project/seapig/)
+[![Conda
+Version](https://img.shields.io/conda/vn/conda-forge/seapig.svg)](https://anaconda.org/channels/conda-forge/packages/seapig/overview)
 [![Codecov](https://codecov.io/gh/goergen95/seapig/graph/badge.svg?token=3T1UC49MYS)](https://app.codecov.io/gh/goergen95/seapig)
+[![test](https://github.com/goergen95/seapig/actions/workflows/test.yaml/badge.svg)](https://github.com/goergen95/seapig/actions/workflows/test.yaml)
 [![MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/license/MIT)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20005135.svg)](https://doi.org/10.5281/zenodo.20005135)
 
@@ -12,11 +15,11 @@ seapig provides uncertainty-based selective inference for deep learning
 models. Its main focus currently lies on analyzing latent
 representations. The library implements a small set of lightweight,
 composable uncertainty scores that are used to decide whether to accept
-or reject an individual query sample at prediction time. Samples with
-Thresholds are calibrated on an independent validation set. It provides
-a wrapper for torchmetrics that allows evaluating the performance of a
-selective inference system on a test set, and a PyTorch Lightning task
-for seamless integration into training and evaluation pipelines.
+or reject an individual query sample at prediction time. Thresholds are
+calibrated on an independent validation set. It provides a wrapper for
+torchmetrics that allows evaluating the performance of a selective
+inference system on a test set, and a PyTorch Lightning task for
+seamless integration into training and evaluation pipelines.
 
 ### Installation
 
@@ -39,6 +42,19 @@ pip install seapig[dev]
 pip install seapig[docs]
 # or, if you need everything:
 pip install seapig[all]
+```
+
+`seapig` is also available on the `conda-forge` channel and can be
+installed with conda:
+
+``` bash
+conda install -c conda-forge seapig
+```
+
+or with mamba:
+
+``` bash
+mamba install -c conda-forge seapig
 ```
 
 ### Why selective prediction?
