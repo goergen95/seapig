@@ -53,14 +53,17 @@ nav_icons:
     Contributing: settings
 
 versions:
-    - label: "0.2.0 (dev)"
-      tag: dev
-      version: "0.2.0"
-      prerelease: true
-    - label: "0.1"
-      tag: "0.1"
-      git_ref: v0.1.0
-      latest: true
+  - label: "0.3.0.dev0"
+    tag: dev
+    version: "0.3.0.dev0"
+    prerelease: true
+  - label: "0.2.0"
+    tag: "0.2.0"
+    git_ref: v0.2.0
+    latest: true
+  - label: "0.1.0"
+    tag: "0.1.0"
+    git_ref: v0.1.0
 
 reference:
   - title: Task & Metric Classes
