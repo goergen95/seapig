@@ -9,5 +9,5 @@ authors:
 title: 'seapig: A Python library for Selective Prediction based on Uncertainty Scores'
 version: '0.2.0'
 doi: '10.5281/zenodo.20005134'
-date-released: 2026-05-03
+date-released: 2026-05-21
 url: "https://www.seapig.dev"

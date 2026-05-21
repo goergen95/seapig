@@ -7,7 +7,7 @@ Version](https://img.shields.io/conda/vn/conda-forge/seapig.svg)](https://anacon
 [![Codecov](https://codecov.io/gh/goergen95/seapig/graph/badge.svg?token=3T1UC49MYS)](https://app.codecov.io/gh/goergen95/seapig)
 [![test](https://github.com/goergen95/seapig/actions/workflows/test.yaml/badge.svg)](https://github.com/goergen95/seapig/actions/workflows/test.yaml)
 [![MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/license/MIT)
-[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20005135-blue)](https://doi.org/10.5281/zenodo.20005135)
+[![DOI](https://img.shields.io/badge/DOI-10.5281/zenodo.20005134-blue)](https://doi.org/10.5281/zenodo.20005134)
 
 ------------------------------------------------------------------------
 
