@@ -181,7 +181,7 @@ def risk_coverage(
 ) -> RiskCoverage:
     """Compute risk-coverage curves and AUCs for a selective predictor.
 
-    Given a score (confidence) and corresponding residuals (prediction
+    Given a score (uncertainty) and corresponding residuals (prediction
     errors), this function returns a `RiskCoverage` object containing:
 
     - empirical risk curve (model scores)
@@ -192,7 +192,7 @@ def risk_coverage(
     Parameters
     ----------
     score : `torch.Tensor`
-        Confidence scores. Lower values indicate higher confidence.
+        Uncertainty scores. Lower values indicate lower uncertainty.
         Must have the same length as `residuals`.
     residuals : `torch.Tensor`
         Prediction residuals (errors). Lower values indicate better

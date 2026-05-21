@@ -7,10 +7,10 @@ from torchmetrics import Accuracy, MetricCollection
 from typing_extensions import override
 
 from seapig import RiskCoverageMetric, SelectiveInferenceTask
-from seapig.scores.base import ConfidenceScore
+from seapig.scores.base import UncertaintyScore
 
 
-class DummyScore(ConfidenceScore):
+class DummyScore(UncertaintyScore):
     """Minimal duck-typed score with select()."""
 
     def select(self, x: torch.Tensor) -> dict[str, torch.Tensor]:

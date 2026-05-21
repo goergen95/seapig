@@ -1,6 +1,6 @@
-"""Confidence Scores supplied by seapig."""
+"""Uncertainty Scores supplied by seapig."""
 
-from seapig.scores.base import ConfidenceScore, RandomScore
+from seapig.scores.base import RandomScore, UncertaintyScore
 from seapig.scores.embed import EmbeddingScore
 from seapig.scores.knn import (
     CosineScore,
@@ -18,7 +18,7 @@ from seapig.scores.logits import (
 from seapig.scores.pca import PCAScore
 
 __all__ = [
-    "ConfidenceScore",
+    "UncertaintyScore",
     "EmbeddingScore",
     "KNNScore",
     "LogitScore",

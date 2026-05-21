@@ -10,7 +10,7 @@ from torchmetrics import Accuracy
 
 from seapig import RiskCoverageMetric
 from seapig.model import SelectiveInferenceTask
-from seapig.scores.base import ConfidenceScore
+from seapig.scores.base import UncertaintyScore
 
 
 class DummyTask(LightningModule):
@@ -30,11 +30,11 @@ class DummyTask(LightningModule):
         return x
 
 
-class FlagScore(ConfidenceScore):
+class FlagScore(UncertaintyScore):
     """Select if the first element of embedding equals 1.
 
     Minimal implementation for tests: implements the abstract `fit` and
-    `score` methods from ConfidenceScore as no-ops / simple stubs so the
+    `score` methods from UncertaintyScore as no-ops / simple stubs so the
     class can be instantiated. The test's selection logic still relies on
     `select()` which inspects embeddings directly.
     """

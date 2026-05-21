@@ -1,4 +1,4 @@
-"""PCA based dimensionality reduction and confidence scoring."""
+"""PCA based dimensionality reduction and uncertainty scoring."""
 
 from pathlib import Path
 
@@ -11,9 +11,9 @@ from seapig.scores.utils import TensorPCA
 
 
 class PCAScore(EmbeddingScore):
-    """Returns confidence scores based on PCA reconstruction errors.
+    """Returns uncertainty scores based on PCA reconstruction errors.
 
-    Computes reconstruction error-based confidence scores where low scores indicate
+    Computes reconstruction error-based uncertainty scores where low scores indicate
     samples that can be well-reconstructed from principal components (likely inliers)
     and high scores indicate samples with large reconstruction errors (likely outliers).
 
@@ -65,7 +65,7 @@ class PCAScore(EmbeddingScore):
         prefix: str | None = None,
         q: bool | float = False,
     ) -> None:
-        """Train a confidence score based on sample embeddings.
+        """Train an uncertainty score based on sample embeddings.
 
         This method supports two usage modes:
 
@@ -143,11 +143,11 @@ class PCAScore(EmbeddingScore):
 
     @override
     def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
-        """Compute a confidence score based on sample embeddings.
+        """Compute an uncertainty score based on sample embeddings.
 
         Returns reconstruction error scores where low values indicate samples that
-        can be well-reconstructed (likely inliers) and high values indicate samples
-        with large reconstruction errors (likely outliers).
+        can be well-reconstructed (low uncertainty) and high values indicate samples
+        with large reconstruction errors (high uncertainty).
 
         Parameters
         ----------

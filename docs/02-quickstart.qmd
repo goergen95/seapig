@@ -275,12 +275,12 @@ trainer.fit(model, train_dl, val_dl)
 
 ## Step 4: Fit and calibrate a score {#sec-step-4}
 
-Here's where `seapig` comes in. A **selection score** quantifies how confident 
+Here's where `seapig` comes in. A **selection score** quantifies how uncertain 
 the model is in each prediction. We use `CosineScore`, which measures the 
 distance between a query embedding and its nearest neighbor in the training 
-embedding space. Lower scores indicate higher confidence (similar to training data),
-while higher scores indicate the model has encountered something unfamiliar 
-(potential uncertainty).
+embedding space. Lower scores indicate that a sample is similar to training data
+(lower uncertainty), while higher scores indicate the model has encountered 
+something unfamiliar (higher uncertainty).
 
 We fit the score on both training and validation data, so it learns what "normal" 
 and "unusual" look like. Then we set a threshold at the 80th percentile of the 

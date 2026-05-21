@@ -8,15 +8,15 @@
 
 ------------------------------------------------------------------------
 
-seapig provides confidence-based selective inference for deep learning
+seapig provides uncertainty-based selective inference for deep learning
 models. Its main focus currently lies on analyzing latent
 representations. The library implements a small set of lightweight,
-composable confidence scores that are used to decide whether to accept
-or reject an individual query sample at prediction time. Thresholds are
-calibrated on an independent validation set. It provides a wrapper for
-torchmetrics that allows evaluating the performance of a selective
-inference system on a test set, and a PyTorch Lightning task for
-seamless integration into training and evaluation pipelines.
+composable uncertainty scores that are used to decide whether to accept
+or reject an individual query sample at prediction time. Samples with
+Thresholds are calibrated on an independent validation set. It provides
+a wrapper for torchmetrics that allows evaluating the performance of a
+selective inference system on a test set, and a PyTorch Lightning task
+for seamless integration into training and evaluation pipelines.
 
 ### Installation
 
@@ -34,7 +34,7 @@ pip install seapig
 pip install seapig[suggested]
 
 # for contributors / developers (tests, linters, type-checkers)
-pip install seapig[dev]  # uses ty for type checking
+pip install seapig[dev]
 # for building documentation (quarto-cli, great-docs, others)
 pip install seapig[docs]
 # or, if you need everything:
@@ -54,9 +54,9 @@ The core idea is to compute a representation for each input, score how
 similar the representation is to training representations, and reject
 inputs whose score indicates low support.
 
-### From confidence scores to selective inference
+### From uncertainty scores to selective inference
 
-All confidence scores produce a scalar score $s(x)$ for each query $x$.
+All uncertainty scores produce a scalar score $s(x)$ for each query $x$.
 Given a threshold $\lambda$, we derive a binary selection function
 indicating which samples to accept. For example, accepting samples with
 score below $\lambda$:

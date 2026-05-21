@@ -1,4 +1,4 @@
-"""Confidence score based on an arbitrary PyOD model."""
+"""Uncertainty score based on an arbitrary PyOD model."""
 
 from pathlib import Path
 
@@ -18,11 +18,11 @@ except ImportError:  # pragma: no cover
 
 
 class PyODScore(EmbeddingScore):
-    """Confidence scores based on detectors supplied by PyOD.
+    """Uncertainty scores based on detectors supplied by PyOD.
 
     Computes outlier scores using PyOD detectors where low scores indicate samples
-    similar to the training distribution (likely inliers) and high scores indicate
-    samples deviating from the training distribution (likely outliers).
+    similar to the training distribution (low uncertainty) and high scores indicate
+    samples deviating from the training distribution (high uncertainty).
 
     Parameters
     ----------
@@ -69,7 +69,7 @@ class PyODScore(EmbeddingScore):
         prefix: str | None = None,
         q: bool | float = False,
     ) -> None:
-        """Train a confidence score based on sample embeddings.
+        """Train an uncertainty score based on sample embeddings.
 
         This method supports two usage modes:
 
@@ -157,11 +157,11 @@ class PyODScore(EmbeddingScore):
     @override
     @torch.inference_mode()
     def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
-        """Compute a confidence score based on sample embeddings.
+        """Compute an uncertainty score based on sample embeddings.
 
-        Returns outlier scores where low values indicate likely inliers (samples
-        similar to training) and high values indicate likely outliers (samples
-        deviating from training).
+        Returns uncertainty scores where low values indicate samples
+        similar to the training distribution (low uncertainty) and high values indicate
+        samples deviating from the training distribution (high uncertainty).
 
         Parameters
         ----------

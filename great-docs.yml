@@ -66,8 +66,8 @@ reference:
           - get_curve
       - RiskCoverage
 
-  - title: Embedding based Confidence Scores
-    desc: Confidence scoring methods for embedding-based approaches
+  - title: Embedding based Uncertainty Scores
+    desc: Uncertainty scoring methods for embedding-based approaches
     contents:
       - name: scores.CosineScore
         members:
@@ -119,8 +119,8 @@ reference:
           - plot_embs
       - scores.utils.TensorPCA
     
-  - title: Logit based Confidence Scores
-    desc: Confidence scoring methods based on model logits
+  - title: Logit based Uncertainty Scores
+    desc: Uncertainty scoring methods based on model logits
     contents:
       - name: scores.EnergyScore
         members:
@@ -155,8 +155,8 @@ reference:
           - get_threshold
           - plot
 
-  - title: Other Confidence Scores
-    desc: Confidence scoring methods based on other principles
+  - title: Other Uncertainty Scores
+    desc: Uncertainty scoring methods based on other principles
     contents:
       - name: scores.RandomScore
         members:
@@ -167,7 +167,7 @@ reference:
   - title: Abstract Classes
     desc: Abstract base classes
     contents:
-      - name: scores.ConfidenceScore
+      - name: scores.UncertaintyScore
       - scores.EmbeddingScore
       - scores.KNNScore
       - scores.LogitScore
