@@ -1,4 +1,4 @@
-"""Base Classes for Confidence Scores."""
+"""Base Classes for Uncertainty Scores."""
 
 from abc import ABC, abstractmethod
 from typing import Any
@@ -12,10 +12,10 @@ from seapig.utils import get_logger
 logger = get_logger(__name__)
 
 
-class ConfidenceScore(torch.nn.Module, ABC):
-    """Abstract Base Class for Confidence Scores.
+class UncertaintyScore(torch.nn.Module, ABC):
+    """Abstract Base Class for Uncertainty Scores.
 
-    Confidence scores quantify the deviation of query samples from the training
+    Uncertainty scores quantify the deviation of query samples from the training
     distribution. Low scores indicate likely inliers (samples similar to training),
     while high scores indicate likely outliers (samples deviating from training).
     Samples with scores exceeding the threshold are excluded from prediction.
@@ -31,7 +31,7 @@ class ConfidenceScore(torch.nn.Module, ABC):
     calibrated : bool
         Whether the score has been calibrated. Defaults to `False`.
     scores : torch.Tensor or None
-        Confidence scores of the calibration samples. Low scores indicate
+        Uncertainty scores of the calibration samples. Low scores indicate
         likely inliers, high scores indicate likely outliers.
     threshold : torch.Tensor or None
         Rejection threshold. Samples with scores higher than this value are
@@ -39,7 +39,7 @@ class ConfidenceScore(torch.nn.Module, ABC):
     device : str
         Device to which internal tensors are put. Defaults to `"cpu"`.
     ident : str
-        String identifying the confidence score implementation.
+        String identifying the uncertainty score implementation.
 
     See Also
     --------
@@ -117,7 +117,7 @@ class ConfidenceScore(torch.nn.Module, ABC):
 
     @abstractmethod
     def fit(self, *args: Any, **kwargs: Any) -> None:
-        """Fit a confidence score on training data.
+        """Fit an uncertainty score on training data.
 
         `X` is used as training samples to fit the underlying method,
         while `Y` is an optional parameter that can be used to compute
@@ -129,7 +129,7 @@ class ConfidenceScore(torch.nn.Module, ABC):
 
     @abstractmethod
     def score(self, *args: Any, **kwargs: Any) -> torch.Tensor:
-        """Calculate the confidence score for a tensor of samples.
+        """Calculate the uncertainty score for a tensor of samples.
 
         Returns scores where low values indicate likely inliers and high values
         indicate likely outliers.
@@ -137,7 +137,7 @@ class ConfidenceScore(torch.nn.Module, ABC):
 
     @abstractmethod
     def select(self, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor]:
-        """Select samples for prediction based on their confidence score.
+        """Select samples for prediction based on their uncertainty score.
 
         Samples with scores lower than the threshold are selected for prediction,
         while samples with scores higher than the threshold are excluded.
@@ -145,16 +145,16 @@ class ConfidenceScore(torch.nn.Module, ABC):
         Returns
         -------
         dict[str, torch.Tensor]
-            A dict with keys `'score'` (raw confidence scores) and
+            A dict with keys `'score'` (raw uncertainty scores) and
             `'selected'` (boolean selection mask).
         """
 
     def plot(
         self, query_scores: torch.Tensor | None = None, bins: int = 100
     ) -> None:
-        """Plot densities for confidence scores.
+        """Plot densities for uncertainty scores.
 
-        By default, this method plots densities for the confidence scores.
+        By default, this method plots densities for the uncertainty scores.
         Optionally, it can also plot densities for `query_scores`.
 
         Parameters
@@ -242,8 +242,8 @@ class ConfidenceScore(torch.nn.Module, ABC):
             )
 
         # Add labels and legend
-        plt.title("Confidence Score Densities")
-        plt.xlabel("Confidence Score")
+        plt.title("Uncertainty Score Densities")
+        plt.xlabel("Uncertainty Score")
         plt.ylabel("Density")
         plt.legend()
         plt.grid(True, linestyle="--", alpha=0.6)
@@ -252,18 +252,17 @@ class ConfidenceScore(torch.nn.Module, ABC):
         plt.show()
 
 
-class RandomScore(ConfidenceScore):
-    """Returns random confidence scores per sample.
+class RandomScore(UncertaintyScore):
+    """Returns random uncertainty scores per sample.
 
     This score assigns a random float in `[0, 1]` to each sample.
-    It is useful as a baseline or for testing purposes. Low scores
-    indicate likely inliers, high scores indicate likely outliers.
+    It is useful as a baseline or for testing purposes.
     By default, the threshold is set to `0.99`, so approximately
     99% of samples are selected.
 
     See Also
     --------
-    `scores.ConfidenceScore`
+    `scores.UncertaintyScore`
     """
 
     train_required: bool = False
@@ -284,7 +283,7 @@ class RandomScore(ConfidenceScore):
     @override
     @torch.inference_mode()
     def score(self, X: torch.Tensor) -> torch.Tensor:
-        """Compute a random confidence score for every sample in a batch.
+        """Compute a random uncertainty score for every sample in a batch.
 
         Returns random scores where low values indicate likely inliers and
         high values indicate likely outliers.
@@ -313,7 +312,7 @@ class RandomScore(ConfidenceScore):
     @override
     @torch.inference_mode()
     def select(self, X: torch.Tensor) -> dict[str, torch.Tensor]:
-        """Select samples for prediction based on their random confidence score.
+        """Select samples for prediction based on their random uncertainty score.
 
         Samples with scores lower than the threshold are selected for prediction.
 

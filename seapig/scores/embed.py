@@ -1,4 +1,4 @@
-"""Abstract Base Method for embeddings based confidence scores."""
+"""Abstract Base Method for embeddings based uncertainty scores."""
 
 import inspect
 import warnings
@@ -10,7 +10,7 @@ import torch
 from torch.utils.data import DataLoader
 from typing_extensions import override
 
-from seapig.scores.base import ConfidenceScore
+from seapig.scores.base import UncertaintyScore
 from seapig.scores.utils import TensorPCA
 from seapig.utils import get_logger
 from seapig.utils.progress import track
@@ -18,8 +18,8 @@ from seapig.utils.progress import track
 logger = get_logger(__name__)
 
 
-class EmbeddingScore(ConfidenceScore, ABC):
-    """Base class for embedding-based confidence scores.
+class EmbeddingScore(UncertaintyScore, ABC):
+    """Base class for embedding-based uncertainty scores.
 
     Embedding-based scores quantify deviation from the training distribution using
     latent-space embeddings. Low scores indicate samples similar to the training
@@ -40,13 +40,13 @@ class EmbeddingScore(ConfidenceScore, ABC):
     cal_embeddings : torch.Tensor or None
         Embeddings of validation/calibration samples. Optional.
     scores : torch.Tensor or None
-        Confidence scores of the calibration (or training) samples.
+        Uncertainty scores of the calibration (or training) samples.
     threshold : torch.Tensor or None
         Rejection threshold. Samples with scores above this value are excluded.
 
     See Also
     --------
-    `scores.ConfidenceScore`
+    `scores.UncertaintyScore`
     `scores.KNNScore`
     `scores.PCAScore`
     `scores.PyODScore`
@@ -79,7 +79,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
     @staticmethod
     def _check_model(model: torch.nn.Module) -> None:
-        """Check a model for compatibility with embeddings-based confidence scores."""
+        """Check a model for compatibility with embeddings-based uncertainty scores."""
         assert isinstance(model, torch.nn.Module)
         if not callable(model.embed):
             raise Exception("model is required to have a `.embed()` method.")
@@ -228,7 +228,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         outdir: Path | None = None,
         prefix: str | None = None,
     ) -> None:
-        """Train a confidence score based on sample embeddings.
+        """Train a uncertainty score based on sample embeddings.
 
         This method supports two usage modes:
 
@@ -319,7 +319,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
     @override
     def set_threshold(self, q: float = 0.99) -> None:
-        """Set a threshold based on a quantile of the available confidence scores.
+        """Set a threshold based on a quantile of the available uncertainty scores.
 
         Samples with scores higher than the threshold are excluded from prediction.
         If calibration embeddings were provided during `fit`, the threshold is
@@ -348,7 +348,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         outdir: Path | None = None,
         prefix: str | None = None,
     ) -> torch.Tensor:
-        """Compute confidence scores for query samples.
+        """Compute uncertainty scores for query samples.
 
         This method supports two usage modes:
 
@@ -390,7 +390,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         Returns
         -------
         torch.Tensor
-            1-D tensor of shape `(N,)` with confidence scores.
+            1-D tensor of shape `(N,)` with uncertainty scores.
             Low values indicate likely inliers, high values indicate likely outliers.
         """
         # Validate parameter combinations
@@ -430,9 +430,9 @@ class EmbeddingScore(ConfidenceScore, ABC):
             return self._score_embeddings(embeddings)
 
     def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
-        """Compute confidence scores based on query embeddings.
+        """Compute uncertainty scores based on query embeddings.
 
-        This method should be implemented by subclasses to compute confidence
+        This method should be implemented by subclasses to compute uncertainty
         scores based on the query embeddings `X`. The base class does not
         implement any specific scoring logic, as this will depend on the
         particular method (e.g., k-nearest neighbors, PyOD scores, etc.).
@@ -445,7 +445,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         Returns
         -------
         torch.Tensor
-            A `torch.Tensor` with confidence scores for each query sample.
+            A `torch.Tensor` with uncertainty scores for each query sample.
             Low scores indicate likely inliers, high scores indicate likely outliers.
         """
         raise NotImplementedError(
@@ -462,7 +462,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         outdir: Path | None = None,
         prefix: str | None = None,
     ) -> dict[str, torch.Tensor]:
-        """Select samples for prediction based on their confidence score.
+        """Select samples for prediction based on their uncertainty score.
 
         This method supports two usage modes:
 
@@ -472,7 +472,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
 
         You must use either embeddings (X) OR model+loader, but not both.
 
-        Samples are selected based on their confidence score relative to a
+        Samples are selected based on their uncertainty score relative to a
         threshold. Samples with scores lower than the threshold are selected,
         while samples with scores higher than the threshold are excluded. The
         threshold should be calibrated beforehand (e.g., on validation samples).
@@ -511,7 +511,7 @@ class EmbeddingScore(ConfidenceScore, ABC):
         Returns
         -------
         dict[str, torch.Tensor]
-            A dict with keys `'score'` (confidence scores) and `'selected'`
+            A dict with keys `'score'` (uncertainty scores) and `'selected'`
             (boolean mask where `True` means the sample is selected).
         """
         if self.train_required:

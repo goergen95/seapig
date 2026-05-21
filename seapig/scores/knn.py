@@ -1,4 +1,4 @@
-"""KNN-based confidence scores."""
+"""KNN-based uncertainty scores."""
 
 import warnings
 from abc import ABC, abstractmethod
@@ -18,11 +18,11 @@ __all__ = ["KNNScore", "EuclideanScore", "CosineScore", "MahalanobisScore"]
 
 
 class KNNScore(EmbeddingScore, ABC):
-    """Abstract base class for KNN distance-based confidence scores.
+    """Abstract base class for KNN distance-based uncertainty scores.
 
-    Computes distance-based confidence scores where low scores indicate samples
-    similar to the training distribution (likely inliers) and high scores indicate
-    samples deviating from the training distribution (likely outliers).
+    Computes distance-based uncertainty scores where low scores indicate samples
+    similar to the training distribution (low uncertainty) and high scores indicate
+    samples deviating from the training distribution (high uncertainty).
 
     Parameters
     ----------
@@ -85,7 +85,7 @@ class KNNScore(EmbeddingScore, ABC):
         prefix: str | None = None,
         q: bool | float = False,
     ) -> None:
-        """Train a confidence score based on sample embeddings.
+        """Train a uncertainty score based on sample embeddings.
 
         This method supports two usage modes:
 
@@ -170,11 +170,11 @@ class KNNScore(EmbeddingScore, ABC):
 
     @override
     def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
-        """Compute a confidence score based on sample embeddings.
+        """Compute an uncertainty score based on sample embeddings.
 
-        Returns scores where low values indicate likely inliers (samples similar
-        to training) and high values indicate likely outliers (samples deviating
-        from training).
+        Returns scores where low values indicate samples similar
+        to the training data (low uncertainty) and high values indicate samples deviating
+        from training data (high uncertainty).
 
         Parameters
         ----------
@@ -371,9 +371,9 @@ class KNNScore(EmbeddingScore, ABC):
 class EuclideanScore(KNNScore):
     """Returns the KNN-distance based on the Euclidean distance to the nearest samples.
 
-    Computes Euclidean distance-based confidence scores where low scores indicate
-    samples similar to the training distribution (likely inliers) and high scores
-    indicate samples deviating from the training distribution (likely outliers).
+    Computes Euclidean distance-based uncertainty scores where low scores indicate
+    samples similar to the training distribution (low uncertainty) and high scores
+    indicate samples deviating from the training distribution (high uncertainty).
 
     Parameters
     ----------
@@ -435,9 +435,9 @@ class EuclideanScore(KNNScore):
 class CosineScore(KNNScore):
     """Returns the KNN-distance based on the cosine distance to the nearest samples.
 
-    Computes cosine distance-based confidence scores where low scores indicate
-    samples similar to the training distribution (likely inliers) and high scores
-    indicate samples deviating from the training distribution (likely outliers).
+    Computes cosine distance-based uncertainty scores where low scores indicate
+    samples similar to the training distribution (low uncertainty) and high scores
+    indicate samples deviating from the training distribution (high uncertainty).
 
     The cosine distance is computed as `(1 - cosine_similarity)`, with a range
     of `[0, 2]` where `0` indicates identical vectors, `1` indicates orthogonal
@@ -503,9 +503,9 @@ class CosineScore(KNNScore):
 class MahalanobisScore(KNNScore):
     """Returns the Mahalanobis distance to the training samples distribution.
 
-    Computes Mahalanobis distance-based confidence scores where low scores indicate
-    samples similar to the training distribution (likely inliers) and high scores
-    indicate samples deviating from the training distribution (likely outliers).
+    Computes Mahalanobis distance-based uncertainty scores where low scores indicate
+    samples similar to the training distribution (low uncertainty) and high scores
+    indicate samples deviating from the training distribution (high uncertainty).
 
     The Mahalanobis distance accounts for correlations in the training data by
     whitening the embeddings with the Cholesky factor of the training covariance

@@ -5,10 +5,10 @@ import pytest
 import torch
 
 from seapig.scores import EuclideanScore, RandomScore
-from seapig.scores.base import ConfidenceScore
+from seapig.scores.base import UncertaintyScore
 
 
-class Dummy(ConfidenceScore):
+class Dummy(UncertaintyScore):
     def fit(
         self,
         X: torch.Tensor | None = None,

@@ -1,8 +1,8 @@
-"""Selective inference wrapper combining a LightningModule with a ConfidenceScore.
+"""Selective inference wrapper combining a LightningModule with a UncertaintyScore.
 
 This module provides SelectiveInferenceTask, a thin wrapper that runs a pre-trained
-LightningModule in inference mode, computes a confidence/selection score from the
-model's embeddings using a ConfidenceScore, and returns predictions augmented with
+LightningModule in inference mode, computes a uncertainty score from the
+model's embeddings using a UncertaintyScore, and returns predictions augmented with
 selection results. The wrapper can also update and log selective metrics during
 testing.
 """
@@ -17,7 +17,7 @@ from torchmetrics import Metric, MetricCollection
 
 from seapig.metric import RiskCoverageMetric, SelectiveMetric
 from seapig.risk import RiskCoverage
-from seapig.scores.base import ConfidenceScore
+from seapig.scores.base import UncertaintyScore
 
 INPUT_KEYS = Literal["image", "input", "images", "inputs", "x"]
 TARGET_KEYS = Literal[
@@ -29,7 +29,7 @@ class SelectiveInferenceTask(LightningModule):
     """Wrap a trained `LightningModule` to attach selection results during inference.
 
     The wrapper calls the wrapped model in inference mode and combines its
-    predictions with selection outputs produced by a provided `ConfidenceScore`.
+    predictions with selection outputs produced by a provided `UncertaintyScore`.
 
     Key behavior:
 
@@ -50,7 +50,7 @@ class SelectiveInferenceTask(LightningModule):
         A trained `LightningModule` whose `forward(x)` returns predictions. The
         module must implement `embed(x)` to produce embeddings for scoring.
     score
-        A seapig `ConfidenceScore` instance providing the `ConfidenceScore.select` method.
+        A seapig `UncertaintyScore` instance providing the `UncertaintyScore.select` method.
     input_key
         Key used to extract inputs from an incoming batch. If `None` (default),
         the first element of the batch is used (positional index 0). When a
@@ -85,7 +85,7 @@ class SelectiveInferenceTask(LightningModule):
     def __init__(
         self,
         task: LightningModule,
-        score: ConfidenceScore,
+        score: UncertaintyScore,
         acc_test_outputs: bool = False,
         input_key: INPUT_KEYS | None = None,
         target_key: TARGET_KEYS | None = None,
@@ -97,8 +97,8 @@ class SelectiveInferenceTask(LightningModule):
         )
         self.task = copy.deepcopy(task)
         self.task.eval()  # Keep the wrapped task in evaluation mode
-        assert isinstance(score, ConfidenceScore), (
-            "score must be a seapig ConfidenceScore instance"
+        assert isinstance(score, UncertaintyScore), (
+            "score must be a seapig UncertaintyScore instance"
         )
         self.score = score
         if input_key is not None and input_key not in get_args(INPUT_KEYS):

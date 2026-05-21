@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 # https://packaging.python.org/en/latest/specifications/declaring-project-metadata/
 [project]
 name = "seapig"
-description = "Selective prediction based on confidence scores"
+description = "Selective prediction based on uncertainty scores"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.11"
 license = "MIT"
@@ -18,7 +18,7 @@ authors = [
 maintainers = [
     {name = "Darius A. Görgen", email = "info@dariusgoergen.com"},
 ]
-keywords = ["pytorch", "remote sensing", "area of applicability", "confidence scoring", "selective prediction"]
+keywords = ["pytorch", "remote sensing", "area of applicability", "uncertainty scoring", "confidence scoring", "selective prediction"]
 
 classifiers = [
     "Development Status :: 3 - Alpha",

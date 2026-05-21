@@ -1,5 +1,5 @@
 # python
-"""Logit-derived confidence score base class.
+"""Logit-derived uncertainty score base class.
 
 Provides helpers for scores computed from model logits (pre-softmax
 outputs): stable softmax, entropy, margin, max-logit, and
@@ -17,12 +17,12 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from typing_extensions import override
 
-from seapig.scores.base import ConfidenceScore
+from seapig.scores.base import UncertaintyScore
 from seapig.utils.progress import track
 
 
-class LogitScore(ConfidenceScore, abc.ABC):
-    """Base class for logit-based confidence scores.
+class LogitScore(UncertaintyScore, abc.ABC):
+    """Base class for logit-based uncertainty scores.
 
     Supports multiclass, binary (single/two-logit), and multilabel tasks.
     Handles temperature fitting and input normalization for all cases.
@@ -81,7 +81,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
 
     @staticmethod
     def _check_model(model: torch.nn.Module) -> None:
-        """Check if the model is compatible with logits-based confidence scores.
+        """Check if the model is compatible with logits-based uncertainty scores.
 
         Parameters
         ----------
@@ -200,7 +200,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
 
     @abc.abstractmethod
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
-        """Compute confidence scores for query logits.
+        """Compute uncertainty scores for query logits.
 
         Parameters
         ----------
@@ -210,12 +210,12 @@ class LogitScore(ConfidenceScore, abc.ABC):
         Returns
         -------
         torch.Tensor
-            1-D tensor of shape `(M,)`. Lower values indicate higher confidence.
+            1-D tensor of shape `(M,)`. Lower values indicate lower uncertainty.
         """
         raise NotImplementedError()
 
     def select(self, query_logits: torch.Tensor) -> dict[str, torch.Tensor]:
-        """Select samples for prediction based on their confidence score.
+        """Select samples for prediction based on their uncertainty score.
 
         Samples with scores lower than the threshold are selected for prediction,
         while samples with scores higher than the threshold are excluded.
@@ -228,7 +228,7 @@ class LogitScore(ConfidenceScore, abc.ABC):
         Returns
         -------
         dict[str, torch.Tensor]
-            A dict with keys `'score'` (confidence scores) and `'selected'`
+            A dict with keys `'score'` (uncertainty scores) and `'selected'`
             (boolean mask where `True` means the sample is selected).
         """
         if self.threshold is None:
@@ -523,10 +523,10 @@ class LogitScore(ConfidenceScore, abc.ABC):
 
 
 class SoftmaxScore(LogitScore):
-    """Maximum softmax probability confidence score.
+    """Maximum softmax probability uncertainty score.
 
     Supports multiclass, binary (single/two-logit), and multilabel tasks.
-    Higher maximum softmax probability indicates higher confidence (lower score).
+    Higher maximum softmax probability indicates higher uncertainty (higher score).
 
     Parameters
     ----------
@@ -562,17 +562,22 @@ class SoftmaxScore(LogitScore):
 
     @override
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
-        """Compute task-aware softmax-based confidence score.
+        """Compute task-aware softmax-based uncertainty score.
 
         For multiclass: -max softmax probability.
         For binary single-logit: -sigmoid(|logit|).
         For binary two-logit: -max softmax probability.
         For multilabel: -min(max(p, 1-p)), where p = sigmoid(logit).
 
+        Parameters
+        ----------
+        query_logits : torch.Tensor
+            Logits for samples to score. Shape depends on task.
+
         Returns
         -------
         torch.Tensor
-            1-D tensor of shape (M,) with scores (lower == more confident).
+            1-D tensor of shape `(M,)`. Lower values indicate lower uncertainty.
         """
         T = 1.0 if self.temperature is None else float(self.temperature)
         task = self.task
@@ -596,11 +601,10 @@ class SoftmaxScore(LogitScore):
 
 
 class EnergyScore(LogitScore):
-    """Energy-based confidence score.
+    """Energy-based uncertainty score.
 
-    Computes the free energy of the logit distribution. Lower energy (more
-    negative) indicates higher confidence. Supports multiclass, binary, and
-    multilabel tasks.
+    Computes the free energy of the logit distribution. Lower energy indicates
+    lower uncertainty. Supports multiclass, binary, and multilabel tasks.
 
     Parameters
     ----------
@@ -638,36 +642,39 @@ class EnergyScore(LogitScore):
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
         """Compute energy for query logits (task-aware).
 
-        Returns a 1-D tensor of shape (M,) where lower values are more
-        confident.
+        Parameters
+        ----------
+        query_logits : torch.Tensor
+            Logits for samples to score. Shape depends on task.
+
+        Returns
+        -------
+        torch.Tensor
+            1-D tensor of shape `(M,)`. Lower values indicate lower uncertainty.
         """
         T = 1.0 if self.temperature is None else float(self.temperature)
         task = self.task
         logits = query_logits
         if task == "multiclass":
-            # -T * logsumexp(logits / T)
             return -(logits / T).logsumexp(dim=1) * T
         elif task == "binary":
             if self._is_binary_single_logit(logits):
-                # we take abs(logits) to ensure energy is low for confident
-                # predictions in  either direction
                 return -T * F.softplus(torch.abs(logits) / T)
             else:
                 # two-logit: same as multiclass
                 return -(logits / T).logsumexp(dim=1) * T
         elif task == "multilabel":
-            # Sum of per-label free energies: -T * sum(softplus(logit/T))
             return -T * F.softplus(logits / T).sum(dim=1)
         else:
             raise ValueError(f"Unknown task: {task}")
 
 
 class MarginScore(LogitScore):
-    """Top-two margin confidence score.
+    """Top-two margin uncertainty score.
 
     Computes the difference between the top-two logits. A larger margin
-    indicates higher confidence (lower score). Supports multiclass,
-    binary (single/two-logit), and multilabel tasks.
+    indicates lower uncertainty. Supports multiclass, binary (single/two-logit),
+    and multilabel tasks.
 
     Parameters
     ----------
@@ -703,17 +710,22 @@ class MarginScore(LogitScore):
 
     @override
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
-        """Compute task-aware margin-based confidence score.
+        """Compute task-aware margin-based uncertainty score.
 
         For multiclass: negative top-two margin.
         For binary single-logit: negative absolute logit.
         For binary two-logit: negative top-two margin.
         For multilabel: negative min(|logit|).
 
+        Parameters
+        ----------
+        query_logits : torch.Tensor
+            Logits for samples to score. Shape depends on task.
+
         Returns
         -------
         torch.Tensor
-            1-D tensor of shape (M,) with scores (lower == more confident).
+            1-D tensor of shape `(M,)`. Lower values indicate lower uncertainty.
         """
         T = 1.0 if self.temperature is None else float(self.temperature)
         task = self.task
@@ -738,10 +750,10 @@ class MarginScore(LogitScore):
 
 
 class EntropyScore(LogitScore):
-    """Entropy-based confidence score.
+    """Entropy-based uncertainty score.
 
-    Computes the predictive entropy of the output distribution. Higher entropy
-    indicates higher uncertainty (higher score). Supports multiclass, binary,
+    Computes the predictive entropy of the output distribution. Lower entropy
+    indicates lower uncertainty. Supports multiclass, binary,
     and multilabel tasks.
 
     Parameters
@@ -780,10 +792,15 @@ class EntropyScore(LogitScore):
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
         """Compute predictive entropy for each sample (task-aware).
 
+        Parameters
+        ----------
+        query_logits : torch.Tensor
+            Logits for samples to score. Shape depends on task.
+
         Returns
         -------
         torch.Tensor
-            1-D tensor of shape (M,) with entropy scores (lower == more confident).
+            1-D tensor of shape `(M,)`. Lower values indicate lower uncertainty.
         """
         T = 1.0 if self.temperature is None else float(self.temperature)
         task = self.task
