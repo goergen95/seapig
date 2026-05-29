@@ -1,5 +1,5 @@
 quarto-cli
-great-docs>=0.10.0
+great-docs>=0.12.0
 ipykernel
 ipywidgets
 importlib_metadata
