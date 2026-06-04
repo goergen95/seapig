@@ -162,7 +162,8 @@ class SelectiveInferenceTask(LightningModule):
     def _select(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         """Compute selection mask from inputs."""
         assert callable(self.task.embed)
-        embs: torch.Tensor = self.task.embed(x)
+        embs = self.task.embed(x)
+        assert isinstance(embs, torch.Tensor)
         selection = self.score.select(embs)
         return selection
 
