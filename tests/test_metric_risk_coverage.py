@@ -266,7 +266,7 @@ def test_risk_coverage_metric_no_data_returns_zeros_and_reset_behavior() -> (
         assert torch.isfinite(out[k]).all()
 
     curve = rcm.get_curve()
-    assert curve is not None
+    assert isinstance(curve, RiskCoverage)
     # the stored curve's AUC should match the compute() output (within tolerance)
     assert math.isclose(
         float(out["rc/auc_empirical"]), float(curve.auc_empirical), rel_tol=1e-6
