@@ -38,6 +38,8 @@ jobs:
         uses: quarto-dev/quarto-actions/setup@v2
 
       - name: Build docs
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: great-docs build
 
       - name: Copy CNAME file
