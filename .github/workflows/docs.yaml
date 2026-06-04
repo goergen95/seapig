@@ -29,7 +29,6 @@ jobs:
       - name: Install dependencies
         run: |
           uv pip install .[all]
-          uv pip install git+https://github.com/posit-dev/great-docs # until 0.10 is released
 
       - name: List dependencies
         run: uv pip list
