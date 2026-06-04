@@ -4,5 +4,5 @@ torch
 torchmetrics
 tqdm
 faiss-cpu
-lightning<=3.6.1
+lightning
 typing_extensions
