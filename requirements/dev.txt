@@ -2,6 +2,6 @@ pytest
 pytest-cov
 pre-commit
 ruff
-ty>=0.0.43
+ty>=0.0.44
 nbmake
 build
