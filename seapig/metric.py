@@ -93,6 +93,12 @@ class SelectiveMetric(Metric):
         selected : torch.Tensor
             Boolean or binary selection mask of shape (B,). Values > 0 are treated as selected.
         """
+        device = preds.device
+        target = target.to(device)
+        selected = selected.to(device)
+        for k in self.metrics:
+            self.metrics[k] = self.metrics[k].to(preds.device)
+
         assert preds.shape[0] == target.shape[0] == selected.shape[0], (
             "Batch size of predictions, target, and selection mask must match."
         )
