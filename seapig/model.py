@@ -17,7 +17,7 @@ from torchmetrics import Metric, MetricCollection
 
 from seapig.metric import RiskCoverageMetric, SelectiveMetric
 from seapig.risk import RiskCoverage
-from seapig.scores.base import UncertaintyScore
+from seapig.scores import EmbeddingScore, LogitScore, UncertaintyScore
 
 INPUT_KEYS = Literal["image", "input", "images", "inputs", "x"]
 TARGET_KEYS = Literal[
@@ -161,10 +161,17 @@ class SelectiveInferenceTask(LightningModule):
 
     def _select(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         """Compute selection mask from inputs."""
-        assert callable(self.task.embed)
-        embs = self.task.embed(x)
-        assert isinstance(embs, torch.Tensor)
-        selection = self.score.select(embs)
+        if isinstance(self.score, EmbeddingScore):
+            assert callable(self.task.embed)
+            _x = self.task.embed(x)
+        elif isinstance(self.score, LogitScore):
+            assert callable(self.task.logits)
+            _x = self.task.logits(x)
+        else:
+            _x = x
+
+        assert isinstance(_x, torch.Tensor)
+        selection = self.score.select(_x)
         return selection
 
     @torch.inference_mode()
