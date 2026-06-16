@@ -74,7 +74,6 @@ def test_plot_method(include_query: bool) -> None:
 
 
 def test_flag_methods_and_setters() -> None:
-
     dummy = Dummy()
     # defaults
     assert dummy.requires_training() is False

@@ -294,7 +294,7 @@ class RiskCoverageMetric(Metric):
     def _default_error_fn(
         preds: torch.Tensor, target: torch.Tensor
     ) -> torch.Tensor:
-        """Default error function used when no custom ``error_fn`` or ``error_metric`` is provided."""
+        """Calculate default error function used when no custom ``error_fn`` or ``error_metric`` is provided."""
         # Cast to float to support integer inputs (e.g., class labels)
         preds_f = preds.to(dtype=torch.float32)
         target_f = target.to(dtype=torch.float32)
