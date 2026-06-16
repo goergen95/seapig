@@ -111,7 +111,7 @@ class UncertaintyScore(torch.nn.Module, ABC):
             raise ValueError(
                 "Calibration scores (scores) must be available to set a threshold."
             )
-        qval = torch.quantile(self.scores, q=q)
+        qval = torch.nanquantile(self.scores, q=q)
         self.threshold = qval
         self.set_calibrated()
 
