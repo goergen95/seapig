@@ -255,7 +255,6 @@ def test_fit_model_without_embed_raises(tmp_path: pathlib.Path) -> None:
 def test_score_with_model_loader_writes_and_returns_tensor(
     tmp_path: pathlib.Path,
 ) -> None:
-
     samples = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
     dataset = TensorDataset(samples)
     loader = cast(
