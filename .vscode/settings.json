@@ -12,10 +12,6 @@
     "python.linting.ruffArgs": [
         "--fix"
     ],
-    "python.linting.mypyEnabled": true,
-    "python.linting.mypyArgs": [
-        "--ignore-missing-imports"
-    ],
     "python.terminal.activateEnvInCurrentTerminal": true,
     "python.venvFolders": [
         "env"
@@ -38,7 +34,6 @@
         "linalg",
         "loadorembed",
         "machow",
-        "mypy",
         "nbmake",
         "nosetests",
         "pathlib",
