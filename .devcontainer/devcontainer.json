@@ -1,14 +1,14 @@
 {
   "name": "seapig dev",
-  "image": "ghcr.io/goergen95/seapig:latest",
-  "workspaceFolder": "/workspace/seapig",
-  "remoteUser": "seapig",
-  "updateRemoteUserUID": true,
-  "forwardPorts": [4200, 8888, 8000],
+  "image": "mcr.microsoft.com/devcontainers/python:3.14",
   "hostRequirements": {
     "gpu": "optional"
   },
   "postStartCommand": "uv sync --extra all",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": { "version": "os-provided" },
+    "ghcr.io/devcontainers-extra/features/wget-apt-get:1": { "version": "os-provided" }
+  },
   "customizations": {
     "vscode": {
       "extensions": [
