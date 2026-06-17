@@ -1,7 +1,0 @@
-pytest
-pytest-cov
-pre-commit
-ruff
-ty>=0.0.49
-nbmake
-build

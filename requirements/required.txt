@@ -1,8 +1,0 @@
-numpy
-pandas
-torch
-torchmetrics
-tqdm
-faiss-cpu
-lightning
-typing_extensions
