@@ -1,7 +1,0 @@
-quarto-cli
-great-docs>=0.14.0
-ipykernel
-ipywidgets
-importlib_metadata
-griffe
-torchgeo
