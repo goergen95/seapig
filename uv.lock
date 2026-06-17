@@ -4188,7 +4188,6 @@ dependencies = [
 all = [
     { name = "build" },
     { name = "great-docs" },
-    { name = "griffe" },
     { name = "importlib-metadata" },
     { name = "ipykernel" },
     { name = "ipywidgets" },
@@ -4218,7 +4217,6 @@ dev = [
 ]
 docs = [
     { name = "great-docs" },
-    { name = "griffe" },
     { name = "importlib-metadata" },
     { name = "ipykernel" },
     { name = "ipywidgets" },
@@ -4239,7 +4237,6 @@ requires-dist = [
     { name = "build", marker = "extra == 'dev'" },
     { name = "faiss-cpu" },
     { name = "great-docs", marker = "extra == 'docs'", specifier = ">=0.14.0" },
-    { name = "griffe", marker = "extra == 'docs'" },
     { name = "importlib-metadata", marker = "extra == 'docs'" },
     { name = "ipykernel", marker = "extra == 'docs'" },
     { name = "ipywidgets", marker = "extra == 'docs'" },
