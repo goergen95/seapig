@@ -16,7 +16,7 @@ jobs:
         python-version: ['3.11', '3.12', '3.13']
     steps:
       - name: Clone repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
