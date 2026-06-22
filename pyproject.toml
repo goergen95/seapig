@@ -46,6 +46,7 @@ all = ["seapig[suggested,dev,docs]"]
 suggested = [
     "pyod",
     "umap-learn",
+    "numba",
     "scikit-learn",
     "matplotlib",
     "rich",
