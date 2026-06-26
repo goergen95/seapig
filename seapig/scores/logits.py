@@ -249,6 +249,55 @@ class LogitScore(UncertaintyScore, abc.ABC):
         selected = scores < self.threshold
         return {"score": scores, "selected": selected}
 
+    def _expand_per_member(
+        self, logits: torch.Tensor, labels: torch.Tensor | None
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Expand per-member logits and repeat labels.
+
+        When ``self.per_member`` is ``True`` the logits are expected to have an
+        extra member dimension (e.g. ``(N, C, M)`` for multiclass, ``(N, M)`` for
+        binary single-logit, or ``(N, 2, M)`` for binary two-logit). This helper
+        reshapes the tensors so that the member axis is merged into the batch
+        axis, yielding a flat view suitable for temperature fitting. Labels are
+        repeated ``M`` times to align with the expanded batch dimension.
+        """
+        if not self.per_member:
+            return logits, labels
+        # Determine member count M based on logits shape
+        if logits.ndim == 3:
+            # (N, *, M) – the middle dimension is either C or 2
+            N, dim, M = logits.shape
+            # Move member axis to second position then flatten batch and member
+            logits_exp = logits.permute(0, 2, 1).reshape(-1, dim)
+        elif logits.ndim == 2:
+            # Could be binary single‑logit per‑member (N, M) where M>1
+            if self.task == "binary":
+                N, M = logits.shape
+                logits_exp = logits.reshape(-1)
+            else:
+                raise ValueError(
+                    "per_member=True but logits shape is not supported for the current task"
+                )
+        else:
+            raise ValueError(
+                "per_member=True but logits shape is not supported for the current task"
+            )
+        # Expand labels if provided
+        if labels is None:
+            return logits_exp, None
+        # Number of members is the size of the last dimension of the original logits
+        M = logits.shape[-1] if logits.ndim >= 2 else 1
+        if labels.dim() == 1:
+            labels_exp = labels.repeat_interleave(M)
+        elif labels.dim() == 2:
+            # For multilabel or binary two‑logit labels, repeat rows
+            labels_exp = labels.repeat_interleave(M, dim=0)
+        else:
+            raise ValueError(
+                "labels have unsupported shape for per_member expansion"
+            )
+        return logits_exp, labels_exp
+
     def _fit_temperature(
         self, logits: torch.Tensor, labels: torch.Tensor
     ) -> None:
@@ -261,6 +310,9 @@ class LogitScore(UncertaintyScore, abc.ABC):
         labels : torch.Tensor
             Corresponding labels.
         """
+        # If per_member, flatten tensors so temperature is fitted on all members
+        logits, labels = self._expand_per_member(logits, labels)
+
         if logits.shape[0] == 0:
             raise ValueError("logits must contain at least one sample")
         if logits.shape[0] != labels.shape[0]:
