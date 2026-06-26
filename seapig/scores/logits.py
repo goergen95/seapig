@@ -27,6 +27,10 @@ class LogitScore(UncertaintyScore, abc.ABC):
     Supports multiclass, binary (single/two-logit), and multilabel tasks.
     Handles temperature fitting and input normalization for all cases.
 
+    The ``per_member`` flag enables handling of logits that contain multiple stochastic
+    members per sample (e.g. ensembles or MC-dropout). When `True`, score methods
+    compute the metric for each member and return the mean across the member axis.
+
     Parameters
     ----------
     temperature : float or None, default None
@@ -35,6 +39,9 @@ class LogitScore(UncertaintyScore, abc.ABC):
     task : {'multiclass', 'binary', 'multilabel'}, default 'multiclass'
         Type of classification task. Determines score computation and
         temperature fitting loss.
+    per_member : bool, default False
+        If `True`, logits are expected to have a member dimension (e.g. for ensembles or MC-dropout).
+        Score methods will compute the score for each member and return the mean across members
 
     Notes
     -----
@@ -69,7 +76,10 @@ class LogitScore(UncertaintyScore, abc.ABC):
     task: str
 
     def __init__(
-        self, temperature: float | None = None, task: str = "multiclass"
+        self,
+        temperature: float | None = None,
+        task: str = "multiclass",
+        per_member: bool = False,
     ) -> None:
         super().__init__()
         self.register_buffer("logits", None)
@@ -78,6 +88,7 @@ class LogitScore(UncertaintyScore, abc.ABC):
             None if temperature is None else float(temperature)
         )
         self.task = task
+        self.per_member: bool = bool(per_member)
 
     @staticmethod
     def _check_model(model: torch.nn.Module) -> None:
@@ -238,8 +249,57 @@ class LogitScore(UncertaintyScore, abc.ABC):
         selected = scores < self.threshold
         return {"score": scores, "selected": selected}
 
+    def _expand_per_member(
+        self, logits: torch.Tensor, labels: torch.Tensor | None
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Expand per-member logits and repeat labels.
+
+        When ``self.per_member`` is ``True`` the logits are expected to have an
+        extra member dimension (e.g. ``(N, C, M)`` for multiclass, ``(N, M)`` for
+        binary single-logit, or ``(N, 2, M)`` for binary two-logit). This helper
+        reshapes the tensors so that the member axis is merged into the batch
+        axis, yielding a flat view suitable for temperature fitting. Labels are
+        repeated ``M`` times to align with the expanded batch dimension.
+        """
+        if not self.per_member:
+            return logits, labels
+        # Determine member count M based on logits shape
+        if logits.ndim == 3:
+            # (N, *, M) – the middle dimension is either C or 2
+            N, dim, M = logits.shape
+            # Move member axis to second position then flatten batch and member
+            logits_exp = logits.permute(0, 2, 1).reshape(-1, dim)
+        elif logits.ndim == 2:
+            # Could be binary single‑logit per‑member (N, M) where M>1
+            if self.task == "binary":
+                N, M = logits.shape
+                logits_exp = logits.reshape(-1)
+            else:
+                raise ValueError(
+                    "per_member=True but logits shape is not supported for the current task"
+                )
+        else:
+            raise ValueError(
+                "per_member=True but logits shape is not supported for the current task"
+            )
+        # Expand labels if provided
+        if labels is None:
+            return logits_exp, None
+        # Number of members is the size of the last dimension of the original logits
+        M = logits.shape[-1] if logits.ndim >= 2 else 1
+        if labels.dim() == 1:
+            labels_exp = labels.repeat_interleave(M)
+        elif labels.dim() == 2:
+            # For multilabel or binary two‑logit labels, repeat rows
+            labels_exp = labels.repeat_interleave(M, dim=0)
+        else:
+            raise ValueError(
+                "labels have unsupported shape for per_member expansion"
+            )
+        return logits_exp, labels_exp
+
     def _fit_temperature(
-        self, logits: torch.Tensor, labels: torch.Tensor
+        self, logits: torch.Tensor, labels: torch.Tensor | None
     ) -> None:
         """Fit scalar temperature by minimizing validation NLL.
 
@@ -250,6 +310,9 @@ class LogitScore(UncertaintyScore, abc.ABC):
         labels : torch.Tensor
             Corresponding labels.
         """
+        # If per_member, flatten tensors so temperature is fitted on all members
+        logits, labels = self._expand_per_member(logits, labels)
+
         if logits.shape[0] == 0:
             raise ValueError("logits must contain at least one sample")
         if logits.shape[0] != labels.shape[0]:
@@ -556,9 +619,14 @@ class SoftmaxScore(LogitScore):
     ident: str = "softmax"
 
     def __init__(
-        self, temperature: float | None = None, task: str = "multiclass"
+        self,
+        temperature: float | None = None,
+        task: str = "multiclass",
+        per_member: bool = False,
     ) -> None:
-        super().__init__(temperature=temperature, task=task)
+        super().__init__(
+            temperature=temperature, task=task, per_member=per_member
+        )
 
     @override
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
@@ -582,6 +650,22 @@ class SoftmaxScore(LogitScore):
         T = 1.0 if self.temperature is None else float(self.temperature)
         task = self.task
         logits = query_logits
+        if self.per_member:
+            if logits.ndim == 3:
+                # Shape (N, C, M)
+                if task == "multiclass" or task == "binary":
+                    probs = F.softmax(logits / T, dim=1)
+                    scores = -probs.amax(dim=1)  # (N, M)
+                    return scores.mean(dim=1)
+                elif task == "multilabel":
+                    p = torch.sigmoid(logits / T)
+                    max_p = torch.maximum(p, 1 - p)
+                    scores = -max_p.min(dim=1).values  # (N, M)
+                    return scores.mean(dim=1)
+            elif logits.ndim == 2 and task == "binary":
+                p = torch.sigmoid(logits.abs() / T)
+                scores = -p  # (N, M)
+                return scores.mean(dim=1)
         if task == "multiclass":
             probs = F.softmax(logits / T, dim=1)
             return -probs.amax(dim=1)
@@ -634,9 +718,14 @@ class EnergyScore(LogitScore):
     ident: str = "energy"
 
     def __init__(
-        self, temperature: float | None = None, task: str = "multiclass"
+        self,
+        temperature: float | None = None,
+        task: str = "multiclass",
+        per_member: bool = False,
     ) -> None:
-        super().__init__(temperature=temperature, task=task)
+        super().__init__(
+            temperature=temperature, task=task, per_member=per_member
+        )
 
     @override
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
@@ -655,6 +744,14 @@ class EnergyScore(LogitScore):
         T = 1.0 if self.temperature is None else float(self.temperature)
         task = self.task
         logits = query_logits
+        if self.per_member:
+            if logits.ndim == 3:
+                # (N, C, M)
+                energies = -(logits / T).logsumexp(dim=1) * T  # (N, M)
+                return energies.mean(dim=1)
+            elif logits.ndim == 2 and task == "binary":
+                energies = -T * F.softplus(torch.abs(logits) / T)  # (N, M)
+                return energies.mean(dim=1)
         if task == "multiclass":
             return -(logits / T).logsumexp(dim=1) * T
         elif task == "binary":
@@ -704,9 +801,14 @@ class MarginScore(LogitScore):
     ident: str = "margin"
 
     def __init__(
-        self, temperature: float | None = None, task: str = "multiclass"
+        self,
+        temperature: float | None = None,
+        task: str = "multiclass",
+        per_member: bool = False,
     ) -> None:
-        super().__init__(temperature=temperature, task=task)
+        super().__init__(
+            temperature=temperature, task=task, per_member=per_member
+        )
 
     @override
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
@@ -731,6 +833,14 @@ class MarginScore(LogitScore):
         task = self.task
         logits = query_logits
         scaled = logits / T
+        if self.per_member:
+            if logits.ndim == 3:
+                # (N, C, M)
+                top2 = scaled.topk(k=2, dim=1).values  # (N, 2, M)
+                margin = top2[:, 0, :] - top2[:, 1, :]  # (N, M)
+                return -margin.mean(dim=1)
+            elif logits.ndim == 2 and self._is_binary_single_logit(logits):
+                return -logits.abs().mean(dim=1)  # (N, M)
         if task == "multiclass":
             top2 = scaled.topk(k=2, dim=1).values
             margin = top2[:, 0] - top2[:, 1]
@@ -784,9 +894,14 @@ class EntropyScore(LogitScore):
     ident: str = "entropy"
 
     def __init__(
-        self, temperature: float | None = None, task: str = "multiclass"
+        self,
+        temperature: float | None = None,
+        task: str = "multiclass",
+        per_member: bool = False,
     ) -> None:
-        super().__init__(temperature=temperature, task=task)
+        super().__init__(
+            temperature=temperature, task=task, per_member=per_member
+        )
 
     @override
     def score(self, query_logits: torch.Tensor) -> torch.Tensor:
@@ -806,6 +921,30 @@ class EntropyScore(LogitScore):
         task = self.task
         logits = query_logits
         EPS = 1e-12
+        if self.per_member:
+            if logits.ndim == 3:
+                # (N, C, M)
+                if task == "multiclass" or task == "binary":
+                    probs = F.softmax(logits / T, dim=1)  # (N, C, M)
+                    if task == "binary":
+                        p = probs[:, 1, :].clamp(min=EPS, max=1 - EPS)
+                        ent = -(p * torch.log(p) + (1 - p) * torch.log(1 - p))
+                    else:
+                        p = probs.clamp(min=EPS)
+                        ent = -(p * p.log()).sum(dim=1)  # (N, M)
+                    return ent.mean(dim=1)
+                elif task == "multilabel":
+                    p = torch.sigmoid(logits / T)
+                    p = p.clamp(min=EPS, max=1 - EPS)
+                    per_label_entropy = -(
+                        p * torch.log(p) + (1 - p) * torch.log(1 - p)
+                    )
+                    ent = per_label_entropy.max(dim=1).values  # (N, M)
+                    return ent.mean(dim=1)
+            elif logits.ndim == 2 and task == "binary":
+                p = torch.sigmoid(logits / T).clamp(min=EPS, max=1 - EPS)
+                ent = -(p * torch.log(p) + (1 - p) * torch.log(1 - p))
+                return ent.mean(dim=1)
         if task == "multiclass":
             probs = F.softmax(logits / T, dim=1)
             p = probs.clamp(min=EPS)
