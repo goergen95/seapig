@@ -810,6 +810,91 @@ def test_score_shape_mismatch() -> None:
 
 
 def test_fit_temperature_all_same_logits() -> None:
+    """Fit temperature on uniform logits (non-per-member)."""
+    logits = torch.ones(10, 3)
+    labels = torch.zeros(10, dtype=torch.long)
+    score = SoftmaxScore()
+    score.fit(logits, labels)
+    assert score.temperature is not None
+    assert math.isfinite(float(score.temperature))
+    # Existing test remains unchanged
+    # Added per_member temperature fitting tests below
+
+    # Per-member temperature fitting (multiclass)
+    torch.manual_seed(0)
+    N, C, M = 3, 4, 5
+    logits = torch.randn(N, C, M)
+    # Labels per sample
+    labels = torch.arange(N) % C
+    scorer = SoftmaxScore(per_member=True, task="multiclass")
+    # Fit temperature on per-member data
+    scorer._fit_temperature(logits, labels)
+    assert scorer.temperature is not None
+    # Verify that loss after scaling is less than before scaling
+    T = float(scorer.temperature)
+    loss_before = torch.nn.functional.cross_entropy(
+        logits.view(-1, C), labels.repeat_interleave(M)
+    )
+    loss_after = torch.nn.functional.cross_entropy(
+        (logits / T).view(-1, C), labels.repeat_interleave(M)
+    )
+    assert loss_after <= loss_before + 1e-6
+
+    # Per-member temperature fitting (binary single-logit)
+    torch.manual_seed(1)
+    N, M = 4, 3
+    logits_bin = torch.randn(N, M)
+    labels_bin = (
+        (logits_bin > 0).float().mean(dim=1).round().long()
+    )  # dummy labels
+    scorer_bin = SoftmaxScore(per_member=True, task="binary")
+    scorer_bin._fit_temperature(logits_bin, labels_bin)
+    assert scorer_bin.temperature is not None
+    T_bin = float(scorer_bin.temperature)
+    loss_before_bin = torch.nn.functional.binary_cross_entropy_with_logits(
+        logits_bin.view(-1), labels_bin.repeat_interleave(M).float()
+    )
+    loss_after_bin = torch.nn.functional.binary_cross_entropy_with_logits(
+        (logits_bin / T_bin).view(-1), labels_bin.repeat_interleave(M).float()
+    )
+    assert loss_after_bin <= loss_before_bin + 1e-6
+
+    # Per-member temperature fitting (binary two-logit)
+    torch.manual_seed(2)
+    N, M = 3, 4
+    logits_bin2 = torch.randn(N, 2, M)
+    labels_bin2 = torch.randint(0, 2, (N,)).long()
+    scorer_bin2 = SoftmaxScore(per_member=True, task="binary")
+    scorer_bin2._fit_temperature(logits_bin2, labels_bin2)
+    assert scorer_bin2.temperature is not None
+    T_bin2 = float(scorer_bin2.temperature)
+    loss_before_bin2 = torch.nn.functional.cross_entropy(
+        logits_bin2.permute(0, 2, 1).reshape(-1, 2),
+        labels_bin2.repeat_interleave(M),
+    )
+    loss_after_bin2 = torch.nn.functional.cross_entropy(
+        (logits_bin2 / T_bin2).permute(0, 2, 1).reshape(-1, 2),
+        labels_bin2.repeat_interleave(M),
+    )
+    assert loss_after_bin2 <= loss_before_bin2 + 1e-6
+
+    # Per-member temperature fitting (multilabel)
+    torch.manual_seed(3)
+    N, C, M = 2, 3, 2
+    logits_ml = torch.randn(N, C, M)
+    labels_ml = torch.randint(0, 2, (N, C)).float()
+    scorer_ml = SoftmaxScore(per_member=True, task="multilabel")
+    scorer_ml._fit_temperature(logits_ml, labels_ml)
+    assert scorer_ml.temperature is not None
+    T_ml = float(scorer_ml.temperature)
+    loss_before_ml = torch.nn.functional.binary_cross_entropy_with_logits(
+        logits_ml.view(-1, C), labels_ml.repeat_interleave(M, dim=0)
+    )
+    loss_after_ml = torch.nn.functional.binary_cross_entropy_with_logits(
+        (logits_ml / T_ml).view(-1, C), labels_ml.repeat_interleave(M, dim=0)
+    )
+    assert loss_after_ml <= loss_before_ml + 1e-6
+
     logits = torch.ones(10, 3)
     labels = torch.zeros(10, dtype=torch.long)
     score = SoftmaxScore()
