@@ -299,7 +299,7 @@ class LogitScore(UncertaintyScore, abc.ABC):
         return logits_exp, labels_exp
 
     def _fit_temperature(
-        self, logits: torch.Tensor, labels: torch.Tensor
+        self, logits: torch.Tensor, labels: torch.Tensor | None
     ) -> None:
         """Fit scalar temperature by minimizing validation NLL.
 
