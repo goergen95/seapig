@@ -1161,7 +1161,7 @@ wheels = [
 
 [[package]]
 name = "great-docs"
-version = "0.14.0"
+version = "0.14.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -1173,9 +1173,9 @@ dependencies = [
     { name = "requests" },
     { name = "ruff" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d6/1b/1620d56583cd14b3398298f7f72ebc7d2fb68dd427c39d51a2eb6deef11f/great_docs-0.14.0.tar.gz", hash = "sha256:86df097ff11525d352664b7a1beca8f852bc2bae397edc7af46663e4517ad69c", size = 28353775, upload-time = "2026-06-16T14:09:19.67Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/1f/8e56546184763f3bca4d45a1d3455201b1a41c6cdbc6656e04078fa3958a/great_docs-0.14.1.tar.gz", hash = "sha256:891f0461b13143f35515202d06df8abd2a22b2e25a19f04728868bb8f182069e", size = 30994450, upload-time = "2026-06-25T20:59:53.338Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/75/46/662719f5aada86c51bee15da9638e8f4bf8ce746e9e4988dc7b9409b75ed/great_docs-0.14.0-py3-none-any.whl", hash = "sha256:06fb21a33dca4058d9e904df898bf320e811107177a5fba782c7cf0a5fb04f8f", size = 947386, upload-time = "2026-06-16T14:09:18.147Z" },
+    { url = "https://files.pythonhosted.org/packages/60/68/ea67105323646c2c595172a6ec89267fc22a9d5a957ff7ec3f117eb8b6d6/great_docs-0.14.1-py3-none-any.whl", hash = "sha256:b91b569fa3173819b34b2c0fdff4277686ae3ddbe235c8d840445095d0e5fddb", size = 961301, upload-time = "2026-06-25T20:59:50.784Z" },
 ]
 
 [[package]]
