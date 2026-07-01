@@ -219,6 +219,21 @@ def test_margin_score_binary_two_logit():
     assert torch.allclose(result, manual, atol=1e-6)
 
 
+def test_margin_score_per_member_binary_single_logit():
+    logits = torch.tensor([[0.5], [-1.2], [2.0]])
+    scorer = MarginScore(per_member=True, task="binary")
+    result = scorer.score(logits)
+    expected = -logits.abs().mean(dim=1)
+    approx_tensor(result, expected)
+    torch.manual_seed(6)
+    logits = torch.randn(4, 2)
+    scorer = MarginScore(task="binary")
+    result = scorer.score(logits)
+    top2 = logits.topk(2, dim=1).values
+    manual = -(top2[:, 0] - top2[:, 1])
+    assert torch.allclose(result, manual, atol=1e-6)
+
+
 def test_energy_score_binary_single_logit():
     torch.manual_seed(7)
     logits = torch.randn(5)  # (N,)
@@ -244,6 +259,16 @@ def test_energy_score_binary_two_logit():
     top2 = logits.topk(2, dim=1).values
     expect = -(top2[:, 0] - top2[:, 1])
     assert torch.allclose(sc, expect, atol=1e-6)
+
+
+def test_energy_score_per_member_binary() -> None:
+    logits = torch.tensor([[0.5, -1.2], [2.0, -0.3]])
+    score = EnergyScore(per_member=True, task="binary")
+    result = score.score(logits)
+    T = 1.0 if score.temperature is None else float(score.temperature)
+    expected = -T * F.softplus(torch.abs(logits) / T)
+    expected = expected.mean(dim=1)
+    approx_tensor(result, expected)
 
 
 def test_select_uses_threshold(tmp_path: Path) -> None:
