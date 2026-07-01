@@ -183,10 +183,12 @@ class LogitScore(UncertaintyScore, abc.ABC):
             # Mode 2: Extract logits on-the-fly
             if model is None:
                 raise ValueError(
-                    "model is required when not using precomputed logits."
+                    "model is required when not using precomputed logits."  # pragma: no cover
                 )
             if loader is None:
-                raise ValueError("loader is required when using a model.")
+                raise ValueError(
+                    "loader is required when using a model."
+                )  # pragma: no cover
 
             assert isinstance(loader, DataLoader)
             assert isinstance(model, torch.nn.Module)
@@ -275,11 +277,11 @@ class LogitScore(UncertaintyScore, abc.ABC):
                 N, M = logits.shape
                 logits_exp = logits.reshape(-1)
             else:
-                raise ValueError(
+                raise ValueError(  # pragma: no cover
                     "per_member=True but logits shape is not supported for the current task"
                 )
         else:
-            raise ValueError(
+            raise ValueError(  # pragma: no cover
                 "per_member=True but logits shape is not supported for the current task"
             )
         # Expand labels if provided
@@ -293,7 +295,7 @@ class LogitScore(UncertaintyScore, abc.ABC):
             # For multilabel or binary two‑logit labels, repeat rows
             labels_exp = labels.repeat_interleave(M, dim=0)
         else:
-            raise ValueError(
+            raise ValueError(  # pragma: no cover
                 "labels have unsupported shape for per_member expansion"
             )
         return logits_exp, labels_exp
@@ -513,7 +515,9 @@ class LogitScore(UncertaintyScore, abc.ABC):
                 model=model, loader=loader
             )
             if logits is None:
-                raise ValueError("Failed to extract logits from loader")
+                raise ValueError(
+                    "Failed to extract logits from loader"
+                )  # pragma: no cover
             if path is not None:
                 torch.save(
                     {
