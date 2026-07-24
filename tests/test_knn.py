@@ -119,7 +119,7 @@ def test_mahalanobis_singular_cov_raises() -> None:
     refs = torch.tensor([[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]])
     score = MahalanobisScore(k=1)
     score.ref_embeddings = refs
-    with pytest.raises(Exception):
+    with pytest.raises(RuntimeError, match="linalg.cholesky"):
         score._setup_index()
 
 

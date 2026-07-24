@@ -111,7 +111,7 @@ class TensorPCA(torch.nn.Module):
 
     def __init__(
         self,
-        n_components: int | float = 0.90,
+        n_components: float = 0.90,
         gamma: float | None = None,
         M: int | None = None,
         mode: str | None = None,
@@ -139,9 +139,7 @@ class TensorPCA(torch.nn.Module):
         # Validate n_components: must be int>0 or float in (0,1]
         if isinstance(n_components, bool):
             # bool is subclass of int — disallow
-            raise ValueError(
-                "n_components must be an int>0 or a float in (0,1]"
-            )
+            raise TypeError("n_components must be an int>0 or a float in (0,1]")
 
         if isinstance(n_components, int):
             if n_components <= 0:
@@ -156,9 +154,7 @@ class TensorPCA(torch.nn.Module):
                 )
             self.n_components: int | float = n_components  # type: ignore[no-redef]
         else:
-            raise ValueError(
-                "n_components must be either an int>0 or a float in (0,1]"
-            )
+            raise TypeError("n_components must be an int>0 or a float in (0,1]")
 
         if mode is not None and mode not in ("linear", "rff"):
             raise ValueError("mode must be either 'linear' or 'rff'")
@@ -347,7 +343,7 @@ class TensorPCA(torch.nn.Module):
                 self.register_buffer("_rff_u", u)
                 # set the BoolTensor buffer in-place so the buffer identity
                 # is preserved (important for state_dict/save/load)
-                getattr(self, "_rff_initialized").fill_(True)
+                self._rff_initialized.fill_(True)
             X = self._rff(X)
 
         m = X.shape[0]
@@ -386,7 +382,7 @@ class TensorPCA(torch.nn.Module):
             (w_buf is not None)
             and (u_buf is not None)
             and (getattr(self, "_rff_initialized", None) is not None)
-            and bool(getattr(self, "_rff_initialized").item())
+            and bool(self._rff_initialized.item())
         ):
             w = w_buf.to(device=device, dtype=dtype)
             u = u_buf.to(device=device, dtype=dtype)
@@ -498,7 +494,7 @@ class TensorPCA(torch.nn.Module):
                 if hasattr(self, name):
                     try:
                         setattr(self, name, val)
-                    except Exception:  # pragma: no cover
+                    except AttributeError:  # pragma: no cover
                         # fallback to register_buffer if direct set fails
                         self.register_buffer(name, val)
                 else:

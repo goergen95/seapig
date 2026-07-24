@@ -12,13 +12,13 @@ from seapig.utils.progress import (
 )
 
 __all__ = [
-    "track",
-    "enable",
+    "configure_logging",
     "disable",
-    "reset",
-    "is_enabled",
-    "set_backend",
+    "enable",
     "get_backend",
     "get_logger",
-    "configure_logging",
+    "is_enabled",
+    "reset",
+    "set_backend",
+    "track",
 ]

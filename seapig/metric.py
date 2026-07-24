@@ -244,7 +244,7 @@ class RiskCoverageMetric(Metric):
             if isinstance(error_metric, Metric):
                 error_metric = MetricCollection(error_metric)
             self._error_metric = error_metric
-            self._metric_names = [str(k) for k in self._error_metric.keys()]
+            self._metric_names = [str(k) for k in self._error_metric]
 
         # Metric states (concatenate across steps)
         self.add_state(
@@ -277,7 +277,7 @@ class RiskCoverageMetric(Metric):
     ) -> torch.Tensor:
         """Validate that the provided tensor is a 1‑D tensor of per‑sample residuals."""
         if not isinstance(tensor, torch.Tensor):  # pragma: no cover
-            raise ValueError(
+            raise TypeError(
                 f"Metric{' ' + name if name else ''} must return a torch.Tensor."
             )
         # Allow (B,) or (B,1); flatten to (B,)
@@ -343,7 +343,7 @@ class RiskCoverageMetric(Metric):
                 for name, tensor in residuals_raw.items():
                     tensor = tensor.to(device)
                     tensor = self._validate_tensor(tensor, name)
-                    state_name = f"residuals_{str(name)}"
+                    state_name = f"residuals_{name!s}"
                     existing = getattr(self, state_name)
                     if existing.numel() == 0:
                         setattr(self, state_name, tensor)

@@ -71,8 +71,8 @@ def test_selective_metric_with_metric_collection_prefix_keys() -> None:
     sel.update(preds=preds, target=target, selected=selected)
     res = sel.compute()
 
-    assert any(k.startswith("full/") for k in res.keys())
-    assert any(k.startswith("selected/") for k in res.keys())
+    assert any(k.startswith("full/") for k in res)
+    assert any(k.startswith("selected/") for k in res)
     for v in res.values():
         assert isinstance(v, torch.Tensor) and v.ndim == 0
 

@@ -1,5 +1,6 @@
 import builtins
 import pathlib
+import re
 from typing import Any, cast
 from unittest.mock import patch
 
@@ -84,10 +85,13 @@ def test_check_model_valid_and_invalid() -> None:
     # should not raise
     EmbeddingScore._check_model(m)
 
-    with pytest.raises(Exception):
+    with pytest.raises(
+        TypeError,
+        match=re.escape("model is required to have a `.embed()` method."),
+    ):
         EmbeddingScore._check_model(DummyBadModel())
 
-    with pytest.raises(Exception):
+    with pytest.raises(AttributeError):
         EmbeddingScore._check_model(DummyBadSignature())
 
 
@@ -248,7 +252,10 @@ def test_fit_model_without_embed_raises(tmp_path: pathlib.Path) -> None:
     }
 
     s = MinimalEmbedding()
-    with pytest.raises(Exception):
+    with pytest.raises(
+        TypeError,
+        match=re.escape("model is required to have a `.embed()` method."),
+    ):
         s.fit(model=NoEmbedModel(), loaders=loaders)
 
 

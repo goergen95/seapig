@@ -118,7 +118,7 @@ def test_forward_wraps_tensor_and_merges_selection() -> None:
     # predictions wrapped and equal to 2*x
     assert "predictions" in out and torch.allclose(out["predictions"], 2 * x)
     # selection merged
-    assert set(["score", "selected"]).issubset(out.keys())
+    assert "score" in out and "selected" in out
 
 
 def test_forward_keeps_dict_output_and_extra_keys() -> None:
@@ -185,7 +185,6 @@ def test_test_step_updates_metrics_and_logs_rc(
         arg: dict[str, Any], batch_size: int | None = None, **kwargs: Any
     ) -> None:
         calls["log_arg"] = arg
-        return None
 
     monkeypatch.setattr(w, "log_dict", fake_log_dict)
 
@@ -199,9 +198,9 @@ def test_test_step_updates_metrics_and_logs_rc(
     # SelectiveMetric should have results for collection (prefixed keys)
     assert w.test_metrics is not None
     res = w.test_metrics.compute()
-    assert any(k.startswith("full/") for k in res.keys())
-    assert any(k.startswith("selected/") for k in res.keys())
-    assert any(k.startswith("rejected/") for k in res.keys())
+    assert any(k.startswith("full/") for k in res)
+    assert any(k.startswith("selected/") for k in res)
+    assert any(k.startswith("rejected/") for k in res)
 
     # RiskCoverageMetric stats should have been logged
     assert isinstance(calls["log_arg"], dict)
@@ -228,8 +227,8 @@ def test_test_step_with_alt_keys_updates_metrics(
 
     assert w.test_metrics is not None
     res = w.test_metrics.compute()
-    assert any(k.startswith("full/") for k in res.keys())
-    assert any(k.startswith("selected/") for k in res.keys())
+    assert any(k.startswith("full/") for k in res)
+    assert any(k.startswith("selected/") for k in res)
 
 
 def test_test_step_missing_keys_raise_keyerror(

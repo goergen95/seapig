@@ -455,7 +455,7 @@ def test_normalize_multiclass() -> None:
     assert lab.shape == (7,)
     assert lab.dtype == torch.long
     labels2 = labels.unsqueeze(1)
-    nl2, lab2 = s._normalize_logits_and_labels(logits, labels2)
+    _, lab2 = s._normalize_logits_and_labels(logits, labels2)
     assert lab2.shape == (7,)
     logits_bad_shape = logits.unsqueeze(0)
     with pytest.raises(ValueError, match="multiclass logits must have shape"):
@@ -830,8 +830,8 @@ def test_score_shape_mismatch() -> None:
     labels = torch.randn(5, 2)
     try:
         score.fit(logits, labels)
-    except Exception as e:
-        assert isinstance(e, Exception)
+    except ValueError as e:
+        assert isinstance(e, ValueError)
 
 
 def test_fit_temperature_all_same_logits() -> None:
@@ -966,8 +966,8 @@ def test_fit_temperature_nan_labels() -> None:
     score = SoftmaxScore()
     try:
         score.fit(logits, labels)
-    except Exception as e:
-        assert isinstance(e, Exception)
+    except IndexError as e:
+        assert isinstance(e, IndexError)
 
 
 def test_check_model_requires_logits_method() -> None:
@@ -1080,7 +1080,7 @@ def test_logits_from_loader_non_tensor() -> None:
     loader = make_loader_from_tensors(torch.randn(1, 2))
     s = SoftmaxScore()
     with pytest.raises(
-        ValueError, match="Extracted logits is not a torch.Tensor"
+        TypeError, match="Extracted logits is not a torch.Tensor"
     ):
         s._logits_from_loader(model=model, loader=loader)
 

@@ -18,19 +18,19 @@ from seapig.scores.logits import (
 from seapig.scores.pca import PCAScore
 
 __all__ = [
-    "UncertaintyScore",
-    "EmbeddingScore",
-    "KNNScore",
-    "LogitScore",
-    "RandomScore",
-    "EuclideanScore",
     "CosineScore",
-    "MahalanobisScore",
-    "PCAScore",
-    "SoftmaxScore",
+    "EmbeddingScore",
     "EnergyScore",
     "EntropyScore",
+    "EuclideanScore",
+    "KNNScore",
+    "LogitScore",
+    "MahalanobisScore",
     "MarginScore",
+    "PCAScore",
+    "RandomScore",
+    "SoftmaxScore",
+    "UncertaintyScore",
 ]
 
 try:
