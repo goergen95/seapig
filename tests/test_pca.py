@@ -28,7 +28,7 @@ def test_fit_reconstruct_low_dim() -> None:
     X = (torch.randn(n, 1) @ v.unsqueeze(0)).float()
     tpca = TensorPCA(n_components=0.99)
     tpca.fit(X)
-    X_rec, err = tpca.reconstruct(X)
+    _, err = tpca.reconstruct(X)
     # reconstruction error should be near zero (numerical tolerance)
     assert err.mean() < 1e-5
 
@@ -167,8 +167,7 @@ def _assert_state_dicts_equal(
     Compares tensor contents on CPU. Accepts None entries.
     """
     assert set(sd1.keys()) == set(sd2.keys())
-    for k in sd1.keys():
-        v1 = sd1[k]
+    for k, v1 in sd1.items():
         v2 = sd2[k]
         assert v1 is not None and v2 is not None, (
             f"Mismatch at {k}: one is None"
@@ -273,7 +272,7 @@ def test__rff_uses_registered_buffers_when_initialized() -> None:
     tpca.register_buffer("_rff_w", w)
     tpca.register_buffer("_rff_u", u)
     # mark initialized
-    getattr(tpca, "_rff_initialized").fill_(True)
+    tpca._rff_initialized.fill_(True)
 
     X = torch.randn(5, D, dtype=dtype)
     out = tpca._rff(X)
@@ -289,15 +288,15 @@ def test_reset_partial_preserves_rff_and_resets_accumulators() -> None:
     tpca.partial_fit(X)  # initializes RFF parameters and accumulators
 
     # rff parameters should be present
-    assert getattr(tpca, "_rff_initialized").item() is True
-    assert getattr(tpca, "_rff_w").numel() > 0
+    assert tpca._rff_initialized.item() is True
+    assert tpca._rff_w.numel() > 0
 
     # reset partial should clear accumulators but keep RFF params
     tpca.reset_partial()
     assert tpca._n_samples == 0
     assert tpca._sum_X is None and tpca._sum_outer is None
-    assert getattr(tpca, "_rff_initialized").item() is True
-    assert getattr(tpca, "_rff_w").numel() > 0
+    assert tpca._rff_initialized.item() is True
+    assert tpca._rff_w.numel() > 0
 
 
 def test__rff_returns_input_when_not_in_rff_mode() -> None:
@@ -339,12 +338,12 @@ def test__load_from_state_dict_registers_missing_buffers() -> None:
     # mu should now be registered as a buffer and match the value
     assert hasattr(tpca, "mu")
     assert torch.allclose(
-        getattr(tpca, "mu"), torch.tensor([1.0, 2.0], dtype=torch.float64)
+        tpca.mu, torch.tensor([1.0, 2.0], dtype=torch.float64)
     )
 
 
 def test_invalid_n_components_errors() -> None:
-    with pytest.raises(ValueError, match="n_components must be an int>0"):
+    with pytest.raises(TypeError, match="n_components must be an int>0"):
         TensorPCA(n_components=True)
     with pytest.raises(ValueError, match="positive integer"):
         TensorPCA(n_components=-1)
@@ -352,7 +351,7 @@ def test_invalid_n_components_errors() -> None:
         TensorPCA(n_components=0)
     with pytest.raises(ValueError, match="must be in the interval"):
         TensorPCA(n_components=1.5)
-    with pytest.raises(ValueError, match="must be either an int"):
+    with pytest.raises(TypeError, match="n_components must be an int>0"):
         TensorPCA(n_components="bad")  # type: ignore[arg-type, ty:invalid-argument-type]
 
 

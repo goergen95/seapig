@@ -39,7 +39,7 @@ def _restore_logger() -> Generator[None, None, None]:
 def test_package_logger_has_null_handler() -> None:
     """seapig/__init__.py must install a NullHandler on the package logger."""
     # The NullHandler should be present after importing seapig.
-    _ = seapig  # noqa: F841 — ensure __init__ has run
+    _ = seapig
     pkg_logger = get_logger("seapig")
     null_handlers = [
         h for h in pkg_logger.handlers if isinstance(h, logging.NullHandler)
@@ -175,8 +175,8 @@ def test_library_does_not_print_by_default(
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     """Importing seapig and using core objects must not emit print output."""
-    import seapig.scores.base  # noqa: F401 — trigger module-level code
-    import seapig.scores.embed  # noqa: F401
+    import seapig.scores.base
+    import seapig.scores.embed
     import seapig.scores.utils  # noqa: F401
 
     captured = capfd.readouterr()

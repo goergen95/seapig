@@ -14,7 +14,7 @@ from typing_extensions import override
 from seapig.scores.embed import EmbeddingScore
 from seapig.scores.utils import TensorPCA
 
-__all__ = ["KNNScore", "EuclideanScore", "CosineScore", "MahalanobisScore"]
+__all__ = ["CosineScore", "EuclideanScore", "KNNScore", "MahalanobisScore"]
 
 
 class KNNScore(EmbeddingScore, ABC):
@@ -249,9 +249,7 @@ class KNNScore(EmbeddingScore, ABC):
             M = 24
         elif d <= 256:  # pragma: no cover
             M = 32
-        elif d <= 512:  # pragma: no cover
-            M = 48
-        elif d <= 1024:  # pragma: no cover
+        elif d <= 512 or d <= 1024:  # pragma: no cover
             M = 48
         else:  # pragma: no cover
             M = 64
@@ -347,11 +345,15 @@ class KNNScore(EmbeddingScore, ABC):
         # returns (distances, indices) as numpy arrays
         search_results = self.index.search(query_np, self.k + offset)
         # convert to torch tensors on the same device as query
-        search_results = map(
-            lambda x: torch.from_numpy(x).to(query.device), search_results
+        search_results = tuple(
+            torch.from_numpy(x).to(query.device) for x in search_results
         )
         # Discard the first `offset` entries
-        distances, indices = map(lambda x: x[:, offset:], search_results)
+        distances, indices = search_results
+        if offset > 0:
+            distances = distances[:, offset:]
+            indices = indices[:, offset:]
+
         return (distances, indices)
 
     def _stat(self, x: torch.Tensor) -> torch.Tensor:

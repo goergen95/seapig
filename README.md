@@ -116,14 +116,19 @@ below uses random tensors to illustrate the API.
 import torch
 from seapig.scores import EuclideanScore
 from seapig.utils.progress import disable
+
 disable()  # disables  seapig progress bars for quickstart example
-torch.manual_seed(0) 
+torch.manual_seed(0)
 # latent representations a torch.Tensor of shapes (N, D), (M, D), (Q, D)
-ref_emb, val_emb, query_emb = torch.randn(1000, 32), torch.randn(200, 32), torch.randn(10, 32)
+ref_emb, val_emb, query_emb = (
+    torch.randn(1000, 32),
+    torch.randn(200, 32),
+    torch.randn(10, 32),
+)
 
 score = EuclideanScore(k=5, stat="mean")
 score.fit(X=ref_emb, Y=val_emb)
-score.set_threshold(q=0.90)   # keep ~90% coverage on validation set
+score.set_threshold(q=0.90)  # keep ~90% coverage on validation set
 sel = score.select(query_emb)
 print(sel)
 ```
@@ -140,25 +145,28 @@ random data to illustrate the API.
 
 ``` python
 from torch.utils.data import TensorDataset, DataLoader
+
 ds_train = TensorDataset(torch.randn(1000, 32), torch.randint(0, 2, (1000,)))
 ds_val = TensorDataset(torch.randn(200, 32), torch.randint(0, 2, (200,)))
-ds_test = TensorDataset(torch.randn(10, 32), torch.randint(0, 2, (10,))) 
+ds_test = TensorDataset(torch.randn(10, 32), torch.randint(0, 2, (10,)))
 train_loader = DataLoader(ds_train, batch_size=64)
 val_loader = DataLoader(ds_val, batch_size=64)
 test_loader = DataLoader(ds_test, batch_size=64)
+
 
 # model exposes .embed(x) -> (B, D)
 class Model(torch.nn.Module):
     def embed(self, x):
         image = x[0]
         label = x[1]
-        return torch.randn(image.shape[0], 32) 
+        return torch.randn(image.shape[0], 32)
+
 
 model = Model()
 
 score = EuclideanScore(k=3)
 score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
-score.set_threshold(q=0.80) # keep ~80% coverage on validation set
+score.set_threshold(q=0.80)  # keep ~80% coverage on validation set
 
 sel = score.select(model=model, loader=test_loader)
 print(sel)
@@ -186,16 +194,20 @@ from seapig import SelectiveInferenceTask
 from lightning import Trainer, LightningModule
 from torchmetrics import Accuracy
 
-# minimal LightningModule 
+
+# minimal LightningModule
 class Model(LightningModule):
     def __init__(self):
         super().__init__()
         self.test_metrics = Accuracy("binary")
+
     def forward(self, x):
-        pred = torch.randint(0, 2, (x.shape[0],)) 
+        pred = torch.randint(0, 2, (x.shape[0],))
         return pred
+
     def embed(self, x):
-        return torch.randn(x.shape[0], 32) 
+        return torch.randn(x.shape[0], 32)
+
     def test_step(self, batch, batch_idx, dataloader_idx=0):
         image = batch[0]
         label = batch[1]
@@ -203,10 +215,12 @@ class Model(LightningModule):
         print(pred.shape, label.shape)
         self.test_metrics.update(pred, label)
         self.log_dict(self.test_metrics.compute(), sync_dist=True)
+
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         image = batch[0]
         pred = self.forward(image)
         return pred
+
 
 trainer = Trainer(accelerator="cpu")
 model = Model()

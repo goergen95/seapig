@@ -44,13 +44,13 @@ from typing import Any, TypeVar
 T = TypeVar("T")
 
 __all__ = [
-    "track",
-    "enable",
     "disable",
-    "reset",
-    "is_enabled",
-    "set_backend",
+    "enable",
     "get_backend",
+    "is_enabled",
+    "reset",
+    "set_backend",
+    "track",
 ]
 
 # ---------------------------------------------------------------------------
@@ -85,7 +85,7 @@ def _is_interactive() -> bool:
         get_ipython = getattr(builtins, "get_ipython", None)
         if get_ipython is not None and get_ipython() is not None:
             return True
-    except Exception:  # pragma: no cover
+    except ImportError:  # pragma: no cover
         pass
 
     return sys.stdout.isatty()

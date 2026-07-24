@@ -36,7 +36,7 @@ from __future__ import annotations
 import logging
 import os
 
-__all__ = ["get_logger", "configure_logging"]
+__all__ = ["configure_logging", "get_logger"]
 
 _PACKAGE = "seapig"
 

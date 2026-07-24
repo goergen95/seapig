@@ -173,12 +173,12 @@ def test_track_rich_falls_back_to_tqdm_when_rich_missing() -> None:
     """When rich is requested but not installed, fall back to tqdm silently."""
     enable()
     set_backend("rich")
-
-    with patch.dict(sys.modules, {"rich": None, "rich.progress": None}):
-        with patch("tqdm.tqdm") as mock_tqdm:
-            mock_tqdm.return_value = iter([7, 8, 9])
-            result = list(track([7, 8, 9]))
-
+    with (
+        patch.dict(sys.modules, {"rich": None, "rich.progress": None}),
+        patch("tqdm.tqdm") as mock_tqdm,
+    ):
+        mock_tqdm.return_value = iter([7, 8, 9])
+        result = list(track([7, 8, 9]))
     assert result == [7, 8, 9]
 
 
@@ -190,11 +190,11 @@ def test_track_rich_uses_rich_when_available() -> None:
     rich_track_mock = MagicMock(return_value=iter(["a", "b"]))
     fake_rich_progress = MagicMock()
     fake_rich_progress.track = rich_track_mock
-
-    with patch.dict(sys.modules, {"rich.progress": fake_rich_progress}):
-        with patch("rich.progress.track", rich_track_mock):
-            result = list(track(["a", "b"], desc="r"))
-
+    with (
+        patch.dict(sys.modules, {"rich.progress": fake_rich_progress}),
+        patch("rich.progress.track", rich_track_mock),
+    ):
+        result = list(track(["a", "b"], desc="r"))
     assert result == ["a", "b"]
 
 

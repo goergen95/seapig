@@ -246,7 +246,7 @@ class SelectiveInferenceTask(LightningModule):
 
         # if task has no predict_step we simply call forward
         if not hasattr(self.task, "predict_step") or not callable(
-            getattr(self.task, "predict_step")
+            self.task.predict_step
         ):
             return self.forward(x)
 

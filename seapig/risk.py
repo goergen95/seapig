@@ -249,7 +249,7 @@ def risk_coverage(
     coverage_emp, threshold_emp, risk_emp = _rc_curve(score, residuals, risk)
 
     # Calculate reference risk-coverage curve (using residuals as scores)
-    coverage_ref, _, risk_ref = _rc_curve(residuals, residuals, risk)
+    _, _, risk_ref = _rc_curve(residuals, residuals, risk)
 
     # Downsample if needed
     if len(coverage_emp) > n_bins:

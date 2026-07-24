@@ -81,11 +81,11 @@ class EmbeddingScore(UncertaintyScore, ABC):
     def _check_model(model: torch.nn.Module) -> None:
         """Check a model for compatibility with embeddings-based uncertainty scores."""
         assert isinstance(model, torch.nn.Module)
-        if not callable(model.embed):
-            raise Exception("model is required to have a `.embed()` method.")
+        if not hasattr(model, "embed") or not callable(model.embed):
+            raise TypeError("model is required to have a `.embed()` method.")
         sig = inspect.signature(obj=model.embed)
-        if "x" not in sig.parameters.keys():
-            raise Exception(
+        if "x" not in sig.parameters:
+            raise AttributeError(
                 "`.embed()` method is required to except `x` as argument."
             )
 
@@ -135,7 +135,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
         """Embed a batch based on a models embed method."""
         assert callable(model.embed)
         if isinstance(X, dict):
-            if "image" not in X.keys():
+            if "image" not in X:
                 raise KeyError(
                     'A batch dictionary is required to contain the "image" key.'
                 )
@@ -170,7 +170,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
         model.eval()
 
         pbar_desc = f"Embedding {len(loader)} batches"
-        embs_ls = list()
+        embs_ls = []
         for batch in track(
             loader, total=len(loader), desc=pbar_desc, unit="batches"
         ):
@@ -204,7 +204,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
                 UserWarning,
             )
         self._check_model(model)
-        if key not in loaders.keys():
+        if key not in loaders:
             raise KeyError(f"Missing key `{key}` in loaders dictionary.")
         loader = loaders[key]
         assert isinstance(loader, DataLoader)
@@ -308,7 +308,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
                 outdir=outdir,
                 prefix=prefix,
             )
-            if "val" in loaders.keys():
+            if "val" in loaders:
                 self.cal_embeddings = self._embed_from_dict(
                     loaders=loaders,
                     model=model,

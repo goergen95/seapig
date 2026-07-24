@@ -101,10 +101,12 @@ class LogitScore(UncertaintyScore, abc.ABC):
         """
         assert isinstance(model, torch.nn.Module)
         if not hasattr(model, "logits") or not callable(model.logits):
-            raise Exception("model is required to have a `.logits()` method.")
+            raise AttributeError(
+                "model is required to have a `.logits()` method."
+            )
         sig = inspect.signature(obj=model.logits)
-        if "x" not in sig.parameters.keys():
-            raise Exception(
+        if "x" not in sig.parameters:
+            raise AttributeError(
                 "`.logits()` method is required to except `x` as argument."
             )
 
@@ -268,13 +270,13 @@ class LogitScore(UncertaintyScore, abc.ABC):
         # Determine member count M based on logits shape
         if logits.ndim == 3:
             # (N, *, M) – the middle dimension is either C or 2
-            N, dim, M = logits.shape
+            _, dim, M = logits.shape
             # Move member axis to second position then flatten batch and member
             logits_exp = logits.permute(0, 2, 1).reshape(-1, dim)
         elif logits.ndim == 2:
             # Could be binary single‑logit per‑member (N, M) where M>1
             if self.task == "binary":
-                N, M = logits.shape
+                _, M = logits.shape
                 logits_exp = logits.reshape(-1)
             else:
                 raise ValueError(  # pragma: no cover
@@ -346,7 +348,7 @@ class LogitScore(UncertaintyScore, abc.ABC):
 
         try:
             optimizer.step(closure)  # type: ignore[no-untyped-call]
-        except Exception:
+        except RuntimeError:
             # fallback to Adam on a fresh leaf Parameter if LBFGS fails
             log_t = torch.nn.Parameter(
                 torch.tensor([init_t], device=device).log()
@@ -575,7 +577,7 @@ class LogitScore(UncertaintyScore, abc.ABC):
             assert callable(model.logits)
             logits = model.logits(x=x.to(device))
             if not isinstance(logits, torch.Tensor):
-                raise ValueError("Extracted logits is not a torch.Tensor")
+                raise TypeError("Extracted logits is not a torch.Tensor")
             logits_ls.append(logits)
             if y is not None:
                 assert y.shape[0] == logits.shape[0], (
