@@ -420,7 +420,7 @@ def test_fit_temperature_small_valset() -> None:
 def make_score_with_task(task: str) -> SoftmaxScore:
     s = SoftmaxScore(temperature=None)
     s.task = task
-    s.task_config = None  # type: ignore[assignment]
+    s.task_config = None  # ty: ignore[invalid-assignment]
     return s
 
 
