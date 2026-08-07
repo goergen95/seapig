@@ -17,7 +17,7 @@ _EmbedLoader = DataLoader[torch.Tensor | dict[str, torch.Tensor]]
 class DummyModel(torch.nn.Module):
     def embed(self, x: torch.Tensor) -> torch.Tensor:  # must accept 'x' param
         if isinstance(x, dict):
-            x = x["image"]  # type: ignore[arg-type, ty:invalid-argument-type] # pragma: no cover
+            x = x["image"]  # type: ignore[arg-type] # pragma: no cover
         return x
 
 
@@ -35,7 +35,7 @@ class DummyBadSignature(torch.nn.Module):
 class IdentityModel(torch.nn.Module):
     def embed(self, x: torch.Tensor | dict[str, torch.Tensor]) -> torch.Tensor:
         if isinstance(x, dict):
-            x = x["image"]  # type: ignore[arg-type, ty:invalid-argument-type] # pragma: no cover
+            x = x["image"]  # type: ignore[arg-type] # pragma: no cover
         return x
 
 

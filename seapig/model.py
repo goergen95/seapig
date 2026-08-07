@@ -281,7 +281,7 @@ def _get_from_batch(
         raise TypeError("Unsupported batch type")
     if isinstance(batch, Mapping):
         assert isinstance(key, str)
-        return batch[key]  # type: ignore[arg-type, ty:invalid-argument-type]
+        return batch[key]  # type: ignore[arg-type]
     else:
         assert isinstance(key, int)
         return batch[key]
