@@ -1,4 +1,3 @@
-# python
 """Logit-derived uncertainty score base class.
 
 Provides helpers for scores computed from model logits (pre-softmax
@@ -19,6 +18,18 @@ from typing_extensions import override
 from seapig.scores.base import UncertaintyScore
 
 from .mixins import ModelExtractorMixin
+
+EPS = 1e-12
+
+
+def _bernoulli_entropy(p: torch.Tensor) -> torch.Tensor:
+    p = p.clamp(min=EPS, max=1 - EPS)
+    return -(p * torch.log(p) + (1 - p) * torch.log1p(-p))
+
+
+def _shannon_entropy(p: torch.Tensor) -> torch.Tensor:
+    p = p.clamp(min=EPS, max=1 - EPS)
+    return -(p * p.log()).sum(dim=1)
 
 
 class LogitModelMixin(ModelExtractorMixin):
@@ -822,54 +833,299 @@ class EntropyScore(LogitScore):
         T = 1.0 if self.temperature is None else float(self.temperature)
         task = self.task
         logits = query_logits
-        EPS = 1e-12
         if self.per_member:
             if logits.ndim == 3:
                 # (N, C, M)
                 if task == "multiclass" or task == "binary":
                     probs = F.softmax(logits / T, dim=1)  # (N, C, M)
                     if task == "binary":
-                        p = probs[:, 1, :].clamp(min=EPS, max=1 - EPS)
-                        ent = -(p * torch.log(p) + (1 - p) * torch.log(1 - p))
+                        entropy = _bernoulli_entropy(probs[:, 1, :])
                     else:
-                        p = probs.clamp(min=EPS)
-                        ent = -(p * p.log()).sum(dim=1)  # (N, M)
-                    return ent.mean(dim=1)
+                        entropy = _shannon_entropy(probs)  # (N, M)
+                    return entropy.mean(dim=1)
                 elif task == "multilabel":
-                    p = torch.sigmoid(logits / T)
-                    p = p.clamp(min=EPS, max=1 - EPS)
-                    per_label_entropy = -(
-                        p * torch.log(p) + (1 - p) * torch.log(1 - p)
-                    )
-                    ent = per_label_entropy.max(dim=1).values  # (N, M)
-                    return ent.mean(dim=1)
+                    probs = F.sigmoid(logits / T)
+                    per_label_entropy = _bernoulli_entropy(probs)
+                    entropy = per_label_entropy.max(dim=1).values  # (N, M)
+                    return entropy.mean(dim=1)
             elif logits.ndim == 2 and task == "binary":
-                p = torch.sigmoid(logits / T).clamp(min=EPS, max=1 - EPS)
-                ent = -(p * torch.log(p) + (1 - p) * torch.log(1 - p))
-                return ent.mean(dim=1)
+                probs = F.sigmoid(logits / T)
+                entropy = _bernoulli_entropy(probs)
+                return entropy.mean(dim=1)
         if task == "multiclass":
             probs = F.softmax(logits / T, dim=1)
-            p = probs.clamp(min=EPS)
-            entropy = -(p * p.log()).sum(dim=1)
+            entropy = _shannon_entropy(probs)
             return entropy
         elif task == "binary":
             if self._is_binary_single_logit(logits):
-                p = torch.sigmoid(logits / T)
-                p = p.clamp(min=EPS, max=1 - EPS)
-                entropy = -(p * torch.log(p) + (1 - p) * torch.log(1 - p))
+                probs = F.sigmoid(logits / T)
+                entropy = _bernoulli_entropy(probs)
                 return entropy
             else:
                 # two-logit: use softmax, then Bernoulli entropy on class 1 prob
-                probs = F.softmax(logits / T, dim=1)
-                p = probs[:, 1].clamp(min=EPS, max=1 - EPS)
-                entropy = -(p * torch.log(p) + (1 - p) * torch.log(1 - p))
+                probs = F.softmax(logits / T, dim=1)[:, 1]
+                entropy = _bernoulli_entropy(probs)
                 return entropy
         elif task == "multilabel":
-            p = torch.sigmoid(logits / T)
-            p = p.clamp(min=EPS, max=1 - EPS)
-            per_label_entropy = -(p * torch.log(p) + (1 - p) * torch.log(1 - p))
+            probs = F.sigmoid(logits / T)
+            per_label_entropy = _bernoulli_entropy(probs)
             # MAX aggregation: highest uncertainty across labels
             entropy = per_label_entropy.max(dim=1).values
             return entropy
         else:
             raise ValueError(f"Unknown task: {task}")
+
+
+class MutualInformationScore(LogitScore):
+    r"""Mutual information (BALD) uncertainty score for ensembles / MC-dropout.
+
+    Computes the mutual information between model parameters and predictions,
+    a measure of *epistemic* uncertainty:
+
+    $$
+    \\mathrm{MI}(y, \theta \\mid x) = H\\!\\left(\\mathbb{E}_m[p_m]\right)
+                                    - \\mathbb{E}_m\\!\\left[H(p_m)\right]
+    $$
+
+    The first term is the entropy of the mean predictive distribution
+    (total uncertainty), the second is the expected entropy of each member
+    (aleatoric uncertainty). Their difference isolates the disagreement
+    between members. Lower values indicate lower epistemic uncertainty.
+
+    This score is only defined when logits contain a member dimension, so
+    ``per_member`` is forced to ``True``.
+
+    Parameters
+    ----------
+    temperature : float or None, default None
+        Optional initial temperature. If `None`, temperature is fitted if
+        labels are provided to `fit`.
+    task : {'multiclass', 'binary', 'multilabel'}, default 'multiclass'
+        Task type for score computation.
+
+    Notes
+    -----
+    Expected input shapes:
+
+    - `multiclass`: `(N, C, M)`
+    - `binary` single-logit: `(N, M)`
+    - `binary` two-logit: `(N, 2, M)`
+    - `multilabel`: `(N, C, M)` (per-label MI, aggregated by ``max``)
+
+    Examples
+    --------
+    ```python
+    import torch
+    from seapig.scores.logits import MutualInformationScore
+    logits = torch.randn(4, 3, 10)  # (N, C, M)
+    MutualInformationScore().score(logits)
+    ```
+
+    See Also
+    --------
+    `scores.LogitScore`
+    `scores.EntropyScore`
+    `scores.PredictiveVarianceScore`
+
+    References
+    ----------
+    Houlsby et al. "Bayesian Active Learning for Classification and
+    Preference Learning" (2011).
+    Gal et al. "Deep Bayesian Active Learning with Image Data" (2017).
+    """
+
+    ident: str = "mutual_information"
+
+    def __init__(
+        self, temperature: float | None = None, task: str = "multiclass"
+    ) -> None:
+        # MI is only meaningful across stochastic members
+        super().__init__(temperature=temperature, task=task, per_member=True)
+
+    @override
+    def _score(self, query_logits: torch.Tensor) -> torch.Tensor:
+        """Compute task-aware mutual information (BALD) score.
+
+        Parameters
+        ----------
+        query_logits : torch.Tensor
+            Logits with a trailing member dimension.
+            See class docstring for expected shapes.
+
+        Returns
+        -------
+        torch.Tensor
+            1-D tensor of shape `(N,)`. Lower values indicate lower
+            epistemic uncertainty.
+        """
+        T = 1.0 if self.temperature is None else float(self.temperature)
+        task = self.task
+        logits = query_logits
+
+        if task == "multiclass":
+            if logits.ndim != 3:
+                raise ValueError(
+                    "multiclass per_member logits must have shape (N, C, M)"
+                )
+            probs = F.softmax(logits / T, dim=1)  # (N, C, M) -> (N, M)
+            H_mean = _shannon_entropy(probs.mean(dim=2))  # (N, M) -> (N,)
+            H_each = _shannon_entropy(probs)  # (N, M)
+            E_H = H_each.mean(dim=1)  # (N,)
+            return H_mean - E_H
+
+        if task == "binary":
+            if logits.ndim == 3:
+                if logits.shape[1] != 2:
+                    raise ValueError(
+                        "binary two-logit per_member logits must have shape (N, 2, M)"
+                    )
+                probs = F.softmax(logits / T, dim=1)  # (N, 2, M)
+                p1 = probs[:, 1, :]  # (N, M)
+                H_mean = _bernoulli_entropy(p1.mean(dim=1))  # (N,)
+                E_H = _bernoulli_entropy(p1).mean(dim=1)  # (N,)
+                return H_mean - E_H
+            if logits.ndim == 2:
+                # single-logit per-member: (N, M)
+                probs = F.sigmoid(logits / T)  # (N, M)
+                H_mean = _bernoulli_entropy(probs.mean(dim=1))  # (N,)
+                E_H = _bernoulli_entropy(probs).mean(dim=1)  # (N,)
+                return H_mean - E_H
+            raise ValueError(
+                "binary per_member logits must have shape (N, M) or (N, 2, M)"
+            )
+
+        if task == "multilabel":
+            if logits.ndim != 3:
+                raise ValueError(
+                    "multilabel per_member logits must have shape (N, C, M)"
+                )
+            probs = F.sigmoid(logits / T)  # (N, C, M)
+            H_mean = _bernoulli_entropy(probs.mean(dim=2))  # (N, C)
+            E_H = _bernoulli_entropy(probs).mean(dim=2)  # (N, C)
+            mi = H_mean - E_H  # (N, C)
+            # MAX aggregation: highest epistemic uncertainty across labels
+            return mi.max(dim=1).values
+
+        raise ValueError(f"Unknown task: {task}")
+
+
+class PredictiveVarianceScore(LogitScore):
+    """Predictive variance uncertainty score for ensembles / MC-dropout.
+
+    Measures the variance of the predicted probabilities across stochastic
+    members. Members that disagree yield larger variance, indicating higher
+    epistemic uncertainty. Lower values indicate lower uncertainty.
+
+    For multi-output tasks the per-class/per-label variance is aggregated:
+
+    - `multiclass` / `binary` two-logit: sum of variance across classes
+      (equivalent to trace of the class-probability covariance).
+    - `binary` single-logit: variance of the predicted positive-class
+      probability across members.
+    - `multilabel`: maximum variance across labels (worst-case label).
+
+    Only meaningful when logits contain a member dimension, so
+    ``per_member`` is forced to ``True``.
+
+    Parameters
+    ----------
+    temperature : float or None, default None
+        Optional initial temperature. If `None`, temperature is fitted if
+        labels are provided to `fit`.
+    task : {'multiclass', 'binary', 'multilabel'}, default 'multiclass'
+        Task type for score computation.
+
+    Notes
+    -----
+    Expected input shapes:
+
+    - `multiclass`: `(N, C, M)`
+    - `binary` single-logit: `(N, M)`
+    - `binary` two-logit: `(N, 2, M)`
+    - `multilabel`: `(N, C, M)`
+
+    Examples
+    --------
+    ```python
+    import torch
+    from seapig.scores.logits import PredictiveVarianceScore
+    logits = torch.randn(4, 3, 10)  # (N, C, M)
+    PredictiveVarianceScore().score(logits)
+    ```
+
+    See Also
+    --------
+    `scores.LogitScore`
+    `scores.MutualInformationScore`
+    `scores.EntropyScore`
+
+    References
+    ----------
+    Lakshminarayanan et al. "Simple and Scalable Predictive Uncertainty
+    Estimation using Deep Ensembles" (NeurIPS 2017).
+    """
+
+    ident: str = "predictive_variance"
+
+    def __init__(
+        self, temperature: float | None = None, task: str = "multiclass"
+    ) -> None:
+        # Variance across members is only defined per_member
+        super().__init__(temperature=temperature, task=task, per_member=True)
+
+    @override
+    def _score(self, query_logits: torch.Tensor) -> torch.Tensor:
+        """Compute task-aware predictive variance across members.
+
+        Parameters
+        ----------
+        query_logits : torch.Tensor
+            Logits with a trailing member dimension.
+            See class docstring for expected shapes.
+
+        Returns
+        -------
+        torch.Tensor
+            1-D tensor of shape `(N,)`. Lower values indicate lower
+            epistemic uncertainty.
+        """
+        T = 1.0 if self.temperature is None else float(self.temperature)
+        task = self.task
+        logits = query_logits
+
+        if task == "multiclass":
+            if logits.ndim != 3:
+                raise ValueError(
+                    "multiclass per_member logits must have shape (N, C, M)"
+                )
+            probs = F.softmax(logits / T, dim=1)  # (N, C, M)
+            var = probs.var(dim=2, unbiased=False)  # (N, C)
+            return var.sum(dim=1)
+
+        if task == "binary":
+            if logits.ndim == 3:
+                if logits.shape[1] != 2:
+                    raise ValueError(
+                        "binary two-logit per_member logits must have shape (N, 2, M)"
+                    )
+                probs = F.softmax(logits / T, dim=1)  # (N, 2, M)
+                # var(p0) == var(p1); return variance of positive-class prob
+                return probs[:, 1, :].var(dim=1, unbiased=False)
+            if logits.ndim == 2:
+                probs = F.sigmoid(logits / T)  # (N, M)
+                return probs.var(dim=1, unbiased=False)
+            raise ValueError(
+                "binary per_member logits must have shape (N, M) or (N, 2, M)"
+            )
+
+        if task == "multilabel":
+            if logits.ndim != 3:
+                raise ValueError(
+                    "multilabel per_member logits must have shape (N, C, M)"
+                )
+            probs = F.sigmoid(logits / T)  # (N, C, M)
+            var = probs.var(dim=2, unbiased=False)  # (N, C)
+            # MAX aggregation: worst-case label variance
+            return var.max(dim=1).values
+
+        raise ValueError(f"Unknown task: {task}")
