@@ -13,6 +13,8 @@ from seapig.scores.logits import (
     EntropyScore,
     LogitScore,
     MarginScore,
+    MutualInformationScore,
+    PredictiveVarianceScore,
     SoftmaxScore,
 )
 from seapig.scores.pca import PCAScore
@@ -27,7 +29,9 @@ __all__ = [
     "LogitScore",
     "MahalanobisScore",
     "MarginScore",
+    "MutualInformationScore",
     "PCAScore",
+    "PredictiveVarianceScore",
     "RandomScore",
     "SoftmaxScore",
     "UncertaintyScore",

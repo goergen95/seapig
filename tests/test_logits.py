@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import math
 from collections.abc import Callable, Generator
 from pathlib import Path
@@ -13,6 +15,8 @@ from seapig.scores import (
     EntropyScore,
     LogitScore,
     MarginScore,
+    MutualInformationScore,
+    PredictiveVarianceScore,
     SoftmaxScore,
 )
 
@@ -26,6 +30,11 @@ def rng_seed() -> Generator[None, None, None]:
 def approx_tensor(a: torch.Tensor, b: torch.Tensor, tol: float = 1e-6) -> None:
     assert a.shape == b.shape
     assert torch.allclose(a, b, atol=tol, rtol=1e-5)
+
+
+def _bernoulli_entropy(p: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
+    p = p.clamp(min=eps, max=1 - eps)
+    return -(p * torch.log(p) + (1 - p) * torch.log1p(-p))
 
 
 class SimpleBatchDataset(Dataset[Any]):
@@ -1122,3 +1131,372 @@ def test_score_methods_unknown_task_raise(
     sample = torch.randn(2, 3)
     with pytest.raises(ValueError, match="Unknown task: not_a_task"):
         inst.score(sample)
+
+
+@pytest.mark.parametrize(
+    "cls", [MutualInformationScore, PredictiveVarianceScore]
+)
+def test_per_member_forced_true(cls) -> None:
+    """Both ensemble scores must always operate in per_member mode."""
+    scorer = cls()
+    assert scorer.per_member is True
+
+
+def test_mi_score_multiclass_matches_manual() -> None:
+    torch.manual_seed(0)
+    N, C, M = 4, 3, 6
+    logits = torch.randn(N, C, M)
+    scorer = MutualInformationScore(task="multiclass")
+    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
+
+    probs = F.softmax(logits / T, dim=1)
+    mean_p = probs.mean(dim=2).clamp(min=1e-12)
+    H_mean = -(mean_p * mean_p.log()).sum(dim=1)
+    p = probs.clamp(min=1e-12)
+    H_each = -(p * p.log()).sum(dim=1)
+    E_H = H_each.mean(dim=1)
+    expected = H_mean - E_H
+
+    result = scorer.score(logits)
+    approx_tensor(result, expected)
+
+
+def test_mi_score_binary_two_logit_matches_manual() -> None:
+    torch.manual_seed(1)
+    N, M = 5, 4
+    logits = torch.randn(N, 2, M)
+    scorer = MutualInformationScore(task="binary")
+    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
+
+    probs = F.softmax(logits / T, dim=1)
+    p1 = probs[:, 1, :]
+    expected = _bernoulli_entropy(p1.mean(dim=1)) - _bernoulli_entropy(p1).mean(
+        dim=1
+    )
+
+    result = scorer.score(logits)
+    approx_tensor(result, expected)
+
+
+def test_mi_score_binary_single_logit_matches_manual() -> None:
+    torch.manual_seed(2)
+    N, M = 6, 5
+    logits = torch.randn(N, M)
+    scorer = MutualInformationScore(task="binary")
+    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
+
+    p = torch.sigmoid(logits / T)
+    expected = _bernoulli_entropy(p.mean(dim=1)) - _bernoulli_entropy(p).mean(
+        dim=1
+    )
+
+    result = scorer.score(logits)
+    approx_tensor(result, expected)
+
+
+def test_mi_score_multilabel_matches_manual() -> None:
+    torch.manual_seed(3)
+    N, C, M = 3, 4, 5
+    logits = torch.randn(N, C, M)
+    scorer = MutualInformationScore(task="multilabel")
+    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
+
+    p = torch.sigmoid(logits / T)
+    H_mean = _bernoulli_entropy(p.mean(dim=2))
+    E_H = _bernoulli_entropy(p).mean(dim=2)
+    mi = H_mean - E_H
+    expected = mi.max(dim=1).values
+
+    result = scorer.score(logits)
+    approx_tensor(result, expected)
+
+
+@pytest.mark.parametrize(
+    "task, shape",
+    [
+        ("multiclass", (7, 4, 5)),
+        ("binary", (7, 2, 5)),
+        ("binary", (7, 5)),
+        ("multilabel", (7, 3, 5)),
+    ],
+)
+def test_mi_score_shapes(task: str, shape: tuple[int, ...]) -> None:
+    logits = torch.randn(*shape)
+    scorer = MutualInformationScore(task=task)
+    result = scorer.score(logits)
+    assert result.shape == (shape[0],)
+
+
+def test_mi_is_zero_when_members_agree() -> None:
+    """If all members produce identical logits, MI must be ~0."""
+    torch.manual_seed(4)
+    N, C, M = 3, 4, 8
+    single = torch.randn(N, C, 1)
+    logits = single.expand(-1, -1, M).contiguous()
+    scorer = MutualInformationScore(task="multiclass")
+    result = scorer.score(logits)
+    assert torch.allclose(result, torch.zeros_like(result), atol=1e-6)
+
+
+def test_mi_is_nonnegative_multiclass() -> None:
+    torch.manual_seed(5)
+    logits = torch.randn(10, 5, 12)
+    scorer = MutualInformationScore(task="multiclass")
+    result = scorer.score(logits)
+    # allow tiny numerical slack
+    assert (result >= -1e-6).all()
+
+
+def test_mi_is_nonnegative_multilabel() -> None:
+    torch.manual_seed(6)
+    logits = torch.randn(8, 4, 10)
+    scorer = MutualInformationScore(task="multilabel")
+    result = scorer.score(logits)
+    assert (result >= -1e-6).all()
+
+
+def test_mi_monotonic_with_disagreement() -> None:
+    """Larger disagreement across members must yield higher MI."""
+    N, C, M = 1, 3, 4
+    # All members identical -> MI ~ 0
+    same = torch.tensor([[[2.0, 0.0, -1.0]] * M]).permute(0, 2, 1)  # (1,3,M)
+    # Members strongly disagree on argmax
+    disagree = torch.zeros(N, C, M)
+    for m in range(M):
+        disagree[0, m % C, m] = 5.0
+
+    scorer = MutualInformationScore(task="multiclass")
+    assert scorer.score(same).item() < scorer.score(disagree).item()
+
+
+def test_mi_multiclass_shape_error() -> None:
+    scorer = MutualInformationScore(task="multiclass")
+    with pytest.raises(
+        ValueError, match="multiclass per_member logits must have shape"
+    ):
+        scorer.score(torch.randn(4, 3))  # missing member dim
+
+
+def test_mi_binary_two_logit_shape_error() -> None:
+    scorer = MutualInformationScore(task="binary")
+    with pytest.raises(
+        ValueError, match="binary two-logit per_member logits must have shape"
+    ):
+        scorer.score(torch.randn(4, 3, 5))  # C != 2
+
+
+def test_mi_binary_bad_ndim_error() -> None:
+    scorer = MutualInformationScore(task="binary")
+    with pytest.raises(
+        ValueError, match="binary per_member logits must have shape"
+    ):
+        scorer.score(torch.randn(4))
+
+
+def test_mi_multilabel_shape_error() -> None:
+    scorer = MutualInformationScore(task="multilabel")
+    with pytest.raises(
+        ValueError, match="multilabel per_member logits must have shape"
+    ):
+        scorer.score(torch.randn(4, 3))
+
+
+def test_mi_unknown_task_raises() -> None:
+    scorer = MutualInformationScore()
+    scorer.task = "not_a_task"  # type: ignore[invalid-assignment]
+    with pytest.raises(ValueError, match="Unknown task: not_a_task"):
+        scorer.score(torch.randn(2, 3, 4))
+
+
+def test_mi_temperature_scaling_changes_output() -> None:
+    torch.manual_seed(7)
+    logits = torch.randn(4, 3, 6)
+    s1 = MutualInformationScore(temperature=1.0, task="multiclass")
+    s2 = MutualInformationScore(temperature=5.0, task="multiclass")
+    assert not torch.allclose(s1.score(logits), s2.score(logits))
+
+
+def test_variance_score_multiclass_matches_manual() -> None:
+    torch.manual_seed(10)
+    N, C, M = 4, 3, 6
+    logits = torch.randn(N, C, M)
+    scorer = PredictiveVarianceScore(task="multiclass")
+    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
+
+    probs = F.softmax(logits / T, dim=1)
+    expected = probs.var(dim=2, unbiased=False).sum(dim=1)
+
+    result = scorer.score(logits)
+    approx_tensor(result, expected)
+
+
+def test_variance_score_binary_two_logit_matches_manual() -> None:
+    torch.manual_seed(11)
+    N, M = 5, 4
+    logits = torch.randn(N, 2, M)
+    scorer = PredictiveVarianceScore(task="binary")
+    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
+
+    probs = F.softmax(logits / T, dim=1)
+    expected = probs[:, 1, :].var(dim=1, unbiased=False)
+
+    result = scorer.score(logits)
+    approx_tensor(result, expected)
+
+
+def test_variance_score_binary_single_logit_matches_manual() -> None:
+    torch.manual_seed(12)
+    N, M = 6, 5
+    logits = torch.randn(N, M)
+    scorer = PredictiveVarianceScore(task="binary")
+    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
+
+    p = torch.sigmoid(logits / T)
+    expected = p.var(dim=1, unbiased=False)
+
+    result = scorer.score(logits)
+    approx_tensor(result, expected)
+
+
+def test_variance_score_multilabel_matches_manual() -> None:
+    torch.manual_seed(13)
+    N, C, M = 3, 4, 5
+    logits = torch.randn(N, C, M)
+    scorer = PredictiveVarianceScore(task="multilabel")
+    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
+
+    p = torch.sigmoid(logits / T)
+    expected = p.var(dim=2, unbiased=False).max(dim=1).values
+
+    result = scorer.score(logits)
+    approx_tensor(result, expected)
+
+
+@pytest.mark.parametrize(
+    "task, shape",
+    [
+        ("multiclass", (7, 4, 5)),
+        ("binary", (7, 2, 5)),
+        ("binary", (7, 5)),
+        ("multilabel", (7, 3, 5)),
+    ],
+)
+def test_variance_score_shapes(task: str, shape: tuple[int, ...]) -> None:
+    logits = torch.randn(*shape)
+    scorer = PredictiveVarianceScore(task=task)
+    result = scorer.score(logits)
+    assert result.shape == (shape[0],)
+
+
+def test_variance_is_zero_when_members_agree() -> None:
+    """Identical members produce zero predictive variance."""
+    torch.manual_seed(14)
+    N, C, M = 3, 4, 8
+    single = torch.randn(N, C, 1)
+    logits = single.expand(-1, -1, M).contiguous()
+    scorer = PredictiveVarianceScore(task="multiclass")
+    result = scorer.score(logits)
+    assert torch.allclose(result, torch.zeros_like(result), atol=1e-6)
+
+
+def test_variance_is_nonnegative() -> None:
+    torch.manual_seed(15)
+    logits = torch.randn(10, 5, 12)
+    scorer = PredictiveVarianceScore(task="multiclass")
+    result = scorer.score(logits)
+    assert (result >= 0.0).all()
+
+
+def test_variance_monotonic_with_disagreement() -> None:
+    """Larger disagreement across members must yield higher variance."""
+    N, C, M = 1, 3, 4
+    same = torch.tensor([[[2.0, 0.0, -1.0]] * M]).permute(0, 2, 1)
+    disagree = torch.zeros(N, C, M)
+    for m in range(M):
+        disagree[0, m % C, m] = 5.0
+
+    scorer = PredictiveVarianceScore(task="multiclass")
+    assert scorer.score(same).item() < scorer.score(disagree).item()
+
+
+def test_variance_multiclass_shape_error() -> None:
+    scorer = PredictiveVarianceScore(task="multiclass")
+    with pytest.raises(
+        ValueError, match="multiclass per_member logits must have shape"
+    ):
+        scorer.score(torch.randn(4, 3))
+
+
+def test_variance_binary_two_logit_shape_error() -> None:
+    scorer = PredictiveVarianceScore(task="binary")
+    with pytest.raises(
+        ValueError, match="binary two-logit per_member logits must have shape"
+    ):
+        scorer.score(torch.randn(4, 3, 5))
+
+
+def test_variance_binary_bad_ndim_error() -> None:
+    scorer = PredictiveVarianceScore(task="binary")
+    with pytest.raises(
+        ValueError, match="binary per_member logits must have shape"
+    ):
+        scorer.score(torch.randn(4))
+
+
+def test_variance_multilabel_shape_error() -> None:
+    scorer = PredictiveVarianceScore(task="multilabel")
+    with pytest.raises(
+        ValueError, match="multilabel per_member logits must have shape"
+    ):
+        scorer.score(torch.randn(4, 3))
+
+
+def test_variance_unknown_task_raises() -> None:
+    scorer = PredictiveVarianceScore()
+    scorer.task = "not_a_task"  # type: ignore[invalid-assignment]
+    with pytest.raises(ValueError, match="Unknown task: not_a_task"):
+        scorer.score(torch.randn(2, 3, 4))
+
+
+def test_variance_temperature_scaling_changes_output() -> None:
+    torch.manual_seed(16)
+    logits = torch.randn(4, 3, 6)
+    s1 = PredictiveVarianceScore(temperature=1.0, task="multiclass")
+    s2 = PredictiveVarianceScore(temperature=5.0, task="multiclass")
+    assert not torch.allclose(s1.score(logits), s2.score(logits))
+
+
+@pytest.mark.parametrize(
+    "cls", [MutualInformationScore, PredictiveVarianceScore]
+)
+def test_ensemble_score_fit_with_precomputed_logits(cls) -> None:
+    """Ensemble scores integrate with `.fit()` using precomputed per-member logits."""
+    torch.manual_seed(17)
+    N, C, M = 6, 3, 4
+    logits = torch.randn(N, C, M)
+    labels = torch.randint(0, C, (N,))
+    scorer = cls(task="multiclass")
+    scorer.fit(X=logits, Y=labels)
+    assert scorer.logits is not None
+    assert scorer.scores is not None
+    assert scorer.scores.shape == (N,)
+    # Temperature must have been fitted since labels were provided
+    assert scorer.temperature is not None
+
+
+@pytest.mark.parametrize(
+    "cls", [MutualInformationScore, PredictiveVarianceScore]
+)
+def test_ensemble_score_select_returns_mask(cls) -> None:
+    """`select` should work and return a boolean mask of the right shape."""
+    torch.manual_seed(18)
+    N, C, M = 5, 4, 6
+    logits = torch.randn(N, C, M)
+    labels = torch.randint(0, C, (N,))
+    scorer = cls(task="multiclass")
+    scorer.fit(X=logits, Y=labels)
+    out = scorer.select(logits)
+    assert "score" in out and "selected" in out
+    assert out["score"].shape == (N,)
+    assert out["selected"].shape == (N,)
+    assert out["selected"].dtype == torch.bool
