@@ -1,6 +1,11 @@
 """Uncertainty Scores supplied by seapig."""
 
 from seapig.scores.base import RandomScore, UncertaintyScore
+from seapig.scores.diversity import (
+    LabelDiversityCosineScore,
+    LabelDiversityEuclideanScore,
+    LabelDiversityMahalanobisScore,
+)
 from seapig.scores.embed import EmbeddingScore
 from seapig.scores.knn import (
     CosineScore,
@@ -24,6 +29,9 @@ __all__ = [
     "EntropyScore",
     "EuclideanScore",
     "KNNScore",
+    "LabelDiversityCosineScore",
+    "LabelDiversityEuclideanScore",
+    "LabelDiversityMahalanobisScore",
     "LogitScore",
     "MahalanobisScore",
     "MarginScore",
