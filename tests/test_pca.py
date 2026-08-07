@@ -372,10 +372,10 @@ def test_partial_fit_accumulates_multiple_batches() -> None:
     # Verify that the internal accumulators have been updated correctly
     assert pca._n_samples == n_first + X2.shape[0]
     assert torch.allclose(
-        pca._sum_X, sum_X_first + X2.sum(dim=0).to(torch.float64)
+        pca._sum_X, sum_X_first + X2.sum(dim=0).to(torch.float32)
     )
     assert torch.allclose(
-        pca._sum_outer, sum_outer_first + (X2.T @ X2).to(torch.float64)
+        pca._sum_outer, sum_outer_first + (X2.T @ X2).to(torch.float32)
     )
 
 

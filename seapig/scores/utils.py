@@ -70,10 +70,6 @@ class TensorPCA(torch.nn.Module):
     shaped tensors and will set or register buffers to avoid size-mismatch
     errors on fresh instances.
 
-    Notes
-    -----
-    PCA internals are stored in `float64` for numerical fidelity. During
-    preprocessing, inputs are cast to `float64` to match the stored mean.
 
     See `https://arxiv.org/pdf/2505.15284` for motivation behind RFF-PCA.
 
@@ -169,12 +165,12 @@ class TensorPCA(torch.nn.Module):
         self.M = M
 
         # register persistent buffers so the module can be saved/loaded
-        self.register_buffer("mu", torch.tensor([], dtype=torch.float64))
-        self.register_buffer("u", torch.tensor([], dtype=torch.float64))
-        self.register_buffer("s", torch.tensor([], dtype=torch.float64))
-        self.register_buffer("s_acc", torch.tensor([], dtype=torch.float64))
-        self.register_buffer("u_q", torch.tensor([], dtype=torch.float64))
-        self.register_buffer("u_q_dot", torch.tensor([], dtype=torch.float64))
+        self.register_buffer("mu", torch.tensor([], dtype=torch.float32))
+        self.register_buffer("u", torch.tensor([], dtype=torch.float32))
+        self.register_buffer("s", torch.tensor([], dtype=torch.float32))
+        self.register_buffer("s_acc", torch.tensor([], dtype=torch.float32))
+        self.register_buffer("u_q", torch.tensor([], dtype=torch.float32))
+        self.register_buffer("u_q_dot", torch.tensor([], dtype=torch.float32))
 
         # RFF parameters (will be created during partial_fit when needed)
         self.register_buffer("_rff_w", torch.tensor([], dtype=torch.float32))
@@ -183,10 +179,10 @@ class TensorPCA(torch.nn.Module):
             "_rff_initialized", torch.tensor(False, dtype=torch.bool)
         )
 
-        # running accumulators for partial_fit/finalize (float64)
-        self.register_buffer("_sum_X", torch.tensor([], dtype=torch.float64))
+        # running accumulators for partial_fit/finalize (float32)
+        self.register_buffer("_sum_X", torch.tensor([], dtype=torch.float32))
         self.register_buffer(
-            "_sum_outer", torch.tensor([], dtype=torch.float64)
+            "_sum_outer", torch.tensor([], dtype=torch.float32)
         )
 
         # keep this as a plain python int for control flow
@@ -347,10 +343,9 @@ class TensorPCA(torch.nn.Module):
             X = self._rff(X)
 
         m = X.shape[0]
-        # accumulate in double precision for numerical stability and to match
-        # scikit-learn's float64 behaviour
-        batch_sum = X.sum(dim=0).to(torch.float64)
-        batch_outer = (X.T @ X).to(torch.float64)
+
+        batch_sum = X.sum(dim=0)
+        batch_outer = X.T @ X
 
         if self._n_samples == 0:
             self._sum_X = batch_sum.clone()
@@ -404,20 +399,16 @@ class TensorPCA(torch.nn.Module):
             raise RuntimeError("No data provided to partial_fit/finalize")
         assert self._sum_X is not None and self._sum_outer is not None
 
-        # perform computations in float64 then cast results back to module dtype
-        n = float(self._n_samples)
-        mu64 = self._sum_X / n
-        K64 = self._sum_outer - n * (mu64.unsqueeze(1) @ mu64.unsqueeze(0))
+        n = self._n_samples
+        mu = self._sum_X / n
+        K = self._sum_outer - n * (mu.unsqueeze(1) @ mu.unsqueeze(0))
+        u, s, _ = torch.linalg.svd(K)
+        s_acc = torch.cumsum(s, 0) / (s.sum() + 1e-20)
 
-        # SVD in float64 for numerical agreement with sklearn
-        u64, s64, _ = torch.linalg.svd(K64)
-        s_acc64 = torch.cumsum(s64, 0) / (s64.sum() + 1e-20)
-
-        # store in module attributes in float64 for numerical fidelity
-        self.mu = mu64
-        self.u = u64
-        self.s = s64
-        self.s_acc = s_acc64
+        self.mu = mu
+        self.u = u
+        self.s = s
+        self.s_acc = s_acc
 
         # Decide number of components q based on the unified n_components
         if isinstance(self.n_components, int):
