@@ -139,7 +139,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
                 raise KeyError(
                     'A batch dictionary is required to contain the "image" key.'
                 )
-            x = X["image"]  # type: ignore[arg-type, ty:invalid-argument-type]
+            x = X["image"]  # type: ignore[arg-type]
             z = model.embed(x)
         elif isinstance(X, (list, tuple)):
             z = model.embed(X[0])
