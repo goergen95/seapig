@@ -249,7 +249,9 @@ def risk_coverage(
     coverage_emp, threshold_emp, risk_emp = _rc_curve(score, residuals, risk)
 
     # Calculate reference risk-coverage curve (using residuals as scores)
-    _, _, risk_ref = _rc_curve(residuals, residuals, risk)
+    risk_ref = _rc_curve(
+        torch.sort(residuals).values, residuals.sort().values, risk
+    )[2]
 
     # Downsample if needed
     if len(coverage_emp) > n_bins:
@@ -257,12 +259,17 @@ def risk_coverage(
             coverage_emp, threshold_emp, risk_emp, risk_ref, n_bins
         )
 
+    gap = (risk_ref - risk_emp).max()
+    if gap > 1e-9:
+        msg = f"reference exceeds empirical risk by {gap:.4g}; ordering is inverted"
+        raise ValueError(msg)
+
     # Calculate excess risk
     excess = risk_emp - risk_ref
     # Calculate AUC using trapezoidal rule
     auc_emp = _trapz(coverage_emp, risk_emp)
     auc_ref = _trapz(coverage_emp, risk_ref)
-    auc_exs = _trapz(coverage_emp, excess)
+    auc_exs = auc_emp - auc_ref
 
     return RiskCoverage(
         coverage=coverage_emp,
@@ -282,14 +289,14 @@ def _rc_curve(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute a single risk-coverage curve.
 
-    The function sorts examples by `score` (descending), computes coverage
+    The function sorts examples by `score` (ascending), computes coverage
     as the fraction of accepted examples, and returns the cumulative risk.
 
     Returns (coverage, sorted_score, risk) as `torch.Tensor` objects.
     """
-    # Sort by score (descending, so we reject highest scores first)
+    # Sort by score ascending: lowest uncertainty (highest confidence) accepted first
     device = score.device
-    order = torch.argsort(score, descending=False)
+    order = torch.argsort(score, descending=False, stable=True)
     score_sorted = score[order]
     residuals_sorted = residuals[order]
 
