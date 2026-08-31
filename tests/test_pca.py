@@ -33,6 +33,47 @@ def test_fit_reconstruct_low_dim() -> None:
     assert err.mean() < 1e-5
 
 
+def test_mean_center_flag_behavior() -> None:
+    """The `mean_center` flag controls whether data are centered before PCA."""
+    torch.manual_seed(0)
+    X = torch.randn(100, 5)
+
+    # assert type error raises
+    with pytest.raises(TypeError):
+        TensorPCA(n_components=2, mean_center=1)  # type: ignore
+
+    # mean_center=True (default)
+    tpca_center = TensorPCA(n_components=2, mean_center=True)
+    tpca_center.fit(X)
+    Z_center = tpca_center.transform(X)
+    assert torch.allclose(
+        Z_center.mean(dim=0), torch.zeros_like(Z_center.mean(dim=0)), atol=1e-6
+    )
+
+    # mean_center=False
+    tpca_nocenter = TensorPCA(n_components=2, mean_center=False)
+    tpca_nocenter.fit(X)
+    Z_nocenter = tpca_nocenter.transform(X)
+    mean_nocenter = Z_nocenter.mean(dim=0)
+    assert not torch.allclose(
+        mean_nocenter, torch.zeros_like(mean_nocenter), atol=1e-3
+    )
+
+    _, err_center = tpca_center.reconstruct(X)
+    _, err_nocenter = tpca_nocenter.reconstruct(X)
+    assert torch.isclose(err_center.mean(), err_nocenter.mean(), atol=1e-2)
+
+    # create data of rank 1 in 3-d space
+    n = 50
+    v = torch.tensor([1.0, 2.0, 3.0])
+    X = (torch.randn(n, 1) @ v.unsqueeze(0)).float()
+    tpca = TensorPCA(n_components=0.99)
+    tpca.fit(X)
+    _, err = tpca.reconstruct(X)
+    # reconstruction error should be near zero (numerical tolerance)
+    assert err.mean() < 1e-5
+
+
 def test_fit_transform_returns_lower_dim() -> None:
     """transform should return data with q components, where q < D."""
     X = torch.randn(40, 10)

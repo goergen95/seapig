@@ -115,6 +115,7 @@ class TensorPCA(torch.nn.Module):
         gamma: float | None = None,
         M: int | None = None,
         mode: str | None = None,
+        mean_center: bool = True,
     ) -> None:
         """Initialise TensorPCA.
 
@@ -133,6 +134,9 @@ class TensorPCA(torch.nn.Module):
         mode : {'linear', 'rff'} or None, default None
             Explicit mode override. When `None`, the mode is inferred from
             `gamma` and `M`.
+        mean_center: bool, default True
+            Apply mean centering before fitting/transform? Set to False to omit
+            mean centering.
         """
         super().__init__()
 
@@ -158,6 +162,11 @@ class TensorPCA(torch.nn.Module):
 
         if mode is not None and mode not in ("linear", "rff"):
             raise ValueError("mode must be either 'linear' or 'rff'")
+
+        if not isinstance(mean_center, bool):
+            raise TypeError("mean_center must be a boolean.")
+
+        self.mean_center = mean_center
 
         # Infer mode when not explicitly provided
         inferred_mode = (
@@ -246,6 +255,7 @@ class TensorPCA(torch.nn.Module):
         """
         assert isinstance(X, torch.Tensor)
         X = self._preprocess(X)
+        X = X.to(self.u_q.dtype)
         X_proj = X @ self.u_q
         return X_proj
 
@@ -287,9 +297,10 @@ class TensorPCA(torch.nn.Module):
         if self.mode == "rff":
             X = self._rff(X)
         # ensure consistent dtype with stored mean (may be float64)
-        if hasattr(self, "mu") and self.mu is not None:
-            X = X.to(self.mu.dtype)
-        X = X - self.mu
+        if self.mean_center:
+            if hasattr(self, "mu") and self.mu is not None:
+                X = X.to(self.mu.dtype)
+            X = X - self.mu
         return X.contiguous()
 
     def reset_partial(self) -> None:
