@@ -128,9 +128,8 @@ def test_q_trimming_in_pca_score_reduces_references() -> None:
     refs = torch.randn(n, 6)
     score = PCAScore(pca=TensorPCA(n_components=0.90, gamma=1.0, M=32))
     score.cal_required = False
-    score.ref_embeddings = refs
-    original = score.ref_embeddings.shape[0]
-    score._fit_impl(q=0.5)
+    original = refs.shape[0]
+    score.fit(refs, q=0.5)
     assert score.ref_embeddings.shape[0] < original
 
 

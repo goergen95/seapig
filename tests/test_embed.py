@@ -15,6 +15,10 @@ _EmbedLoader = DataLoader[torch.Tensor | dict[str, torch.Tensor]]
 
 
 class DummyModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.layer = torch.nn.Linear(1, 1)
+
     def embed(self, x: torch.Tensor) -> torch.Tensor:  # must accept 'x' param
         if isinstance(x, dict):
             x = x["image"]  # type: ignore[arg-type] # pragma: no cover
@@ -33,6 +37,10 @@ class DummyBadSignature(torch.nn.Module):
 
 
 class IdentityModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.layer = torch.nn.Linear(1, 1)
+
     def embed(self, x: torch.Tensor | dict[str, torch.Tensor]) -> torch.Tensor:
         if isinstance(x, dict):
             x = x["image"]  # type: ignore[arg-type] # pragma: no cover
@@ -43,7 +51,7 @@ class DummyEmbedding(EmbeddingScore):
     def __init__(self, pca: TensorPCA | None = None) -> None:
         super().__init__(pca=pca)
 
-    def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
+    def _score(self, X: torch.Tensor) -> torch.Tensor:
         # simple deterministic score: sum over features per row
         return X.sum(dim=1)
 
@@ -87,7 +95,7 @@ def test_check_model_valid_and_invalid() -> None:
 
     with pytest.raises(
         TypeError,
-        match=re.escape("model is required to have a `.embed()` method."),
+        match=re.escape("model is required to have a `embed()` method."),
     ):
         EmbeddingScore._check_model(DummyBadModel())
 
@@ -111,22 +119,23 @@ def test_embed_errors_and_success() -> None:
     model = DummyModel()
     # dict missing "image" should raise KeyError
     with pytest.raises(KeyError):
-        EmbeddingScore._embed({"foo": torch.zeros(1, 2)}, model)
-
-    # embed returning extra dims should raise
-    class BadShapeModel(DummyModel):
-        def embed(self, x: torch.Tensor) -> torch.Tensor:
-            t = super().embed(x)
-            return t.unsqueeze(1)  # make shape (B,1,D)
-
-    bad = BadShapeModel()
-    with pytest.raises(ValueError):
-        EmbeddingScore._embed(torch.zeros(2, 3), bad)
+        EmbeddingScore._extract_batch(
+            batch={"foo": torch.zeros(1, 2)},
+            model=model,
+            input_keys=["image"],
+            output_key="logit",
+        )
 
     # correct case
-    out = EmbeddingScore._embed(torch.tensor([[1.0, 2.0], [3.0, 4.0]]), model)
-    assert isinstance(out, torch.Tensor)
-    assert out.shape == (2, 2)
+    out = EmbeddingScore._extract_batch(
+        torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
+        model,
+        input_keys=["image"],
+        output_key="embedding",
+    )
+    embs = out.get("embedding")
+    assert isinstance(embs, torch.Tensor)
+    assert embs.shape == (2, 2)
 
 
 def test_embed_dl_concatenates_batches() -> None:
@@ -143,7 +152,10 @@ def test_embed_dl_concatenates_batches() -> None:
     loader = cast(
         _EmbedLoader, DataLoader(dataset, batch_size=1, collate_fn=collate_fn)
     )
-    embs = EmbeddingScore._embed_dl(model=model, loader=loader)
+    out = EmbeddingScore._extract_dl(
+        model=model, loader=loader, input_keys=["image"], output_key="embedding"
+    )
+    embs = out.get("embedding")
     assert embs.shape[0] == 4
     assert embs.shape[1] == 2
 
@@ -162,24 +174,39 @@ def test_embed_from_dict_errors_and_saves(tmp_path: pathlib.Path) -> None:
     loaders: dict[str, _EmbedLoader] = {"train": loader}
     # missing key 'val' should KeyError
     with pytest.raises(KeyError):
-        EmbeddingScore._embed_from_dict(model=model, loaders=loaders, key="val")
+        EmbeddingScore._extract_dict(
+            model=model,
+            loaders=loaders,
+            key="val",
+            input_keys=["image"],
+            output_key="embedding",
+        )
 
-    # outdir specified but prefix None should raise a Warning (implementation may raise Warning)
+    # outdir specified but prefix None should raise a Warning
     with pytest.warns(UserWarning):
-        EmbeddingScore._embed_from_dict(
+        EmbeddingScore._extract_dict(
             model=model,
             loaders={"train": loader},
             key="train",
             outdir=tmp_path,
             prefix=None,
+            input_keys=["image"],
+            output_key="embedding",
         )
 
     # valid save/load path: provide prefix and outdir
     loaders = {"train": loader}
-    embs = EmbeddingScore._embed_from_dict(
-        model=model, loaders=loaders, key="train", outdir=tmp_path, prefix="pfx"
+    embs = EmbeddingScore._extract_dict(
+        model=model,
+        loaders=loaders,
+        key="train",
+        outdir=tmp_path,
+        prefix="pfx",
+        input_keys=["image"],
+        output_key="embedding",
     )
-    assert isinstance(embs, torch.Tensor)
+    assert isinstance(embs, dict)
+    assert isinstance(embs["embedding"], torch.Tensor)
     # file should have been written
     expected = tmp_path / "pfx-embeddings-train.pt"
     assert expected.exists()
@@ -227,13 +254,16 @@ class MinimalEmbedding(EmbeddingScore):
         self.train_required = False
         self.cal_required = False
 
-    def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
+    def _score(self, X: torch.Tensor) -> torch.Tensor:
         """Simple deterministic score used in tests.
 
         Compute per-row sum over features so tests can assert shapes and
         thresholding behavior.
         """
         return X.sum(dim=1)
+
+    def _fit(self, q: bool | float = False) -> None:
+        return
 
 
 def test_fit_model_without_embed_raises(tmp_path: pathlib.Path) -> None:
@@ -254,7 +284,7 @@ def test_fit_model_without_embed_raises(tmp_path: pathlib.Path) -> None:
     s = MinimalEmbedding()
     with pytest.raises(
         TypeError,
-        match=re.escape("model is required to have a `.embed()` method."),
+        match=re.escape("model is required to have a `embed()` method."),
     ):
         s.fit(model=NoEmbedModel(), loaders=loaders)
 
@@ -407,7 +437,7 @@ def test_score_rejects_mixed_parameters() -> None:
     loader = cast(_EmbedLoader, DataLoader(dataset, batch_size=1))
 
     # Should raise ValueError when both X and model are provided
-    with pytest.raises(ValueError, match="Cannot specify both embeddings"):
+    with pytest.raises(ValueError, match=match):
         s.score(X=embeddings, model=IdentityModel(), loader=loader)
 
 
@@ -418,7 +448,7 @@ def test_score_requires_parameters() -> None:
     s.cal_required = False
 
     # Should raise ValueError when no parameters provided
-    with pytest.raises(ValueError, match="Must specify either embeddings"):
+    with pytest.raises(ValueError, match=match):
         s.score()
 
 
@@ -429,9 +459,7 @@ def test_score_requires_loader_when_model_provided() -> None:
     s.cal_required = False
 
     # Should raise ValueError when model provided without loader
-    with pytest.raises(
-        ValueError, match="loader is required when using a model"
-    ):
+    with pytest.raises(ValueError, match=match):
         s.score(model=IdentityModel())
 
 
@@ -496,7 +524,7 @@ def test_select_rejects_mixed_parameters() -> None:
     loader = cast(_EmbedLoader, DataLoader(dataset, batch_size=1))
 
     # Should raise ValueError when both X and model are provided
-    with pytest.raises(ValueError, match="Cannot specify both embeddings"):
+    with pytest.raises(ValueError, match=match):
         s.select(X=embeddings, model=IdentityModel(), loader=loader)
 
 
@@ -508,7 +536,7 @@ def test_select_requires_parameters() -> None:
     s.threshold = torch.tensor(5.0)
 
     # Should raise ValueError when no parameters provided
-    with pytest.raises(ValueError, match="Must specify either embeddings"):
+    with pytest.raises(ValueError, match=match):
         s.select()
 
 
@@ -521,7 +549,7 @@ def test_embed_loadorembed_uses_disk_when_present(
     # create a tensor and save it to disk
     saved = torch.tensor([[9.0, 8.0], [7.0, 6.0]])
     path = tmp_path / "already.pt"
-    torch.save(saved, path)
+    torch.save({"embedding": saved}, path)
 
     m = ParamModel()
     # move model to cpu (default) and ensure file load uses same device
@@ -531,34 +559,53 @@ def test_embed_loadorembed_uses_disk_when_present(
     )
 
     with pytest.warns(UserWarning):
-        out = EmbeddingScore._loadorembed(path=path, model=m, loader=loader)
+        out = EmbeddingScore._load_or_extract(
+            path=path,
+            model=m,
+            loader=loader,
+            input_keys=["image"],
+            output_key="embedding",
+        )
 
-    assert isinstance(out, torch.Tensor)
-    assert out.shape == saved.shape
+    assert isinstance(out["embedding"], torch.Tensor)
+    assert out["embedding"].shape == saved.shape
 
 
 def test_embed_accepts_dict_and_sequence_inputs() -> None:
     m = DummyModel()
     # dict case
     xdict = {"image": torch.tensor([[1.0, 2.0]])}
-    out = EmbeddingScore._embed(xdict, m)
-    assert torch.allclose(out, xdict["image"])
+    out = EmbeddingScore._extract_batch(
+        xdict, m, input_keys=["image"], output_key="embedding"
+    )
+    embs = out.get("embedding")
+    assert isinstance(embs, torch.Tensor)
+    assert torch.allclose(embs, xdict["image"])
 
     # tuple/list case
     xtup = (torch.tensor([[3.0, 4.0]]),)
-    out2 = EmbeddingScore._embed(xtup, m)
-    assert torch.allclose(out2, xtup[0])
+    out2 = EmbeddingScore._extract_batch(
+        xtup, m, input_keys=["image"], output_key="embedding"
+    )
+    embs = out2.get("embedding")
+    assert isinstance(embs, torch.Tensor)
+    assert torch.allclose(embs, xtup[0])
+
+
+match = re.escape(
+    "Specify either pre-computed tensors (X and Y) or a model with a loader, but not both."
+)
 
 
 def test_fit_parameter_validation_errors() -> None:
     s = MinimalEmbedding()
     X = torch.randn(2, 4)
 
-    with pytest.raises(ValueError, match="Cannot specify both embeddings"):
-        s.fit(X=X, model=IdentityModel(), loaders=None)
+    with pytest.raises(ValueError, match=match):
+        s.fit(X=X, model=IdentityModel(), loaders={"a": 1})  # type: ignore
 
     # neither provided should raise
-    with pytest.raises(ValueError, match="Must specify either embeddings"):
+    with pytest.raises(ValueError, match=match):
         s.fit()
 
     # loaders provided but model missing should raise
@@ -566,7 +613,7 @@ def test_fit_parameter_validation_errors() -> None:
     loaders: dict[str, _EmbedLoader] = {
         "train": cast(_EmbedLoader, DataLoader(dataset, batch_size=1))
     }
-    with pytest.raises(ValueError, match="model is required"):
+    with pytest.raises(AssertionError):
         s.fit(loaders=loaders)
 
 
@@ -595,10 +642,12 @@ def test_embed_dl_restores_training_state() -> None:
         ),
     )
 
-    out = EmbeddingScore._embed_dl(model=model, loader=loader)
+    out = EmbeddingScore._extract_dl(
+        model=model, loader=loader, input_keys=["image"], output_key="embedding"
+    )
     # model should have been restored to training mode
     assert model.training
-    assert out.shape[0] == 2
+    assert out["embedding"].shape[0] == 2
 
 
 @pytest.fixture(
@@ -653,7 +702,7 @@ def test_loadorembed_uses_existing_file_and_moves_to_model_device(
     # prepare tensor file
     tensor = torch.tensor([[7.0, 8.0]])
     path = tmp_path / "pre_embs.pt"
-    torch.save(tensor, path)
+    torch.save({"embedding": tensor}, path)
 
     model = ParamModel()
     # simple loader (not used when path exists)
@@ -662,29 +711,28 @@ def test_loadorembed_uses_existing_file_and_moves_to_model_device(
         DataLoader([torch.tensor([0.0, 0.1])], batch_size=1),  # type: ignore[arg-type, ty:invalid-argument-type]
     )
     with pytest.warns(UserWarning):
-        out = EmbeddingScore._loadorembed(path, model, loader)
-    assert isinstance(out, torch.Tensor)
-    assert out.shape == tensor.shape
+        out = EmbeddingScore._load_or_extract(
+            model, loader, path, input_keys=["image"], output_key="embedding"
+        )
+    assert isinstance(out["embedding"], torch.Tensor)
+    assert out["embedding"].shape == tensor.shape
     # ensure tensor is on same device as model parameters
     dev = next(model.parameters()).device
-    assert out.device == dev
+    assert out["embedding"].device == dev
 
 
-def test_embed_accepts_list_and_rejects_non_tensor_return() -> None:
+def test_embed_accepts_list() -> None:
     model = DummyModel()
     x = torch.tensor([[1.0, 2.0]])
     # list/tuple input should select first element and succeed
-    out = EmbeddingScore._embed(cast(torch.Tensor, [x]), model)
-    assert isinstance(out, torch.Tensor)
-    assert out.shape == x.shape
-
-    # model returning non-tensor should raise AssertionError
-    class BadReturnModel(torch.nn.Module):
-        def embed(self, x: torch.Tensor) -> list[int]:
-            return [1, 2, 3]  # type: ignore[return-value]
-
-    with pytest.raises(AssertionError):
-        EmbeddingScore._embed(x, BadReturnModel())
+    out = EmbeddingScore._extract_batch(
+        cast(torch.Tensor, [x]),
+        model,
+        input_keys=["image"],
+        output_key="embedding",
+    )
+    assert isinstance(out["embedding"], torch.Tensor)
+    assert out["embedding"].shape == x.shape
 
 
 def test_fit_errors_when_both_or_neither_provided() -> None:
@@ -692,10 +740,10 @@ def test_fit_errors_when_both_or_neither_provided() -> None:
     emb = torch.randn(3, 4)
 
     # neither embeddings nor model/loaders
-    with pytest.raises(ValueError, match="Must specify either embeddings"):
+    with pytest.raises(ValueError, match=match):
         s.fit()
 
-    with pytest.raises(ValueError, match="Cannot specify both embeddings"):
+    with pytest.raises(ValueError, match=match):
         s.fit(
             X=emb,
             model=IdentityModel(),

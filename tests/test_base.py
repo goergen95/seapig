@@ -60,7 +60,7 @@ def test_plot_method(include_query: bool) -> None:
 
     # Initialize and fit the dummy score
     score = EuclideanScore()
-    score.fit(ref_embeddings, cal_embeddings)
+    score.fit(X=ref_embeddings, Y=cal_embeddings)
     score.set_threshold(0.95)
 
     # Mock plt.show to avoid displaying the plot during the test

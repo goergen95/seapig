@@ -1,5 +1,6 @@
 """Tests for unified fit() method API."""
 
+import re
 from typing import cast
 
 import pytest
@@ -17,6 +18,10 @@ _EmbedLoader = DataLoader[torch.Tensor | dict[str, torch.Tensor]]
 
 class DummyModel(torch.nn.Module):
     """Dummy model for testing embedding extraction."""
+
+    def __init__(self):
+        super().__init__()
+        self.layer = torch.nn.Linear(1, 1)
 
     def embed(self, x: torch.Tensor | dict[str, torch.Tensor]) -> torch.Tensor:
         if isinstance(x, dict):
@@ -38,8 +43,11 @@ class MinimalEmbedding(EmbeddingScore):
         self.train_required = False
         self.cal_required = False
 
-    def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
+    def _score(self, X: torch.Tensor) -> torch.Tensor:
         return X.sum(dim=1)  # pragma: no cover
+
+    def _fit(self, q: bool | float = False):
+        return
 
 
 def test_fit_with_embeddings_only() -> None:
@@ -105,6 +113,11 @@ def test_fit_with_model_train_only() -> None:
     assert score.cal_embeddings is None
 
 
+match = re.escape(
+    "Specify either pre-computed tensors (X and Y) or a model with a loader, but not both."
+)
+
+
 def test_fit_rejects_both_embeddings_and_model() -> None:
     """Test that fit() raises error when both embeddings and model are provided."""
     model = DummyModel()
@@ -115,14 +128,14 @@ def test_fit_rejects_both_embeddings_and_model() -> None:
     )
 
     score = MinimalEmbedding()
-    with pytest.raises(ValueError, match="Cannot specify both"):
+    with pytest.raises(ValueError, match=match):
         score.fit(X=ref_embs, model=model, loaders={"train": train_loader})
 
 
 def test_fit_rejects_neither_embeddings_nor_model() -> None:
     """Test that fit() raises error when neither embeddings nor model provided."""
     score = MinimalEmbedding()
-    with pytest.raises(ValueError, match="Must specify either"):
+    with pytest.raises(ValueError, match=match):
         score.fit()
 
 
@@ -130,7 +143,7 @@ def test_fit_rejects_model_without_loaders() -> None:
     """Test that fit() raises error when model provided without loaders."""
     model = DummyModel()
     score = MinimalEmbedding()
-    with pytest.raises(ValueError, match="loaders is required"):
+    with pytest.raises(AssertionError):
         score.fit(model=model)
 
 
@@ -141,7 +154,7 @@ def test_fit_rejects_loaders_without_model() -> None:
         DataLoader([torch.randn(5)]),  # type: ignore[arg-type, ty:invalid-argument-type]
     )
     score = MinimalEmbedding()
-    with pytest.raises(ValueError, match="model is required"):
+    with pytest.raises(AssertionError):
         score.fit(loaders={"train": train_loader})
 
 
@@ -302,10 +315,13 @@ def test_logit_score_fit_with_model() -> None:
     """Test LogitScore fit() with model and loader."""
     model = DummyModel()
     data = torch.randn(10, 8)
-    loader = DataLoader(
-        TensorDataset(data),
-        batch_size=2,
-        collate_fn=lambda b: torch.stack([x[0] for x in b], 0),
+    loader = cast(
+        DataLoader[torch.Tensor],
+        DataLoader(
+            TensorDataset(data),
+            batch_size=2,
+            collate_fn=lambda b: torch.stack([x[0] for x in b], 0),
+        ),
     )
 
     score = SoftmaxScore()
@@ -319,15 +335,25 @@ def test_logit_score_rejects_both_logits_and_model() -> None:
     """Test that LogitScore fit() rejects both logits and model."""
     model = DummyModel()
     logits = torch.randn(10, 3)
-    loader = cast(DataLoader[object], DataLoader([torch.randn(8)]))  # type: ignore[arg-type, ty:invalid-argument-type]
+    loader = cast(DataLoader[torch.Tensor], DataLoader([torch.randn(8)]))  # type: ignore[arg-type, ty:invalid-argument-type]
 
     score = SoftmaxScore()
-    with pytest.raises(ValueError, match="Cannot specify both"):
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "Specify either pre-computed tensors (X and Y) or a model with a loader, but not both."
+        ),
+    ):
         score.fit(X=logits, model=model, loader=loader)
 
 
 def test_logit_score_rejects_neither_logits_nor_model() -> None:
     """Test that LogitScore fit() rejects neither logits nor model."""
     score = SoftmaxScore()
-    with pytest.raises(ValueError, match="Must specify either"):
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "Specify either pre-computed tensors (X and Y) or a model with a loader, but not both."
+        ),
+    ):
         score.fit()

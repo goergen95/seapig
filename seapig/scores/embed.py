@@ -1,7 +1,5 @@
 """Abstract Base Method for embeddings based uncertainty scores."""
 
-import inspect
-import warnings
 from abc import ABC
 from pathlib import Path
 from typing import Any, Literal
@@ -13,12 +11,14 @@ from typing_extensions import override
 from seapig.scores.base import UncertaintyScore
 from seapig.scores.utils import TensorPCA
 from seapig.utils import get_logger
-from seapig.utils.progress import track
 
 logger = get_logger(__name__)
 
 
-class EmbeddingScore(UncertaintyScore, ABC):
+from seapig.scores.mixins import ModelExtractorMixin
+
+
+class EmbeddingScore(UncertaintyScore, ModelExtractorMixin, ABC):
     """Base class for embedding-based uncertainty scores.
 
     Embedding-based scores quantify deviation from the training distribution using
@@ -66,157 +66,19 @@ class EmbeddingScore(UncertaintyScore, ABC):
         self.register_buffer("ref_embeddings", None)
         self.register_buffer("cal_embeddings", None, persistent=False)
 
-    @staticmethod
-    def _setup_path(
-        outdir: Path | None = None, prefix: str | None = None
-    ) -> Path | None:
-        """Construct the output path for a parquet file."""
-        if outdir is None or prefix is None:
-            return None
-        if not outdir.is_dir():
-            outdir.mkdir(parents=True, exist_ok=True)
-        return outdir / f"{prefix}.pt"
-
-    @staticmethod
-    def _check_model(model: torch.nn.Module) -> None:
-        """Check a model for compatibility with embeddings-based uncertainty scores."""
-        assert isinstance(model, torch.nn.Module)
-        if not hasattr(model, "embed") or not callable(model.embed):
-            raise TypeError("model is required to have a `.embed()` method.")
-        sig = inspect.signature(obj=model.embed)
-        if "x" not in sig.parameters:
-            raise AttributeError(
-                "`.embed()` method is required to except `x` as argument."
-            )
-
-    @staticmethod
-    def _write_pt(x: torch.Tensor, path: Path) -> None:
-        """Write a `torch.Tensor` to disk."""
-        torch.save(x.cpu(), path)
-
-    @staticmethod
-    @torch.inference_mode()
-    def _load_pt(path: Path) -> torch.Tensor:
-        """Read a file from disk to a `torch.Tensor`."""
-        v: torch.Tensor = torch.load(path)
-        return v
-
-    @classmethod
-    def _loadorembed(
-        self,
-        path: Path | None,
-        model: torch.nn.Module,
-        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
-    ) -> torch.Tensor:
-        """Load from file or iterate over dataloader to extract embeddings."""
-        if path is not None and path.is_file():
-            warnings.warn(
-                f"Loading pre-existing embeddings from {path}.", UserWarning
-            )
-            v = self._load_pt(path)
-            device = next(model.parameters()).device
-            v = v.to(device)
-        else:
-            v = self._embed_dl(model=model, loader=loader)
-            if path is not None:
-                self._write_pt(v, path)
-        return v
-
-    @classmethod
-    @torch.inference_mode()
-    def _embed(
-        self,
-        X: torch.Tensor
-        | dict[str, torch.Tensor]
-        | list[torch.Tensor]
-        | tuple[torch.Tensor, ...],
-        model: torch.nn.Module,
-    ) -> torch.Tensor:
-        """Embed a batch based on a models embed method."""
-        assert callable(model.embed)
-        if isinstance(X, dict):
-            if "image" not in X:
-                raise KeyError(
-                    'A batch dictionary is required to contain the "image" key.'
-                )
-            x = X["image"]  # type: ignore[arg-type]
-            z = model.embed(x)
-        elif isinstance(X, (list, tuple)):
-            z = model.embed(X[0])
-        else:
-            z = model.embed(X)
-        assert isinstance(z, torch.Tensor)
-        if len(z.shape) > 2:  # we expect (B,D)
-            raise ValueError(
-                f"Expected embed method to return tensor of shape (B,D) but got {z.shape}"
-            )
-        return z
-
-    @classmethod
-    def _embed_dl(
-        self,
-        model: torch.nn.Module,
-        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]],
-    ) -> torch.Tensor:
-        """Extract embeddings by iterating over a DataLoader.
-
-        This method ensures the model is in eval mode during embedding extraction
-        to ensure consistent behavior regardless of the model's initial state.
-        The model's original training state is restored after embedding extraction.
-        """
-        assert callable(model.embed)
-        # Save the current training state and set model to eval mode
-        was_training = model.training
-        model.eval()
-
-        pbar_desc = f"Embedding {len(loader)} batches"
-        embs_ls = []
-        for batch in track(
-            loader, total=len(loader), desc=pbar_desc, unit="batches"
-        ):
-            z = self._embed(X=batch, model=model)
-            embs_ls.append(z)
-        embs = torch.cat(embs_ls, dim=0)
-
-        # Restore the original training state
-        if was_training:
-            model.train()
-
-        return embs
-
-    @classmethod
-    def _embed_from_dict(
-        self,
-        model: torch.nn.Module,
-        loaders: dict[str, DataLoader[torch.Tensor | dict[str, torch.Tensor]]],
-        key: Literal["train", "val"],
-        outdir: Path | None = None,
-        prefix: str | None = None,
-    ) -> torch.Tensor:
-        """Embed a loader from a specified key in a dictionary."""
-        path = None
-        assert isinstance(loaders, dict)
-        assert isinstance(model, torch.nn.Module)
-        if outdir is not None and prefix is None:
-            warnings.warn(
-                "'outdir' has been specified but 'prefix' is None.\n"
-                "Consider specifying 'prefix' as well to enable saving embeddings.",
-                UserWarning,
-            )
-        self._check_model(model)
-        if key not in loaders:
-            raise KeyError(f"Missing key `{key}` in loaders dictionary.")
-        loader = loaders[key]
-        assert isinstance(loader, DataLoader)
-        if prefix is not None:
-            path = self._setup_path(outdir, prefix + f"-embeddings-{key}")
-        embs = self._loadorembed(path, model, loader)
-        return embs
-
     def _fit_pca(self) -> None:
         assert self.ref_embeddings is not None
         assert isinstance(self.pca, TensorPCA)
         self.pca.fit(self.ref_embeddings)
+
+    def _apply_pca(self) -> None:
+        assert self.ref_embeddings is not None
+        if self.pca is None:
+            return
+        self._fit_pca()
+        self.ref_embeddings = self.pca.transform(self.ref_embeddings)
+        if self.cal_embeddings is not None:
+            self.cal_embeddings = self.pca.transform(self.cal_embeddings)
 
     def fit(
         self,
@@ -227,6 +89,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
         | None = None,
         outdir: Path | None = None,
         prefix: str | None = None,
+        q: bool | float = False,
     ) -> None:
         """Train a uncertainty score based on sample embeddings.
 
@@ -269,74 +132,49 @@ class EmbeddingScore(UncertaintyScore, ABC):
         prefix:
             A `str` used as filename prefix for saved embeddings.
             Only used with `model` and `loaders`.
+        q:
+            A `float` or `bool` indicating if outliers from the training
+            distribution should be filtered before fitting. Defaults to `False`.
         """
-        # Validate parameter combinations
-        using_embeddings = X is not None
-        using_model = model is not None or loaders is not None
-
-        if using_embeddings and using_model:
+        tensor_mode = X is not None
+        model_mode = model is not None or loaders is not None
+        if tensor_mode == model_mode:
             raise ValueError(
-                "Cannot specify both embeddings (X/Y) and model+loaders. "
-                "Use either precomputed embeddings OR on-the-fly extraction."
+                "Specify either pre-computed tensors (X and Y) or a model with a loader, but not both."
             )
-
-        if not using_embeddings and not using_model:
-            raise ValueError(
-                "Must specify either embeddings (X) or model+loaders for fitting."
-            )
-
-        if using_embeddings:
-            # Mode 1: Use precomputed embeddings
-            self.ref_embeddings = X
-            self.cal_embeddings = Y
-        else:
-            # Mode 2: Extract embeddings on-the-fly
-            if model is None:
-                raise ValueError(
-                    "model is required when not using precomputed embeddings."
-                )
-            if loaders is None:
-                raise ValueError("loaders is required when using a model.")
-
-            assert isinstance(loaders, dict)
-            assert isinstance(model, torch.nn.Module)
-            self._check_model(model)
-            self.ref_embeddings = self._embed_from_dict(
-                loaders=loaders,
+        if model_mode:
+            assert model is not None
+            assert loaders is not None
+            assert "train" in loaders
+            out = self._extract_dict(
                 model=model,
+                loaders=loaders,
+                input_keys=["image"],
+                output_key="embedding",
                 key="train",
                 outdir=outdir,
                 prefix=prefix,
             )
+            X = out.get("embedding")
             if "val" in loaders:
-                self.cal_embeddings = self._embed_from_dict(
-                    loaders=loaders,
+                out = self._extract_dict(
                     model=model,
+                    loaders=loaders,
+                    input_keys=["image"],
+                    output_key="embedding",
                     key="val",
                     outdir=outdir,
                     prefix=prefix,
                 )
+                Y = out.get("embedding")
+        self.ref_embeddings = X
+        self.cal_embeddings = Y
+        self._fit(q=q)
 
-    @override
-    def set_threshold(self, q: float = 0.99) -> None:
-        """Set a threshold based on a quantile of the available uncertainty scores.
-
-        Samples with scores higher than the threshold are excluded from prediction.
-        If calibration embeddings were provided during `fit`, the threshold is
-        computed from their scores; otherwise the training sample scores are used.
-
-        Parameters
-        ----------
-        q : float
-            Quantile in `(0, 1)` used to determine the threshold. Defaults to
-            `0.99` (i.e., 1% of samples are rejected as outliers).
-        """
-        if self.train_required:
-            assert self.is_trained()
-        if self.cal_required:
-            assert self.is_calibrated()
-        assert self.scores is not None
-        self.threshold = self.scores.float().quantile(q=q)
+    def _fit(self, q: bool | float = False):
+        raise NotImplementedError(
+            "Subclasses must implement the `_fit` method."
+        )
 
     @override
     def score(
@@ -393,63 +231,29 @@ class EmbeddingScore(UncertaintyScore, ABC):
             1-D tensor of shape `(N,)` with uncertainty scores.
             Low values indicate likely inliers, high values indicate likely outliers.
         """
-        # Validate parameter combinations
-        using_embeddings = X is not None
-        using_model = model is not None or loader is not None
+        tensors_mode = X is not None
+        model_mode = model is not None and loader is not None
 
-        if using_embeddings and using_model:
+        if tensors_mode == model_mode:
             raise ValueError(
-                "Cannot specify both embeddings (X) and model+loader. "
-                "Use either precomputed embeddings OR on-the-fly extraction."
+                "Specify either pre-computed tensors (X and Y) or a model with a loader, but not both."
             )
-
-        if not using_embeddings and not using_model:
-            raise ValueError(
-                "Must specify either embeddings (X) or model+loader for scoring."
+        if model_mode:
+            out = self._extract_loader(
+                model=model,
+                loader=loader,
+                input_keys=["image"],
+                output_key="embedding",
+                outdir=outdir,
+                prefix=prefix,
             )
+            X = out.get("embedding")
+        assert isinstance(X, torch.Tensor)
+        return self._score(X)
 
-        if using_embeddings:
-            # Mode 1: Use precomputed embeddings - call subclass implementation
-            assert X is not None, (
-                "X is required when using precomputed embeddings."
-            )
-            return self._score_embeddings(X)
-        else:
-            # Mode 2: Extract embeddings on-the-fly
-            if model is None:
-                raise ValueError(
-                    "model is required when not using precomputed embeddings."
-                )
-            if loader is None:
-                raise ValueError("loader is required when using a model.")
-
-            path = None
-            if prefix is not None:
-                path = self._setup_path(outdir, prefix)
-            embeddings = self._loadorembed(path, model, loader)
-            return self._score_embeddings(embeddings)
-
-    def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
-        """Compute uncertainty scores based on query embeddings.
-
-        This method should be implemented by subclasses to compute uncertainty
-        scores based on the query embeddings `X`. The base class does not
-        implement any specific scoring logic, as this will depend on the
-        particular method (e.g., k-nearest neighbors, PyOD scores, etc.).
-
-        Parameters
-        ----------
-        X:
-            A `torch.Tensor` with query embeddings of shape (N, D).
-
-        Returns
-        -------
-        torch.Tensor
-            A `torch.Tensor` with uncertainty scores for each query sample.
-            Low scores indicate likely inliers, high scores indicate likely outliers.
-        """
+    def _score(self, X: torch.Tensor):
         raise NotImplementedError(
-            "Subclasses must implement the `_score_embeddings` method."
+            "Subclasses must implement the `_score` method."
         )
 
     @override
@@ -529,6 +333,27 @@ class EmbeddingScore(UncertaintyScore, ABC):
             X=X, model=model, loader=loader, outdir=outdir, prefix=prefix
         )
         return {"score": score, "selected": score < self.threshold}
+
+    @override
+    def set_threshold(self, q: float = 0.99) -> None:
+        """Set a threshold based on a quantile of the available uncertainty scores.
+
+        Samples with scores higher than the threshold are excluded from prediction.
+        If calibration embeddings were provided during `fit`, the threshold is
+        computed from their scores; otherwise the training sample scores are used.
+
+        Parameters
+        ----------
+        q : float
+            Quantile in `(0, 1)` used to determine the threshold. Defaults to
+            `0.99` (i.e., 1% of samples are rejected as outliers).
+        """
+        if self.train_required:
+            assert self.is_trained()
+        if self.cal_required:
+            assert self.is_calibrated()
+        assert self.scores is not None
+        self.threshold = self.scores.float().quantile(q=q)
 
     def plot_embs(
         self,

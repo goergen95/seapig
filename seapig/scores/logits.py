@@ -9,7 +9,6 @@ temperature scaling calibration.
 from __future__ import annotations
 
 import abc
-import inspect
 from pathlib import Path
 
 import torch
@@ -18,10 +17,17 @@ from torch.utils.data import DataLoader
 from typing_extensions import override
 
 from seapig.scores.base import UncertaintyScore
-from seapig.utils.progress import track
+
+from .mixins import ModelExtractorMixin
 
 
-class LogitScore(UncertaintyScore, abc.ABC):
+class LogitModelMixin(ModelExtractorMixin):
+    """Mixin providing extractor helpers."""
+
+    method_name: str = "logits"
+
+
+class LogitScore(UncertaintyScore, LogitModelMixin, abc.ABC):
     """Base class for logit-based uncertainty scores.
 
     Supports multiclass, binary (single/two-logit), and multilabel tasks.
@@ -90,32 +96,13 @@ class LogitScore(UncertaintyScore, abc.ABC):
         self.task = task
         self.per_member: bool = bool(per_member)
 
-    @staticmethod
-    def _check_model(model: torch.nn.Module) -> None:
-        """Check if the model is compatible with logits-based uncertainty scores.
-
-        Parameters
-        ----------
-        model : torch.nn.Module
-            Model to check. Must have a callable `.logits(x)` method.
-        """
-        assert isinstance(model, torch.nn.Module)
-        if not hasattr(model, "logits") or not callable(model.logits):
-            raise AttributeError(
-                "model is required to have a `.logits()` method."
-            )
-        sig = inspect.signature(obj=model.logits)
-        if "x" not in sig.parameters:
-            raise AttributeError(
-                "`.logits()` method is required to except `x` as argument."
-            )
-
     def fit(
         self,
         X: torch.Tensor | None = None,
         Y: torch.Tensor | None = None,
         model: torch.nn.Module | None = None,
-        loader: DataLoader[object] | None = None,
+        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]]
+        | None = None,
         outdir: Path | str | None = None,
         prefix: str | None = None,
         *args: object,
@@ -153,81 +140,110 @@ class LogitScore(UncertaintyScore, abc.ABC):
         -----
         If labels are provided, temperature is fitted to minimize NLL for the task.
         """
-        # For backward compatibility, also support 'logits' and 'labels' as kwargs
-        logits = X if X is not None else None
-        labels = Y if Y is not None else None
+        tensors_mode = X is not None
+        model_mode = model is not None or loader is not None
 
-        # Validate parameter combinations
-        using_precomputed = logits is not None
-        using_model = model is not None or loader is not None
-
-        if using_precomputed and using_model:
+        if tensors_mode == model_mode:
             raise ValueError(
-                "Cannot specify both precomputed logits and model+loader. "
-                "Use either precomputed logits OR on-the-fly extraction."
+                "Specify either pre-computed tensors (X and Y) or a model with a loader, but not both."
             )
 
-        if not using_precomputed and not using_model:
-            raise ValueError(
-                "Must specify either logits or model+loader for fitting."
+        if model_mode:
+            assert model is not None
+            assert loader is not None
+            outputs = self._extract_loader(
+                model=model,
+                loader=loader,
+                input_keys=["image", "label"],
+                output_key="logit",
+                outdir=outdir,
+                prefix=prefix,
             )
+            X = outputs.get("logit")
+            Y = outputs.get("label")
 
-        if using_precomputed:
-            # Mode 1: Use precomputed logits
-            self.logits = logits
-            self.labels = labels
-            if self.labels is not None:
-                assert self.logits is not None
-                self._fit_temperature(logits=self.logits, labels=self.labels)
+        self.logits = X
+        self.labels = Y
+
+        if self.labels is not None:
             assert self.logits is not None
-            self.scores = self.score(self.logits)
-        else:
-            # Mode 2: Extract logits on-the-fly
-            if model is None:
-                raise ValueError(
-                    "model is required when not using precomputed logits."  # pragma: no cover
-                )
-            if loader is None:
-                raise ValueError(
-                    "loader is required when using a model."
-                )  # pragma: no cover
+            self._fit_temperature(logits=self.logits, labels=self.labels)
 
-            assert isinstance(loader, DataLoader)
-            assert isinstance(model, torch.nn.Module)
+        assert self.logits is not None
+        self.scores = self.score(self.logits)
 
-            # prepare output path if requested
-            path: Path | None = None
-            if outdir is not None:
-                out_path = Path(outdir)
-                out_path.mkdir(parents=True, exist_ok=True)
-                base = prefix if (prefix and prefix.strip()) else "logits"
-                path = out_path / f"{base}_train.pt"
-
-            extracted_logits, extracted_labels = self._loadorpredict(
-                path=path, model=model, loader=loader
-            )
-
-            self.logits = extracted_logits
-            self.labels = extracted_labels
-            if self.labels is not None:
-                self._fit_temperature(logits=self.logits, labels=self.labels)
-            self.scores = self.score(self.logits)
-
-    @abc.abstractmethod
-    def score(self, query_logits: torch.Tensor) -> torch.Tensor:
+    @override
+    def score(
+        self,
+        query_logits: torch.Tensor | None = None,
+        model: torch.nn.Module | None = None,
+        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]]
+        | None = None,
+        outdir: Path | None = None,
+        prefix: str | None = None,
+    ) -> torch.Tensor:
         """Compute uncertainty scores for query logits.
+
+        This method supports two usage modes:
+
+        1. **Precomputed logits**: Supply query logits via `query_logits`.
+        2. **On-the-fly extraction**: Supply a `model` with an `.logits()` method
+           and a `DataLoader` to extract logits automatically.
+
+        You must use either logits (query_logits) OR model+loader, but not both.
+
+        ```python
+        # Mode 1: Precomputed logits
+        from seapig.scores import EntropyScore
+        my_score = EntropyScore()
+        scores = my_score.score(query_logits=test_logits)
+
+        # Mode 2: On-the-fly extraction
+        my_score = EntropyScore()
+        scores = my_score.score(model=model, loader=test_dl)
+        ```
 
         Parameters
         ----------
         query_logits : torch.Tensor
             Logits for samples to score. Shape depends on task.
+        model:
+            A `torch.nn.Module` with an `.embed()` method.
+            Required when not using `X`.
+        loader:
+            A `torch.utils.data.DataLoader` returning `torch.Tensor`s or
+            dicts with the `"image"` key. Required when using `model`.
+        outdir:
+            A `pathlib.Path` pointing to a directory for saving/loading embeddings.
+            Only used with `model` and `loader`.
+        prefix:
+            A `str` used as filename prefix for saved embeddings.
+            Only used with `model` and `loader`.
 
         Returns
         -------
         torch.Tensor
             1-D tensor of shape `(M,)`. Lower values indicate lower uncertainty.
         """
-        raise NotImplementedError()
+        tensors_mode = query_logits is not None
+        model_mode = model is not None and loader is not None
+
+        if tensors_mode == model_mode:
+            raise ValueError(
+                "Specify either pre-computed tensors (query_logits) or a model with a loader, but not both."
+            )
+        if model_mode:
+            out = self._extract_loader(
+                model=model,
+                loader=loader,
+                input_keys=["image"],
+                output_key="logit",
+                outdir=outdir,
+                prefix=prefix,
+            )
+            query_logits = out.get("logit")
+        assert isinstance(query_logits, torch.Tensor)
+        return self._score(query_logits)
 
     def select(self, query_logits: torch.Tensor) -> dict[str, torch.Tensor]:
         """Select samples for prediction based on their uncertainty score.
@@ -483,119 +499,17 @@ class LogitScore(UncertaintyScore, abc.ABC):
 
         raise ValueError(f"Unknown task: {self.task}")
 
-    def _loadorpredict(
-        self,
-        path: Path | None,
-        model: torch.nn.Module,
-        loader: DataLoader[object],
-    ) -> tuple[torch.Tensor, torch.Tensor | None]:
-        """Load logits and labels from disk or compute from model.
-
-        Parameters
-        ----------
-        path : Path or None
-            Path to saved logits file.
-        model : torch.nn.Module
-            Model for prediction.
-        loader : DataLoader
-            DataLoader for inference.
-
-        Returns
-        -------
-        tuple of (torch.Tensor, torch.Tensor or None)
-            Logits and labels (labels may be `None` if not provided by loader).
-        """
-        self._check_model(model=model)
-        if path is not None and path.exists():
-            data = torch.load(path, map_location="cpu")
-            logits = data.get("logits", None)
-            labels = data.get("labels", None)
-            if logits is None:
-                raise ValueError(f"Saved file {path} does not contain 'logits'")
-        else:
-            logits, labels = self._logits_from_loader(
-                model=model, loader=loader
-            )
-            if logits is None:
-                raise ValueError(
-                    "Failed to extract logits from loader"
-                )  # pragma: no cover
-            if path is not None:
-                torch.save(
-                    {
-                        "logits": logits.cpu(),
-                        "labels": labels.cpu() if labels is not None else None,
-                    },
-                    path,
-                )
-
-        return logits, labels
-
-    def _logits_from_loader(
-        self, model: torch.nn.Module, loader: DataLoader[object]
-    ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
-        """Extract logits and labels from a DataLoader.
-
-        Parameters
-        ----------
-        model : torch.nn.Module
-            Model for inference.
-        loader : DataLoader
-            DataLoader yielding batches.
-
-        Returns
-        -------
-        tuple of (torch.Tensor or None, torch.Tensor or None)
-            Logits and labels.
-        """
-        self._check_model(model=model)
-        pbar_desc = f"Forward {len(loader)} batches"
-        logits_ls: list[torch.Tensor] = []
-        labels_ls: list[torch.Tensor] = []
-        device = None
-        try:
-            device = next(model.parameters()).device
-        except StopIteration:
-            try:
-                device = next(model.buffers()).device
-            except StopIteration:
-                device = torch.device("cpu")
-        for batch in track(
-            loader, total=len(loader), desc=pbar_desc, unit="batches"
-        ):
-            x: torch.Tensor
-            y: torch.Tensor | None
-            if isinstance(batch, torch.Tensor):
-                x = batch
-                y = None
-            elif isinstance(batch, dict):
-                _x = batch.get("image")
-                assert isinstance(_x, torch.Tensor)
-                x = _x
-                y = batch.get("label", None)
-
-            assert callable(model.logits)
-            logits = model.logits(x=x.to(device))
-            if not isinstance(logits, torch.Tensor):
-                raise TypeError("Extracted logits is not a torch.Tensor")
-            logits_ls.append(logits)
-            if y is not None:
-                assert y.shape[0] == logits.shape[0], (
-                    "Batch size of labels must match logits"
-                )
-                labels_ls.append(y.to(device))
-        if len(logits_ls) == 0:
-            raise ValueError("No batches found in loader")
-        logits = torch.cat(logits_ls, dim=0)
-        labels = torch.cat(labels_ls, dim=0) if len(labels_ls) > 0 else None
-        return logits, labels
-
 
 class SoftmaxScore(LogitScore):
     """Maximum softmax probability uncertainty score.
 
     Supports multiclass, binary (single/two-logit), and multilabel tasks.
     Higher maximum softmax probability indicates higher uncertainty (higher score).
+
+    For multiclass: -max softmax probability.
+    For binary single-logit: -sigmoid(|logit|).
+    For binary two-logit: -max softmax probability.
+    For multilabel: -min(max(p, 1-p)), where p = sigmoid(logit).
 
     Parameters
     ----------
@@ -635,24 +549,8 @@ class SoftmaxScore(LogitScore):
         )
 
     @override
-    def score(self, query_logits: torch.Tensor) -> torch.Tensor:
-        """Compute task-aware softmax-based uncertainty score.
-
-        For multiclass: -max softmax probability.
-        For binary single-logit: -sigmoid(|logit|).
-        For binary two-logit: -max softmax probability.
-        For multilabel: -min(max(p, 1-p)), where p = sigmoid(logit).
-
-        Parameters
-        ----------
-        query_logits : torch.Tensor
-            Logits for samples to score. Shape depends on task.
-
-        Returns
-        -------
-        torch.Tensor
-            1-D tensor of shape `(M,)`. Lower values indicate lower uncertainty.
-        """
+    def _score(self, query_logits: torch.Tensor) -> torch.Tensor:
+        """Compute task-aware softmax-based uncertainty score."""
         T = 1.0 if self.temperature is None else float(self.temperature)
         task = self.task
         logits = query_logits
@@ -734,19 +632,8 @@ class EnergyScore(LogitScore):
         )
 
     @override
-    def score(self, query_logits: torch.Tensor) -> torch.Tensor:
-        """Compute energy for query logits (task-aware).
-
-        Parameters
-        ----------
-        query_logits : torch.Tensor
-            Logits for samples to score. Shape depends on task.
-
-        Returns
-        -------
-        torch.Tensor
-            1-D tensor of shape `(M,)`. Lower values indicate lower uncertainty.
-        """
+    def _score(self, query_logits: torch.Tensor) -> torch.Tensor:
+        """Compute energy for query logits (task-aware)."""
         T = 1.0 if self.temperature is None else float(self.temperature)
         task = self.task
         logits = query_logits
@@ -778,6 +665,11 @@ class MarginScore(LogitScore):
     Computes the difference between the top-two logits. A larger margin
     indicates lower uncertainty. Supports multiclass, binary (single/two-logit),
     and multilabel tasks.
+
+    For multiclass: negative top-two margin.
+    For binary single-logit: negative absolute logit.
+    For binary two-logit: negative top-two margin.
+    For multilabel: negative min(|logit|).
 
     Parameters
     ----------
@@ -817,24 +709,8 @@ class MarginScore(LogitScore):
         )
 
     @override
-    def score(self, query_logits: torch.Tensor) -> torch.Tensor:
-        """Compute task-aware margin-based uncertainty score.
-
-        For multiclass: negative top-two margin.
-        For binary single-logit: negative absolute logit.
-        For binary two-logit: negative top-two margin.
-        For multilabel: negative min(|logit|).
-
-        Parameters
-        ----------
-        query_logits : torch.Tensor
-            Logits for samples to score. Shape depends on task.
-
-        Returns
-        -------
-        torch.Tensor
-            1-D tensor of shape `(M,)`. Lower values indicate lower uncertainty.
-        """
+    def _score(self, query_logits: torch.Tensor) -> torch.Tensor:
+        """Compute task-aware margin-based uncertainty score."""
         T = 1.0 if self.temperature is None else float(self.temperature)
         task = self.task
         logits = query_logits
@@ -910,19 +786,8 @@ class EntropyScore(LogitScore):
         )
 
     @override
-    def score(self, query_logits: torch.Tensor) -> torch.Tensor:
-        """Compute predictive entropy for each sample (task-aware).
-
-        Parameters
-        ----------
-        query_logits : torch.Tensor
-            Logits for samples to score. Shape depends on task.
-
-        Returns
-        -------
-        torch.Tensor
-            1-D tensor of shape `(M,)`. Lower values indicate lower uncertainty.
-        """
+    def _score(self, query_logits: torch.Tensor) -> torch.Tensor:
+        """Compute predictive entropy for each sample (task-aware)."""
         T = 1.0 if self.temperature is None else float(self.temperature)
         task = self.task
         logits = query_logits
