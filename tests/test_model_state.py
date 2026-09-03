@@ -70,7 +70,7 @@ def test_model_state_preserved_in_forward() -> None:
 
     # Fit the score with some dummy embeddings
     dummy_embs = torch.randn(10, 16)
-    score.fit(dummy_embs, None)
+    score.fit(dummy_embs)
     score.set_threshold(q=0.99)
 
     # Create SelectiveInferenceTask

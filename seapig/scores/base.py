@@ -108,7 +108,7 @@ class UncertaintyScore(torch.nn.Module, ABC):
         assert 0.0 < q < 1.0, "Quantile (q) must be between 0 and 1."
         q = float(q)
         if self.scores is None:
-            raise ValueError(
+            raise ValueError(  # pragma: no cover
                 "Calibration scores (scores) must be available to set a threshold."
             )
         qval = torch.nanquantile(self.scores, q=q)
@@ -201,7 +201,7 @@ class UncertaintyScore(torch.nn.Module, ABC):
                 if q_scores is not None
                 else 0
             )
-        else:
+        else:  # pragma: no cover
             rejected_calibration = 0
             rejected_query = 0
 

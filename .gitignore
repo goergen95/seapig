@@ -73,6 +73,7 @@ README.html
 /index.html
 index_files/
 lightning_logs/
+_freeze
 
 # Other
 .ruff_cache

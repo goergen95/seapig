@@ -46,10 +46,9 @@ def test_fit_sets_trained_and_scores_without_cal() -> None:
     det = _MockDetectorBasic(score_on_call=0.1)
     score = PyODScore(detector=det, pca=None)  # type: ignore[argument-type, ty:invalid-argument-type]
     score.cal_required = False
-    score.ref_embeddings = refs
 
     # run internal fit implementation
-    score._fit_impl(q=None)
+    score.fit(refs, q=False)
 
     assert score.is_trained()
     assert isinstance(score.scores, torch.Tensor)
@@ -72,10 +71,8 @@ def test_fit_with_calibration_sets_calibrated_and_scores_from_decision_function(
 
     det = DetCal()
     score = PyODScore(detector=det, pca=None)  # type: ignore[argument-type, ty:invalid-argument-type]
-    score.ref_embeddings = refs
-    score.cal_embeddings = cal
 
-    score._fit_impl(q=None)
+    score.fit(X=refs, Y=cal, q=False)
 
     assert score.is_trained()
     assert score.is_calibrated()
@@ -113,10 +110,9 @@ def test_q_trimming_reduces_reference_set() -> None:
     det = _MockDetectorRange()
     score = PyODScore(detector=det, pca=None)  # type: ignore[argument-type, ty:invalid-argument-type]
     score.cal_required = False
-    score.ref_embeddings = refs.float()
 
-    original_count = score.ref_embeddings.shape[0]
-    score._fit_impl(q=0.50)
+    original_count = refs.shape[0]
+    score.fit(refs, q=0.50)
     new_count = score.ref_embeddings.shape[0]
 
     assert new_count < original_count
@@ -130,6 +126,5 @@ def test_pca_predict_is_applied_before_detector_fit() -> None:
     det = _MockDetectorBasic()
     score = PyODScore(detector=det, pca=TensorPCA(n_components=0.90))  # type: ignore[argument-type, ty:invalid-argument-type]
     score.cal_required = False
-    score.ref_embeddings = refs.clone()
-    score._fit_impl(q=None)
+    score.fit(refs, q=False)
     assert score.ref_embeddings.shape[1] < refs.shape[1]

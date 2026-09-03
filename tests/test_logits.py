@@ -1,4 +1,5 @@
 import math
+import re
 from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any, cast
@@ -40,6 +41,10 @@ class SimpleBatchDataset(Dataset[Any]):
 
 
 class IdentityModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.layer = torch.nn.Linear(1, 1)
+
     def logits(self, x: torch.Tensor) -> torch.Tensor:
         return x.squeeze(0) if x.dim() > 2 and x.shape[0] == 1 else x
 
@@ -66,11 +71,11 @@ def test_fit_saves_files(tmp_path: Path) -> None:
     score = SoftmaxScore()
     outdir = tmp_path / "saved_logits"
     score.fit(model=model, loader=loader, outdir=outdir, prefix="mytest")
-    train_file = outdir / "mytest_train.pt"
+    train_file = outdir / "mytest.pt"
     assert train_file.exists()
     loaded = torch.load(train_file)
-    assert "logits" in loaded and "labels" in loaded
-    assert loaded["logits"].shape[0] == logits.shape[0]
+    assert "logit" in loaded and "label" in loaded
+    assert loaded["logit"].shape[0] == logits.shape[0]
     assert hasattr(score, "logits")
     assert score.logits is not None
     assert score.logits.shape[0] == logits.shape[0]
@@ -83,6 +88,10 @@ def test_fit_accepts_output_formats(out_kind: str) -> None:
     loader = make_loader_from_tensors(logits, labels)
 
     class FlexibleModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(1, 1)
+
         def logits(self, x: torch.Tensor) -> torch.Tensor:
             return x.squeeze(0)
 
@@ -306,25 +315,35 @@ def test_fit_temperature_validation_errors() -> None:
         s._fit_temperature(torch.randn(3, 2), torch.tensor([0, 1]))
 
 
-def test_loadorpredict_missing_logits_key(tmp_path: Path) -> None:
+def test_load_or_extract_missing_logits_key(tmp_path: Path) -> None:
     """If saved file lacks 'logits', _loadorpredict should raise ValueError."""
     s = SoftmaxScore()
     fake_path = tmp_path / "bad.pt"
     torch.save({"labels": torch.tensor([0])}, fake_path)
 
     class DummyModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.layer = torch.nn.Linear(1, 1)
+
         def logits(self, x: torch.Tensor) -> torch.Tensor:
             return torch.tensor([[0.0]])  # pragma: no cover
 
     model = DummyModel()
     loader = make_loader_from_tensors(torch.tensor([[0.0]]))
     with pytest.raises(
-        ValueError, match="Saved file .* does not contain 'logits'"
+        ValueError, match="Saved file .* does not contain 'logit'"
     ):
-        s._loadorpredict(path=fake_path, model=model, loader=loader)
+        s._load_or_extract(
+            path=fake_path,
+            model=model,
+            loader=loader,
+            input_keys=["image"],
+            output_key="logit",
+        )
 
 
-def test_loadorpredict_no_batches_raises() -> None:
+def test_load_or_extract_no_batches_raises() -> None:
     """When loader yields no batches, _logits_from_loader raises ValueError."""
     s = SoftmaxScore()
 
@@ -343,7 +362,12 @@ def test_loadorpredict_no_batches_raises() -> None:
 
     model = DummyModel()
     with pytest.raises(ValueError, match="No batches found in loader"):
-        s._logits_from_loader(model=model, loader=empty_loader)
+        s._extract_dl(
+            model=model,
+            loader=empty_loader,
+            input_keys=["image"],
+            output_key="logit",
+        )
 
 
 def test_select_automatically_sets_threshold(tmp_path: Path) -> None:
@@ -975,7 +999,8 @@ def test_check_model_requires_logits_method() -> None:
         pass
 
     with pytest.raises(
-        Exception, match="model is required to have a `\\.logits\\(\\)` method"
+        Exception,
+        match=re.escape("model is required to have a `logits()` method."),
     ):
         LogitScore._check_model(NoLogits())
 
@@ -986,7 +1011,12 @@ def test_check_model_logits_signature() -> None:
             pass  # pragma: no cover
 
     model = BadLogits()
-    with pytest.raises(Exception, match="except `x` as argument"):
+    with pytest.raises(
+        Exception,
+        match=re.escape(
+            "`logits()` method is required to accept `x` as argument."
+        ),
+    ):
         LogitScore._check_model(model)
 
 
@@ -1010,37 +1040,44 @@ def test_fit_temperature_lbfgs_fallback(
     assert isinstance(score.temperature, float)
 
 
-def test_loadorpredict_loads_from_disk(tmp_path: Path) -> None:
+def test_load_or_extract_loads_from_disk(tmp_path: Path) -> None:
     logits = torch.randn(3, 2)
     labels = torch.tensor([0, 1, 0])
     path = tmp_path / "logits.pt"
-    torch.save({"logits": logits, "labels": labels}, path)
+    torch.save({"logit": logits, "label": labels}, path)
 
-    loader: DataLoader[object] = cast(DataLoader[object], [])
+    loader: DataLoader[torch.Tensor] = cast(DataLoader[torch.Tensor], [])
     score = SoftmaxScore()
-    loaded_logits, loaded_labels = score._loadorpredict(
-        path, IdentityModel(), loader
+    result = score._load_or_extract(
+        IdentityModel(), loader, path, ["image", "label"], "logit"
     )
+    loaded_logits = result["logit"]
+    loaded_labels = result["label"]
     assert torch.allclose(loaded_logits, logits)
     assert loaded_labels is not None
     assert torch.allclose(loaded_labels, labels)
 
 
-def test_loadorpredict_missing_logits(tmp_path: Path) -> None:
+def test_load_or_extract_missing_logits(tmp_path: Path) -> None:
     path = tmp_path / "bad.pt"
-    torch.save({"labels": torch.tensor([1, 2])}, path)
+    torch.save({"label": torch.tensor([1, 2])}, path)
 
-    loader: DataLoader[object] = cast(DataLoader[object], [])
+    loader: DataLoader[torch.Tensor] = cast(DataLoader[torch.Tensor], [])
     score = SoftmaxScore()
-    with pytest.raises(ValueError, match="does not contain 'logits'"):
-        score._loadorpredict(path, IdentityModel(), loader)
+    with pytest.raises(ValueError, match="does not contain 'logit'"):
+        score._load_or_extract(
+            IdentityModel(), loader, path, ["image"], "logit"
+        )
 
 
 def test_fit_arg_validation_conflicting_inputs() -> None:
     s = SoftmaxScore()
     # both precomputed and model provided -> ValueError
     with pytest.raises(
-        ValueError, match="Cannot specify both precomputed logits"
+        ValueError,
+        match=re.escape(
+            "Specify either pre-computed tensors (X and Y) or a model with a loader, but not both."
+        ),
     ):
         s.fit(X=torch.randn(2, 3), model=object())  # type: ignore[arg-type, ty:invalid-argument-type]
 
@@ -1048,12 +1085,15 @@ def test_fit_arg_validation_conflicting_inputs() -> None:
 def test_fit_requires_one_input() -> None:
     s = SoftmaxScore()
     with pytest.raises(
-        ValueError, match="Must specify either logits or model\\+loader"
+        ValueError,
+        match=re.escape(
+            "Specify either pre-computed tensors (X and Y) or a model with a loader, but not both."
+        ),
     ):
         s.fit()
 
 
-def test_loadorpredict_missing_logits_field(tmp_path: Path) -> None:
+def test_load_or_extract_missing_logits_field(tmp_path: Path) -> None:
     s = SoftmaxScore()
 
     class M(torch.nn.Module):
@@ -1062,27 +1102,15 @@ def test_loadorpredict_missing_logits_field(tmp_path: Path) -> None:
 
     model = M()
     p = tmp_path / "bad.pt"
-    torch.save({"labels": torch.tensor([1])}, p)
-    with pytest.raises(ValueError, match="does not contain 'logits'"):
-        s._loadorpredict(
+    torch.save({"label": torch.tensor([1])}, p)
+    with pytest.raises(ValueError, match="does not contain 'logit'"):
+        s._load_or_extract(
             path=p,
             model=model,
             loader=make_loader_from_tensors(torch.randn(1, 2)),
+            input_keys=["image"],
+            output_key="logit",
         )
-
-
-def test_logits_from_loader_non_tensor() -> None:
-    class M(torch.nn.Module):
-        def logits(self, x: torch.Tensor) -> list[int]:
-            return [1, 2, 3]
-
-    model = M()
-    loader = make_loader_from_tensors(torch.randn(1, 2))
-    s = SoftmaxScore()
-    with pytest.raises(
-        TypeError, match="Extracted logits is not a torch.Tensor"
-    ):
-        s._logits_from_loader(model=model, loader=loader)
 
 
 def test_logits_from_loader_no_batches() -> None:
@@ -1095,7 +1123,9 @@ def test_logits_from_loader_no_batches() -> None:
     model = M()
     s = SoftmaxScore()
     with pytest.raises(ValueError, match="No batches found in loader"):
-        s._logits_from_loader(model=model, loader=loader)
+        s._extract_dl(
+            model=model, loader=loader, input_keys=["image"], output_key="logit"
+        )
 
 
 def test_normalize_raises_on_missing_labels() -> None:

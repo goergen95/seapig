@@ -1,23 +1,20 @@
 """KNN-based uncertainty scores."""
 
-import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
-import faiss
-import numpy as np
 import torch
-from torch.utils.data import DataLoader
 from typing_extensions import override
 
-from seapig.scores.embed import EmbeddingScore
+from seapig.scores import EmbeddingScore
+from seapig.scores.mixins import FAISSIndexMixin
 from seapig.scores.utils import TensorPCA
 
 __all__ = ["CosineScore", "EuclideanScore", "KNNScore", "MahalanobisScore"]
 
 
-class KNNScore(EmbeddingScore, ABC):
+class KNNScore(EmbeddingScore, FAISSIndexMixin, ABC):
     """Abstract base class for KNN distance-based uncertainty scores.
 
     Computes distance-based uncertainty scores where low scores indicate samples
@@ -74,92 +71,22 @@ class KNNScore(EmbeddingScore, ABC):
                 self.index_path = save_index
 
     @override
-    def fit(
-        self,
-        X: torch.Tensor | None = None,
-        Y: torch.Tensor | None = None,
-        model: torch.nn.Module | None = None,
-        loaders: dict[str, DataLoader[torch.Tensor | dict[str, torch.Tensor]]]
-        | None = None,
-        outdir: Path | None = None,
-        prefix: str | None = None,
-        q: bool | float = False,
-    ) -> None:
+    def _fit(self, q: bool | float = False) -> None:
         """Train a uncertainty score based on sample embeddings.
-
-        This method supports two usage modes:
-
-        1. **Precomputed embeddings**: Supply training embeddings via `X` and
-           optional calibration embeddings via `Y`.
-        2. **On-the-fly extraction**: Supply a `model` with an `.embed()` method
-           and a dictionary of `DataLoaders` to extract embeddings automatically.
-
-        You must use either embeddings (X/Y) OR model+loaders, but not both.
-
-        ```python
-        # Mode 1: Precomputed embeddings
-        from seapig.scores import EuclideanScore
-        my_score = EuclideanScore(k=2)
-        my_score.fit(X=train_embs, Y=val_embs)
-
-        # Mode 2: On-the-fly extraction
-        my_score = EuclideanScore(k=2)
-        my_score.fit(model=model, loaders={"train": train_loader, "val": val_loader})
-        ```
 
         Parameters
         ----------
-        X:
-            A `torch.Tensor` with training sample embeddings. Required when not
-            using `model` and `loaders`.
-        Y:
-            A `torch.Tensor` with calibration sample embeddings. Optional.
-        model:
-            A `torch.nn.Module` with an `.embed()` method. Required when not
-            using `X`.
-        loaders:
-            A `dict` with `DataLoader` objects. Required keys: `["train"]`.
-            Optional key: `["val"]`. Required when using `model`.
-        outdir:
-            A `pathlib.Path` pointing to a directory for saving/loading embeddings.
-            Only used with `model` and `loaders`.
-        prefix:
-            A `str` used as filename prefix for saved embeddings.
-            Only used with `model` and `loaders`.
         q:
             A `float` or `bool` indicating if outliers from the training
             distribution should be filtered before fitting. Defaults to `False`.
         """
-        super().fit(
-            X=X, Y=Y, model=model, loaders=loaders, outdir=outdir, prefix=prefix
-        )
-        self._fit_impl(q=q)
-
-    def _fit_impl(self, q: float | None = None) -> None:
-        """Fit implementation."""
         assert self.ref_embeddings is not None
         if self.cal_required:
             assert self.cal_embeddings is not None
-
-        if self.pca is not None:
-            self._fit_pca()
-            self.ref_embeddings = self.pca.transform(self.ref_embeddings)
-            if self.cal_embeddings is not None:
-                self.cal_embeddings = self.pca.transform(self.cal_embeddings)
-
-        if q:
-            assert (q >= 0.0) & (q <= 1.0)
-            if self.index is None:
-                self._setup_index()
-            scores, _ = self._distance(self.ref_embeddings, offset=1)
-            scores = self._stat(scores)
-            threshold = torch.quantile(scores.float(), q=q)
-            index = scores < threshold
-            self.ref_embeddings = self.ref_embeddings[index, :]
-
+        self._apply_pca()
+        self._filter_outliers(q=q)
         self._setup_index()
         self.set_trained()
-
         if self.cal_embeddings is None:
             scores, _ = self._distance(self.ref_embeddings, offset=1)
             self.scores = self._stat(scores)
@@ -168,8 +95,21 @@ class KNNScore(EmbeddingScore, ABC):
             self.scores = self._stat(scores)
             self.set_calibrated()
 
+    def _filter_outliers(self, q: float | bool = False) -> None:
+        if not q:
+            return
+        assert (q >= 0.0) & (q <= 1.0)
+        assert self.ref_embeddings is not None
+        if self.index is None:
+            self._setup_index()  # temporary index
+        scores, _ = self._distance(self.ref_embeddings, offset=1)
+        scores = self._stat(scores)
+        threshold = torch.quantile(scores.float(), q=q)
+        index = scores < threshold
+        self.ref_embeddings = self.ref_embeddings[index, :]
+
     @override
-    def _score_embeddings(self, X: torch.Tensor) -> torch.Tensor:
+    def _score(self, X: torch.Tensor) -> torch.Tensor:
         """Compute an uncertainty score based on sample embeddings.
 
         Returns scores where low values indicate samples similar
@@ -235,126 +175,6 @@ class KNNScore(EmbeddingScore, ABC):
         # Get raw distances and indices with the internal offset handling.
         distances, indices = self._distance(query=query, offset=offset)
         return distances, indices
-
-    @staticmethod
-    def _suggest_build_params(embs: torch.Tensor, k: int = 1) -> dict[str, Any]:
-        """Suggest parameters for HNSW index."""
-        if embs.dim() != 2:
-            raise ValueError("ref_embeddings must be 2D (N, D)")
-        n, d = map(int, embs.shape)
-
-        if d <= 64:
-            M = 16
-        elif d <= 128:  # pragma: no cover
-            M = 24
-        elif d <= 256:  # pragma: no cover
-            M = 32
-        elif d <= 512 or d <= 1024:  # pragma: no cover
-            M = 48
-        else:  # pragma: no cover
-            M = 64
-
-        # adjust upward for large n
-        if n > 5_000_000:  # pragma: no cover
-            M = max(M, 32)
-        if n > 50_000_000:  # pragma: no cover
-            M = max(M, 48)
-
-        # adjust downward for very small n
-        if n < 10_000:
-            M = min(M, 16)
-
-        # ef_construction based on M
-        C = max(4 * M, 128)
-        # cap at a high maximum value
-        C = min(C, 1024)
-
-        return {"M": M, "efConstruction": C}
-
-    @staticmethod
-    def _suggest_query_params(embs: torch.Tensor, k: int = 1) -> dict[str, Any]:
-        """Suggest query parameters for HNSW index."""
-        params = KNNScore._suggest_build_params(embs, k)
-
-        S = max(k * 8, 512)
-        S = min(S, params["efConstruction"])
-        S = max(S, k)
-
-        return {"efSearch": S}
-
-    def _build_index(self, embs: torch.Tensor) -> None:
-        """Build an index based on reference embeddings.
-
-        The embeddings can be preprocessed (e.g. normalized or transformed) before
-        being passed to this method. The `space` parameter is kept for API compatibility
-        but FAISS only supports L2 metric; for cosine we use normalized vectors.
-        """
-        assert isinstance(embs, torch.Tensor)
-        index_path = self.index_path
-        params = self._suggest_build_params(embs=embs, k=self.k)
-        d = embs.shape[1]
-        N = embs.shape[0]
-        if N <= 10_000:
-            index = faiss.IndexFlatL2(d)  # type: ignore[possibly-missing-attribute]
-        else:
-            M = params["M"]
-            ef_construction = params["efConstruction"]
-            # FAISS HNSW index with L2 metric (also works for normalized vectors to emulate cosine)
-            index = faiss.IndexHNSWFlat(d, M, faiss.METRIC_L2)  # type: ignore[possibly-missing-attribute]
-            index.hnsw.efConstruction = ef_construction
-        # Build or load index
-        if index_path is None or not Path(index_path).exists():
-            embs_np: np.ndarray = embs.cpu().numpy().astype(np.float32)
-            index.add(embs_np)
-            if index_path:
-                faiss.write_index(index, str(index_path))  # type: ignore[possibly-missing-attribute]
-        else:
-            warnings.warn(
-                f"Index file {index_path} already exists. Loading existing index from disk.",
-                UserWarning,
-            )
-            index = faiss.read_index(str(index_path))  # type: ignore[possibly-missing-attribute]
-        self.index_params = params
-        self.index = index
-
-    def _query_index(
-        self, query: torch.Tensor, offset: int = 0
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Query the FAISS HNSW index for KNN distances.
-
-        Retrieves `k + offset` nearest neighbors, applies the query-time `efSearch`
-        parameter, and returns a tuple of (distances, indices) where
-        distances are KNN distances and indices are the corresponding neighbor indices
-        in the reference embeddings.
-        """
-        assert self.index is not None, "Index must be built before querying"
-        # Set query‑time efSearch of hnsw index
-        if isinstance(self.index, faiss.IndexHNSW):  # type: ignore[possibly-missing-attribute]
-            params = KNNScore._suggest_query_params(query, self.k + offset)
-            ef_search = params.get("efSearch", self.index.hnsw.efSearch)
-            self.index.hnsw.efSearch = ef_search
-        # check that dims match
-        index_d = self.index.d
-        query_d = query.shape[1]
-        if index_d != query_d:
-            raise ValueError(
-                f"Query dimension {query_d} does not match index dimension {index_d}"
-            )
-        # Perform search on CPU with numpy arrays
-        query_np = query.cpu().numpy().astype(np.float32)
-        # returns (distances, indices) as numpy arrays
-        search_results = self.index.search(query_np, self.k + offset)
-        # convert to torch tensors on the same device as query
-        search_results = tuple(
-            torch.from_numpy(x).to(query.device) for x in search_results
-        )
-        # Discard the first `offset` entries
-        distances, indices = search_results
-        if offset > 0:
-            distances = distances[:, offset:]
-            indices = indices[:, offset:]
-
-        return (distances, indices)
 
     def _stat(self, x: torch.Tensor) -> torch.Tensor:
         """Apply a statistic across the KNN distances."""
