@@ -335,6 +335,7 @@ def test_fit_temperature_validation_errors() -> None:
         s._fit_temperature(torch.randn(3, 2), torch.tensor([0, 1]))
 
 
+@pytest.mark.filterwarnings(r"ignore:.*Loading pre-existing data.*")
 def test_load_or_extract_missing_logits_key(tmp_path: Path) -> None:
     """If saved file lacks 'logits', _loadorpredict should raise ValueError."""
     s = SoftmaxScore()
@@ -1001,7 +1002,9 @@ def test_fit_empty_loader(tmp_path: Path) -> None:
     loader = DataLoader(SimpleBatchDataset([]), batch_size=1)
     score = SoftmaxScore()
     with pytest.raises(ValueError, match="No batches found in loader"):
-        score.fit(model=IdentityModel(), loader=loader, outdir=tmp_path)
+        score.fit(
+            model=IdentityModel(), loader=loader, outdir=tmp_path, prefix="test"
+        )
 
 
 def test_fit_temperature_nan_labels() -> None:
@@ -1060,6 +1063,7 @@ def test_fit_temperature_lbfgs_fallback(
     assert isinstance(score.temperature, float)
 
 
+@pytest.mark.filterwarnings(r"ignore:.*Loading pre-existing data.*")
 def test_load_or_extract_loads_from_disk(tmp_path: Path) -> None:
     logits = torch.randn(3, 2)
     labels = torch.tensor([0, 1, 0])
@@ -1078,6 +1082,7 @@ def test_load_or_extract_loads_from_disk(tmp_path: Path) -> None:
     assert torch.allclose(loaded_labels, labels)
 
 
+@pytest.mark.filterwarnings(r"ignore:.*Loading pre-existing data.*")
 def test_load_or_extract_missing_logits(tmp_path: Path) -> None:
     path = tmp_path / "bad.pt"
     torch.save({"label": torch.tensor([1, 2])}, path)
@@ -1113,6 +1118,7 @@ def test_fit_requires_one_input() -> None:
         s.fit()
 
 
+@pytest.mark.filterwarnings(r"ignore:.*Loading pre-existing data.*")
 def test_load_or_extract_missing_logits_field(tmp_path: Path) -> None:
     s = SoftmaxScore()
 
