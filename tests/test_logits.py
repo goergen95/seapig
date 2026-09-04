@@ -200,6 +200,26 @@ def test_softmax_score_matches_maxprob(
     )
 
 
+def test_fit_and_score_extractor_interface(tmp_path: Path) -> None:
+    """Exercise model + loader extraction in fit and score."""
+    logits = torch.tensor([[2.0, 0.5], [0.1, 1.2]])
+    labels = logits.argmax(dim=1)
+    loader = make_loader_from_tensors(logits, labels)
+    model = IdentityModel()
+    score = SoftmaxScore()
+    # Fit using model+loader (no outdir/prefix)
+    score.fit(model=model, loader=loader)
+    # Reset temperature to avoid fitted scaling affecting comparison
+    score.temperature = None
+    # Verify logits stored match original
+    assert score.logits is not None
+    assert torch.allclose(score.logits, logits)
+    # Score using same model+loader should equal direct scoring
+    direct = SoftmaxScore().score(logits)
+    via_model = score.score(model=model, loader=loader)
+    assert torch.allclose(via_model, direct, atol=1e-6)
+
+
 def test_margin_score_manual() -> None:
     logits = torch.tensor([[5.0, 2.0, 1.0], [0.1, 0.0, -1.0]])
     m = MarginScore()
