@@ -250,7 +250,15 @@ class LogitScore(UncertaintyScore, LogitModelMixin, abc.ABC):
             "Subclasses must implement the `_score` method."
         )
 
-    def select(self, query_logits: torch.Tensor) -> dict[str, torch.Tensor]:
+    def select(
+        self,
+        query_logits: torch.Tensor,
+        model: torch.nn.Module | None = None,
+        loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]]
+        | None = None,
+        outdir: Path | None = None,
+        prefix: str | None = None,
+    ) -> dict[str, torch.Tensor]:
         """Select samples for prediction based on their uncertainty score.
 
         Samples with scores lower than the threshold are selected for prediction,
@@ -260,6 +268,18 @@ class LogitScore(UncertaintyScore, LogitModelMixin, abc.ABC):
         ----------
         query_logits : torch.Tensor
             Logits for samples to select. Shape depends on task.
+        model:
+                A `torch.nn.Module` with an `.embed()` method.
+            Required when not using `X`.
+        loader:
+            A `torch.utils.data.DataLoader` returning `torch.Tensor`s or
+            dicts with the `"image"` key. Required when using `model`.
+        outdir:
+            A `pathlib.Path` pointing to a directory for saving/loading embeddings.
+            Only used with `model` and `loader`.
+        prefix:
+            A `str` used as filename prefix for saved embeddings.
+            Only used with `model` and `loader`.
 
         Returns
         -------
@@ -270,7 +290,13 @@ class LogitScore(UncertaintyScore, LogitModelMixin, abc.ABC):
         if self.threshold is None:
             self.set_threshold()
         assert self.threshold is not None
-        scores = self.score(query_logits)
+        scores = self.score(
+            query_logits,
+            model=model,
+            loader=loader,
+            outdir=outdir,
+            prefix=prefix,
+        )
         selected = scores < self.threshold
         return {"score": scores, "selected": selected}
 
