@@ -245,6 +245,11 @@ class LogitScore(UncertaintyScore, LogitModelMixin, abc.ABC):
         assert isinstance(query_logits, torch.Tensor)
         return self._score(query_logits)
 
+    def _score(self, query_logits: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError(
+            "Subclasses must implement the `_score` method."
+        )
+
     def select(self, query_logits: torch.Tensor) -> dict[str, torch.Tensor]:
         """Select samples for prediction based on their uncertainty score.
 
