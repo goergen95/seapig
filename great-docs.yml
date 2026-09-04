@@ -154,6 +154,22 @@ reference:
           - set_threshold
           - get_threshold
           - plot
+      - name: scores.MutualInformationScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
+      - name: scores.PredictiveVarianceScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
 
   - title: Other Uncertainty Scores
     desc: Uncertainty scoring methods based on other principles
