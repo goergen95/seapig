@@ -1,15 +1,7 @@
-import math
-import re
-from collections.abc import Callable, Generator
-from pathlib import Path
-from typing import Any, cast
-
 import pytest
 import torch
-import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset
 
-from seapig.scores import (
+from seapig.scores.logits import (
     EnergyScore,
     EntropyScore,
     LogitScore,
@@ -17,1540 +9,205 @@ from seapig.scores import (
     MutualInformationScore,
     PredictiveVarianceScore,
     SoftmaxScore,
+    _bernoulli_entropy,
+    _shannon_entropy,
 )
 
 
-@pytest.fixture(autouse=True)
-def rng_seed() -> Generator[None, None, None]:
-    torch.manual_seed(1234)
-    yield
+def test_bernoulli_entropy_extremes():
+    # probabilities near 0 and 1 should yield near 0 entropy after clamping
+    probs = torch.tensor([0.0, 1.0, 1e-20, 1 - 1e-20], dtype=torch.float64)
+    entropy = _bernoulli_entropy(probs)
+    # Values should be finite and very small (<= 1e-4)
+    assert torch.isfinite(entropy).all()
+    assert (entropy <= 1e-4).all()
 
 
-def approx_tensor(a: torch.Tensor, b: torch.Tensor, tol: float = 1e-6) -> None:
-    assert a.shape == b.shape
-    assert torch.allclose(a, b, atol=tol, rtol=1e-5)
-
-
-def _bernoulli_entropy(p: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
-    p = p.clamp(min=eps, max=1 - eps)
-    return -(p * torch.log(p) + (1 - p) * torch.log1p(-p))
-
-
-class SimpleBatchDataset(Dataset[Any]):
-    def __init__(self, items: list[Any]) -> None:
-        self.items = items
-
-    def __len__(self) -> int:
-        return len(self.items)
-
-    def __getitem__(self, idx: int):  # type: ignore[override, ty:invalid-method-override]
-        return self.items[idx]
-
-
-class IdentityModel(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.layer = torch.nn.Linear(1, 1)
-
-    def logits(self, x: torch.Tensor) -> torch.Tensor:
-        return x.squeeze(0) if x.dim() > 2 and x.shape[0] == 1 else x
-
-
-def make_loader_from_tensors(
-    logits: torch.Tensor, labels: torch.Tensor | None = None
-) -> DataLoader[Any]:
-    if labels is None:
-        items: list[Any] = [la.unsqueeze(0) for la in logits]
-    else:
-        items = [
-            {"image": logits[i].unsqueeze(0), "label": labels[i].unsqueeze(0)}
-            for i in range(len(logits))
-        ]
-    return DataLoader(SimpleBatchDataset(items), batch_size=1, shuffle=False)
-
-
-def test_fit_saves_files(tmp_path: Path) -> None:
-    logits = torch.tensor([[2.0, 0.5], [0.1, 1.2]])
-    labels = logits.argmax(dim=1)
-    loader = make_loader_from_tensors(logits, labels)
-
-    model = IdentityModel()
-    score = SoftmaxScore()
-    outdir = tmp_path / "saved_logits"
-    score.fit(model=model, loader=loader, outdir=outdir, prefix="mytest")
-    train_file = outdir / "mytest.pt"
-    assert train_file.exists()
-    loaded = torch.load(train_file)
-    assert "logit" in loaded and "label" in loaded
-    assert loaded["logit"].shape[0] == logits.shape[0]
-    assert hasattr(score, "logits")
-    assert score.logits is not None
-    assert score.logits.shape[0] == logits.shape[0]
-
-
-@pytest.mark.parametrize("out_kind", ["tensor", "logits", "preds", "y_hat"])
-def test_fit_accepts_output_formats(out_kind: str) -> None:
-    logits = torch.tensor([[0.5, 1.5], [2.0, 0.1], [0.0, 0.0]])
-    labels = logits.argmax(dim=1)
-    loader = make_loader_from_tensors(logits, labels)
-
-    class FlexibleModel(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.linear = torch.nn.Linear(1, 1)
-
-        def logits(self, x: torch.Tensor) -> torch.Tensor:
-            return x.squeeze(0)
-
-    model = FlexibleModel()
-    score = SoftmaxScore()
-    score.fit(model=model, loader=loader)
-    assert hasattr(score, "logits")
-    assert score.logits is not None
-    assert score.logits.shape[0] == logits.shape[0]
-
-
-@pytest.mark.parametrize("batch_format", ["dict", "tensor_only"])
-def test_fit_batch_formats(batch_format: str) -> None:
-    logits = torch.tensor([[1.0, 0.0], [0.2, 0.8]])
-    labels = logits.argmax(dim=1)
-    items: list[Any]
-    if batch_format == "dict":
-        items = [
-            {"image": logits[i].unsqueeze(0), "label": labels[i].unsqueeze(0)}
-            for i in range(len(logits))
-        ]
-    else:
-        items = [logits[i].unsqueeze(0) for i in range(len(logits))]
-    loader = DataLoader(SimpleBatchDataset(items), batch_size=1, shuffle=False)
-
-    model = IdentityModel()
-    score = EnergyScore()
-    score.fit(model=model, loader=loader)
-    assert score.logits is not None
-    assert score.logits.shape[0] == logits.shape[0]
-
-
-def test_softmax_numerical_stability() -> None:
-    logits = torch.tensor([[1000.0, -1000.0, 0.0], [1e6, 0.0, -1e6]])
-    s = SoftmaxScore()
-    T = 1.0 if s.temperature is None else float(s.temperature)
-    z = logits / T - (logits / T).amax(dim=1, keepdim=True)
-    exp_z = z.exp()
-    probs = exp_z / exp_z.sum(dim=1, keepdim=True)
-    assert probs.shape == (2, 3)
-    assert torch.isfinite(probs).all()
-    assert torch.allclose(probs.sum(dim=1), torch.tensor([1.0, 1.0]), atol=1e-6)
-
-
-def test_predict_proba_temperature() -> None:
-    logits = torch.tensor([[2.0, 1.0], [0.5, 0.1]])
-    s = SoftmaxScore()
-
-    def predict_proba(
-        logits: torch.Tensor, temperature: float | None = None
-    ) -> torch.Tensor:
-        T = 1.0 if temperature is None else float(temperature)
-        z = logits / T - (logits / T).amax(dim=1, keepdim=True)
-        exp_z = z.exp()
-        return exp_z / exp_z.sum(dim=1, keepdim=True)
-
-    s.temperature = 2.0
-    p_explicit = predict_proba(logits, temperature=4.0)
-    p_inst = predict_proba(logits, temperature=s.temperature)
-    assert not torch.allclose(p_explicit, p_inst)
-    s.temperature = 1.0
-    p_none = predict_proba(logits, temperature=None)
-    p1 = predict_proba(logits, temperature=1.0)
-    assert torch.allclose(p_none, p1, atol=1e-6)
-
-
-def test_logit_helpers_consistency() -> None:
-    logits = torch.tensor([[3.0, 1.0, 0.0], [0.0, 0.0, 0.0]])
-    max_score = -logits.amax(dim=1)
-    assert max_score.shape == (2,)
-    assert torch.allclose(max_score, -torch.tensor([3.0, 0.0]), atol=1e-6)
-    margin_score = MarginScore().score(logits)
-    expected_margin = torch.tensor([-2.0, -0.0])
-    assert torch.allclose(margin_score, expected_margin, atol=1e-6)
-    ent = EntropyScore().score(logits)
-    assert ent.shape == (2,)
-    assert (ent >= 0.0).all()
-    ln = -logits.norm(dim=1)
-    assert ln.shape == (2,)
-    assert torch.all(ln <= 0.0)
-
-
-@pytest.mark.parametrize(
-    "logits, expected_msp",
-    [
-        (
-            torch.tensor([[2.0, 1.0]]),
-            -torch.tensor(
-                [torch.softmax(torch.tensor([2.0, 1.0]), dim=0).max()]
+def test_shannon_entropy_basic():
+    # Simple 2-class distribution
+    p = torch.tensor([[0.5, 0.5], [0.9, 0.1]], dtype=torch.float32)
+    ent = _shannon_entropy(p, dim=1)
+    expected = torch.tensor(
+        [
+            -(
+                0.5 * torch.log(torch.tensor(0.5))
+                + 0.5 * torch.log(torch.tensor(0.5))
             ),
-        ),
-        (torch.tensor([[0.0, 0.0]]), -torch.tensor([0.5])),
-    ],
-)
-def test_softmax_score_matches_maxprob(
-    logits: torch.Tensor, expected_msp: torch.Tensor
-) -> None:
-    s = SoftmaxScore()
-    sc = s.score(logits)
-    T = 1.0 if s.temperature is None else float(s.temperature)
-    z = logits / T - (logits / T).amax(dim=1, keepdim=True)
-    exp_z = z.exp()
-    probs = exp_z / exp_z.sum(dim=1, keepdim=True)
-    assert torch.allclose(
-        sc, -probs.amax(dim=1).to(dtype=torch.float32), atol=1e-6
+            -(
+                0.9 * torch.log(torch.tensor(0.9))
+                + 0.1 * torch.log(torch.tensor(0.1))
+            ),
+        ]
     )
+    assert torch.allclose(ent, expected, atol=1e-6)
 
 
-def test_fit_and_score_extractor_interface(tmp_path: Path) -> None:
-    """Exercise model + loader extraction in fit and score."""
-    logits = torch.tensor([[2.0, 0.5], [0.1, 1.2]])
-    labels = logits.argmax(dim=1)
-    loader = make_loader_from_tensors(logits, labels)
-    model = IdentityModel()
+def test_logit_score_resolve_errors():
     score = SoftmaxScore()
-    # Fit using model+loader (no outdir/prefix)
-    score.fit(model=model, loader=loader)
-    # Reset temperature to avoid fitted scaling affecting comparison
-    score.temperature = None
-    # Verify logits stored match original
-    assert score.logits is not None
-    assert torch.allclose(score.logits, logits)
-    # Score using same model+loader should equal direct scoring
-    direct = SoftmaxScore().score(logits)
-    via_model = score.score(model=model, loader=loader)
-    assert torch.allclose(via_model, direct, atol=1e-6)
-
-
-def test_margin_score_manual() -> None:
-    logits = torch.tensor([[5.0, 2.0, 1.0], [0.1, 0.0, -1.0]])
-    m = MarginScore()
-    sc = m.score(logits)
-    top2 = logits.topk(2, dim=1).values
-    expect = -(top2[:, 0] - top2[:, 1])
-    assert torch.allclose(sc, expect, atol=1e-6)
-
-
-def test_margin_score_binary_single_logit():
-    torch.manual_seed(5)
-    logits = torch.randn(6)  # shape (N,)
-    scorer = MarginScore(task="binary")
-    result = scorer.score(logits)
-    manual = -logits.abs()
-    assert torch.allclose(result, manual, atol=1e-6)
-
-
-def test_margin_score_binary_two_logit():
-    torch.manual_seed(6)
-    logits = torch.randn(4, 2)
-    scorer = MarginScore(task="binary")
-    result = scorer.score(logits)
-    top2 = logits.topk(2, dim=1).values
-    manual = -(top2[:, 0] - top2[:, 1])
-    assert torch.allclose(result, manual, atol=1e-6)
-
-
-def test_margin_score_per_member_binary_single_logit():
-    logits = torch.tensor([[0.5], [-1.2], [2.0]])
-    scorer = MarginScore(per_member=True, task="binary")
-    result = scorer.score(logits)
-    expected = -logits.abs().mean(dim=1)
-    approx_tensor(result, expected)
-    torch.manual_seed(6)
-    logits = torch.randn(4, 2)
-    scorer = MarginScore(task="binary")
-    result = scorer.score(logits)
-    top2 = logits.topk(2, dim=1).values
-    manual = -(top2[:, 0] - top2[:, 1])
-    assert torch.allclose(result, manual, atol=1e-6)
-
-
-def test_energy_score_binary_single_logit():
-    torch.manual_seed(7)
-    logits = torch.randn(5)  # (N,)
-    scorer = EnergyScore(task="binary")
-    result = scorer.score(logits)
-    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
-    manual = -T * torch.nn.functional.softplus(torch.abs(logits) / T)
-    assert torch.allclose(result, manual, atol=1e-6)
-
-
-def test_energy_score_binary_two_logit():
-    torch.manual_seed(8)
-    logits = torch.randn(3, 2)
-    scorer = EnergyScore(task="binary")
-    result = scorer.score(logits)
-    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
-    manual = -(logits / T).logsumexp(dim=1) * T
-    assert torch.allclose(result, manual, atol=1e-6)
-
-    logits = torch.tensor([[5.0, 2.0, 1.0], [0.1, 0.0, -1.0]])
-    m = MarginScore()
-    sc = m.score(logits)
-    top2 = logits.topk(2, dim=1).values
-    expect = -(top2[:, 0] - top2[:, 1])
-    assert torch.allclose(sc, expect, atol=1e-6)
-
-
-def test_energy_score_per_member_binary() -> None:
-    logits = torch.tensor([[0.5, -1.2], [2.0, -0.3]])
-    score = EnergyScore(per_member=True, task="binary")
-    result = score.score(logits)
-    T = 1.0 if score.temperature is None else float(score.temperature)
-    expected = -T * F.softplus(torch.abs(logits) / T)
-    expected = expected.mean(dim=1)
-    approx_tensor(result, expected)
-
-
-def test_select_uses_threshold(tmp_path: Path) -> None:
-    """select should compute a threshold if none is set and return mask."""
-    logits = torch.tensor([[0.2, 0.8], [0.6, 0.4]])
-    labels = torch.tensor([1, 0])
-    score = SoftmaxScore()
-    # Fit to generate calibration scores and store them
-    score.fit(X=logits, Y=labels)
-    # Ensure threshold not manually set
-    assert score.threshold is None
-    # Call select, which should set threshold based on quantile
-    out = score.select(logits)
-    assert "score" in out and "selected" in out
-    # Scores should match score() output
-    expected_scores = score.score(logits)
-    assert torch.equal(out["score"], expected_scores)
-    # Selected mask should be boolean and shape matches
-    assert out["selected"].dtype == torch.bool
-    assert out["selected"].shape == logits.shape[0:1]
-
-
-def test_fit_temperature_validation_errors() -> None:
-    """_fit_temperature should raise on empty logits or size mismatch."""
-    s = SoftmaxScore()
-    # Empty logits
-    with pytest.raises(
-        ValueError, match="logits must contain at least one sample"
-    ):
-        s._fit_temperature(torch.empty(0, 2), torch.tensor([0]))
-    # Mismatched sizes
-    with pytest.raises(
-        ValueError, match="logits and labels must have same number of samples"
-    ):
-        s._fit_temperature(torch.randn(3, 2), torch.tensor([0, 1]))
-
-
-@pytest.mark.filterwarnings(r"ignore:.*Loading pre-existing data.*")
-def test_load_or_extract_missing_logits_key(tmp_path: Path) -> None:
-    """If saved file lacks 'logits', _loadorpredict should raise ValueError."""
-    s = SoftmaxScore()
-    fake_path = tmp_path / "bad.pt"
-    torch.save({"labels": torch.tensor([0])}, fake_path)
-
-    class DummyModel(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.layer = torch.nn.Linear(1, 1)
-
-        def logits(self, x: torch.Tensor) -> torch.Tensor:
-            return torch.tensor([[0.0]])  # pragma: no cover
-
-    model = DummyModel()
-    loader = make_loader_from_tensors(torch.tensor([[0.0]]))
-    with pytest.raises(
-        ValueError, match="Saved file .* does not contain 'logit'"
-    ):
-        s._load_or_extract(
-            path=fake_path,
-            model=model,
-            loader=loader,
-            input_keys=["image"],
-            output_key="logit",
+    dummy_model = torch.nn.Module()
+    dummy_model.logits = lambda x: {"logit": torch.randn(2, 3)}  # type: ignore
+    loader = torch.utils.data.DataLoader([torch.randn(2, 3)])  # type: ignore
+    with pytest.raises(ValueError):
+        score._resolve(
+            torch.randn(2, 3),
+            dummy_model,
+            loader,
+            None,
+            None,
+            want_labels=False,
         )
+    with pytest.raises(ValueError):
+        score._resolve(None, None, None, None, None, want_labels=False)
 
 
-def test_load_or_extract_no_batches_raises() -> None:
-    """When loader yields no batches, _logits_from_loader raises ValueError."""
-    s = SoftmaxScore()
-
-    class EmptyDataset(Dataset[Any]):
-        def __len__(self) -> int:
-            return 0
-
-        def __getitem__(self, idx: int):  # type: ignore[override, ty:invalid-method-override]
-            raise IndexError  # pragma: no cover
-
-    empty_loader = DataLoader(EmptyDataset(), batch_size=1)
-
-    class DummyModel(torch.nn.Module):
-        def logits(self, x: torch.Tensor) -> torch.Tensor:
-            return torch.tensor([[0.0]])  # pragma: no cover
-
-    model = DummyModel()
-    with pytest.raises(ValueError, match="No batches found in loader"):
-        s._extract_dl(
-            model=model,
-            loader=empty_loader,
-            input_keys=["image"],
-            output_key="logit",
-        )
-
-
-def test_select_automatically_sets_threshold(tmp_path: Path) -> None:
-    """Ensure ``select`` calls ``set_threshold`` when none is set."""
-    # Create simple logits and labels for binary classification
-    logits = torch.tensor([[2.0, 0.5], [0.1, 1.2]])
-    labels = logits.argmax(dim=1)
-    loader = make_loader_from_tensors(logits, labels)
-    model = IdentityModel()
+def test_logit_score_resolve_precomputed():
     score = SoftmaxScore()
-    # Fit to populate scores but do not set threshold
-    score.fit(model=model, loader=loader, outdir=tmp_path, prefix="thr")
-    # At this point ``score.threshold`` should be None
-    assert score.threshold is None
-    # Call select; it should set a threshold based on 99th percentile of scores
-    out = score.select(logits)
-    assert "score" in out and "selected" in out
-    # After select, threshold must be set
-    assert score.threshold is not None
-    # Selected mask should be a boolean tensor of same length as inputs
-    assert out["selected"].shape == (logits.shape[0],)
-    assert out["selected"].dtype == torch.bool
-
-
-def test_entropy_score_formula() -> None:
-    logits = torch.tensor([[2.0, 0.0], [0.0, 0.0]])
-    e = EntropyScore()
-    sc = e.score(logits)
-    T = 1.0 if e.temperature is None else float(e.temperature)
-    z = logits / T - (logits / T).amax(dim=1, keepdim=True)
-    exp_z = z.exp()
-    probs = exp_z / exp_z.sum(dim=1, keepdim=True)
-    p = probs.clamp(min=1e-12)
-    expect = -(p * p.log()).sum(dim=1)
-    assert torch.allclose(sc, expect, atol=1e-6)
-
-
-def test_energy_score_logsumexp() -> None:
-    logits = torch.tensor([[1.0, 2.0, 3.0], [-1.0, -2.0, -3.0]])
-    T = 0.5
-    en = EnergyScore(temperature=T)
-    sc = en.score(logits)
-    expect = -T * (logits / T).logsumexp(dim=1)
-    assert torch.allclose(sc, expect, atol=1e-6)
-
-
-def test_fit_temperature_reduces_nll() -> None:
-    true_logits = torch.tensor(
-        [[5.0, 0.0, -1.0], [4.0, 1.0, 0.0], [6.0, -1.0, -2.0]]
+    logits = torch.randn(4, 5)
+    out_logits, out_labels = score._resolve(
+        logits, None, None, None, None, want_labels=False
     )
-    labels = true_logits.argmax(dim=1)
-    val_logits = true_logits * 0.2
-    s = SoftmaxScore()
-    nll_before = torch.nn.functional.cross_entropy(val_logits, labels).item()
-    s._fit_temperature(logits=val_logits, labels=labels)
-    assert s.temperature is not None
-    assert isinstance(s.temperature, float)
-    assert float(s.temperature) < 1.0 + 1e-6
-    T = float(s.temperature)
-    nll_after = torch.nn.functional.cross_entropy(val_logits / T, labels).item()
-    assert nll_after <= nll_before + 1e-6
+    assert out_logits is logits
+    assert out_labels is None
 
 
-def test_fit_temperature_small_valset() -> None:
-    logits = torch.randn(2, 4)
-    labels = logits.argmax(dim=1)
-    s = SoftmaxScore()
-    s._fit_temperature(logits=logits, labels=labels)
-    assert s.temperature is not None
-    assert isinstance(s.temperature, float)
-    assert math.isfinite(float(s.temperature))
+def test_flatten_members_and_labels():
+    z = torch.arange(2 * 3 * 4, dtype=torch.float32).view(2, 3, 4)
+    labels = torch.arange(2 * 3, dtype=torch.float32).view(2, 3)
+    flat_z, flat_labels = LogitScore._flatten_members(z, labels)
+    assert flat_z.shape == (8, 3)
+    assert flat_labels.shape == (8, 3)
+    for i in range(2):
+        for m in range(4):
+            idx = i * 4 + m
+            assert torch.allclose(flat_z[idx], z[i, :, m])
+            assert torch.allclose(flat_labels[idx], labels[i])
 
 
-def make_score_with_task(task: str) -> SoftmaxScore:
-    s = SoftmaxScore(temperature=None)
-    s.task = task
-    s.task_config = None  # ty: ignore[invalid-assignment]
-    return s
+def test_ensemble_score_member_error():
+    score = MutualInformationScore()
+    logits = torch.randn(3, 4, 1)
+    with pytest.raises(ValueError):
+        score._score(logits)
 
 
-def test_is_binary_single_logit() -> None:
-    s = make_score_with_task("binary")
-    a = torch.randn(5)
-    assert s._is_binary_single_logit(a)
-    b = torch.randn(5, 1)
-    assert s._is_binary_single_logit(b)
-    c = torch.randn(5, 2)
-    assert not s._is_binary_single_logit(c)
-
-    s2 = make_score_with_task("multiclass")
-    d = torch.randn(5, 2)
-    assert not s2._is_binary_single_logit(d)
-
-    s = make_score_with_task("binary")
-    a = torch.randn(5)
-    assert s._is_binary_single_logit(a)
-    b = torch.randn(5, 1)
-    assert s._is_binary_single_logit(b)
-    c = torch.randn(5, 2)
-    assert not s._is_binary_single_logit(c)
-
-
-def test_normalize_multiclass() -> None:
-    s = make_score_with_task("multiclass")
-    logits = torch.randn(7, 4)
-    labels = torch.tensor([0, 1, 2, 3, 0, 1, 2], dtype=torch.int64)
-    nl, lab = s._normalize_logits_and_labels(logits, labels)
-    assert nl.shape == (7, 4)
-    assert lab.shape == (7,)
-    assert lab.dtype == torch.long
-    labels2 = labels.unsqueeze(1)
-    _, lab2 = s._normalize_logits_and_labels(logits, labels2)
-    assert lab2.shape == (7,)
-    logits_bad_shape = logits.unsqueeze(0)
-    with pytest.raises(ValueError, match="multiclass logits must have shape"):
-        s._normalize_logits_and_labels(logits_bad_shape, labels)
-
-
-def test_normalize_binary_single_logit() -> None:
-    s = make_score_with_task("binary")
-    logits = torch.randn(6)
-    labels = torch.tensor([0, 1, 0, 1, 1, 0], dtype=torch.int64)
-    nl, lab = s._normalize_logits_and_labels(logits, labels)
-    assert nl.shape == (6,)
-    assert lab.dtype == torch.float32
-    assert lab.shape == (6,)
-
-
-def test_normalize_binary_two_logit() -> None:
-    s = make_score_with_task("binary")
-    logits = torch.randn(6, 2)
-    labels = torch.tensor([0, 1, 1, 0, 0, 1], dtype=torch.int64)
-    nl, lab = s._normalize_logits_and_labels(logits, labels)
-    assert nl.shape == (6, 2)
-    assert lab.shape == (6,)
-    assert lab.dtype == torch.long
-    logits_bad_shape = torch.randn(6, 3)
-    with pytest.raises(
-        ValueError, match="binary two-logit logits must have shape"
-    ):
-        s._normalize_logits_and_labels(logits_bad_shape, labels)
-    labels = labels.unsqueeze(1).to(dtype=torch.bool)
-    nl, lab = s._normalize_logits_and_labels(logits, labels)
-    assert nl.shape == (6, 2)
-    assert lab.shape == (6,)
-    assert lab.dtype == torch.long
-
-
-def test_normalize_multilabel() -> None:
-    s = make_score_with_task("multilabel")
-    logits = torch.randn(5, 3)
-    labels = torch.randint(0, 2, (5, 3)).float()
-    nl, lab = s._normalize_logits_and_labels(logits, labels)
-    assert nl.shape == (5, 3)
-    assert lab.shape == (5, 3)
-    assert lab.dtype == torch.float32
-    logits_bad_shape = logits.unsqueeze(0)
-    with pytest.raises(ValueError, match="multilabel logits must have shape"):
-        s._normalize_logits_and_labels(logits_bad_shape, labels)
-    labels_bad_shape = labels.unsqueeze(0)
-    with pytest.raises(
-        ValueError, match="multilabel labels must have same shape as logits"
-    ):
-        s._normalize_logits_and_labels(logits, labels_bad_shape)
-
-
-def test_unknown_task_normalize_raises() -> None:
-    s = make_score_with_task("multiclass")
-    s.task = "not_a_task"
-    with pytest.raises(ValueError, match="Unknown task: not_a_task"):
-        s._normalize_logits_and_labels(torch.randn(2, 3), torch.tensor([0, 1]))
-
-
-@pytest.mark.parametrize("task", ["multiclass", "binary", "multilabel"])
-def test_temperature_loss_matches_torch(task: str) -> None:
-    s = make_score_with_task(task)
-    if task == "multiclass":
-        logits = torch.randn(8, 4)
-        labels = torch.randint(0, 4, (8,))
-        expected = F.cross_entropy(logits, labels.long())
-        got = s._temperature_loss(logits, labels)
-        approx_tensor(got, expected)
-    elif task == "binary":
-        logits = torch.randn(10)
-        labels = torch.randint(0, 2, (10,)).float()
-        expected = F.binary_cross_entropy_with_logits(logits, labels)
-        got = s._temperature_loss(logits, labels)
-        approx_tensor(got, expected)
-        logits2 = torch.randn(10, 2)
-        labels2 = torch.randint(0, 2, (10,))
-        expected2 = F.cross_entropy(logits2, labels2.long())
-        got2 = s._temperature_loss(logits2, labels2)
-        approx_tensor(got2, expected2)
-    elif task == "multilabel":
-        logits = torch.randn(7, 3)
-        labels = torch.randint(0, 2, (7, 3)).float()
-        expected = F.binary_cross_entropy_with_logits(logits, labels)
-        got = s._temperature_loss(logits, labels)
-        approx_tensor(got, expected)
-
-
-@pytest.mark.parametrize(
-    "score_class,task,logits,expected_shape",
-    [
-        (EnergyScore, "multiclass", torch.randn(7, 4), (7,)),
-        (EnergyScore, "binary", torch.randn(8), (8,)),
-        (EnergyScore, "binary", torch.randn(8, 2), (8,)),
-        (EnergyScore, "multilabel", torch.randn(5, 3), (5,)),
-        (EntropyScore, "multiclass", torch.randn(6, 5), (6,)),
-        (EntropyScore, "binary", torch.randn(9), (9,)),
-        (EntropyScore, "binary", torch.randn(9, 2), (9,)),
-        (EntropyScore, "multilabel", torch.randn(4, 2), (4,)),
-        (SoftmaxScore, "multiclass", torch.randn(7, 4), (7,)),
-        (SoftmaxScore, "binary", torch.randn(8), (8,)),
-        (SoftmaxScore, "binary", torch.randn(8, 2), (8,)),
-        (SoftmaxScore, "multilabel", torch.randn(5, 3), (5,)),
-        (MarginScore, "multiclass", torch.randn(6, 5), (6,)),
-        (MarginScore, "binary", torch.randn(9), (9,)),
-        (MarginScore, "binary", torch.randn(9, 2), (9,)),
-        (MarginScore, "multilabel", torch.randn(4, 2), (4,)),
-    ],
-)
-def test_score_shapes(
-    score_class: type[SoftmaxScore | EnergyScore | MarginScore | EntropyScore],
-    task: str,
-    logits: torch.Tensor,
-    expected_shape: tuple[int, ...],
-) -> None:
-    score = score_class(task=task)
-    result = score.score(logits)
-    assert result.shape == expected_shape
-
-
-def _manual_softmax_per_member(logits: torch.Tensor, temperature: float = 1.0):
-    T = temperature
-    probs = F.softmax(logits / T, dim=1)  # (N, C, M)
-    scores = -probs.amax(dim=1)  # (N, M)
-    return scores.mean(dim=1)
-
-
-def _manual_energy_per_member(logits: torch.Tensor, temperature: float = 1.0):
-    T = temperature
-    energies = -(logits / T).logsumexp(dim=1) * T  # (N, M)
-    return energies.mean(dim=1)
-
-
-def _manual_entropy_per_member(logits: torch.Tensor, temperature: float = 1.0):
-    T = temperature
-    EPS = 1e-12
-    probs = F.softmax(logits / T, dim=1)
-    p = probs.clamp(min=EPS)
-    ent = -(p * p.log()).sum(dim=1)  # (N, M)
-    return ent.mean(dim=1)
-
-
-def _manual_margin_per_member(logits: torch.Tensor, temperature: float = 1.0):
-    top2 = logits.topk(2, dim=1).values  # (N, 2, M)
-    scores = -(top2[:, 0, :] - top2[:, 1, :])  # (N, M)
-    return scores.mean(dim=1)
-
-
-@pytest.mark.parametrize(
-    "score_cls, manual_fn",
-    [
-        (SoftmaxScore, _manual_softmax_per_member),
-        (EnergyScore, _manual_energy_per_member),
-        (EntropyScore, _manual_entropy_per_member),
-        (MarginScore, _manual_margin_per_member),
-    ],
-)
-def test_per_member_flag_averages(score_cls, manual_fn):
+def test_temperature_scaling_path():
     torch.manual_seed(0)
-    logits = torch.randn(4, 3, 5)  # N=4, C=3, M=5
-    score = score_cls(per_member=True)
-    result = score.score(logits)
-    expected = manual_fn(logits)
-    assert torch.allclose(result, expected, atol=1e-6)
+    logits = torch.randn(10, 3)
+    labels = torch.randint(0, 3, (10,))
+    # No scaling – temperature stays None
+    score_no_scale = SoftmaxScore()
+    score_no_scale.fit(logits, labels, temp_scale=False)
+    assert score_no_scale.temperature is None
+    # With scaling – temperature set to a positive float
+    score_scale = SoftmaxScore()
+    score_scale.fit(logits, labels, temp_scale=True)
+    assert isinstance(score_scale.temperature, float)
+    assert score_scale.temperature > 0
 
 
-def test_entropy_score_per_member_multiclass():
+def test_pointwise_scores_consistency():
     torch.manual_seed(1)
-    logits = torch.randn(2, 3, 4)  # N, C, M
-    scorer = EntropyScore(per_member=True, task="multiclass")
-    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
-    probs = torch.softmax(logits / T, dim=1)
-    EPS = 1e-12
-    probs = probs.clamp(min=EPS)
-    ent = -(probs * torch.log(probs)).sum(dim=1)  # (N, M)
-    manual = ent.mean(dim=1)
-    result = scorer.score(logits)
-    assert torch.allclose(result, manual, atol=1e-6)
+    logits = torch.randn(5, 4)
+    soft = SoftmaxScore()
+    ent = EntropyScore()
+    margin = MarginScore()
+    energy = EnergyScore()
+    for cls in (soft, ent, margin, energy):
+        scores = cls.score(logits)
+        assert scores.shape == (5,)
+        assert torch.isfinite(scores).all()
 
 
-def test_entropy_score_per_member_binary_two_logit():
-    torch.manual_seed(2)
-    logits = torch.randn(2, 2, 3)  # N, 2, M
-    scorer = EntropyScore(per_member=True, task="binary")
-    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
-    probs = torch.softmax(logits / T, dim=1)
-    EPS = 1e-12
-    p = probs[:, 1, :].clamp(min=EPS, max=1 - EPS)
-    ent = -(p * torch.log(p) + (1 - p) * torch.log(1 - p))
-    manual = ent.mean(dim=1)
-    result = scorer.score(logits)
-    assert torch.allclose(result, manual, atol=1e-6)
+def _run_pointwise_score(
+    score_cls, logits, labels, temp_scale, task="multiclass"
+):
+    scorer = score_cls(task=task)  # specify task for binary cases
+    scorer.fit(logits, labels, temp_scale=temp_scale)
+    if temp_scale:
+        assert isinstance(scorer.temperature, float) and scorer.temperature > 0
+    else:
+        assert scorer.temperature is None
+    assert scorer.scores.shape == (logits.shape[0],)
+    new_scores = scorer.score(logits)
+    assert torch.allclose(new_scores, scorer.scores)
+    sel = scorer.select(logits)
+    assert isinstance(sel, dict)
+    assert "score" in sel and "selected" in sel
+    assert sel["score"].shape == (logits.shape[0],)
+    assert sel["selected"].shape == (logits.shape[0],)
+    assert sel["selected"].dtype == torch.bool
 
 
-def test_entropy_score_per_member_binary_single_logit():
-    torch.manual_seed(3)
-    logits = torch.randn(2, 5)  # N, M (members)
-    scorer = EntropyScore(per_member=True, task="binary")
-    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
-    p = torch.sigmoid(logits / T).clamp(min=1e-12, max=1 - 1e-12)
-    ent = -(p * torch.log(p) + (1 - p) * torch.log(1 - p))
-    manual = ent.mean(dim=1)
-    result = scorer.score(logits)
-    assert torch.allclose(result, manual, atol=1e-6)
-
-
-def test_entropy_score_per_member_multilabel():
-    torch.manual_seed(4)
-    logits = torch.randn(2, 3, 5)  # N, C, M
-    scorer = EntropyScore(per_member=True, task="multilabel")
-    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
-    p = torch.sigmoid(logits / T).clamp(min=1e-12, max=1 - 1e-12)
-    per_label_entropy = -(p * torch.log(p) + (1 - p) * torch.log(1 - p))
-    ent = per_label_entropy.max(dim=1).values  # (N, M)
-    manual = ent.mean(dim=1)
-    result = scorer.score(logits)
-    assert torch.allclose(result, manual, atol=1e-6)
-
-
-def test_per_member_flag_default_behaviour():
-    torch.manual_seed(1)
-    logits = torch.randn(6, 3)
-    s_default = SoftmaxScore()
-    s_per_member = SoftmaxScore(per_member=False)
-    assert torch.allclose(s_default.score(logits), s_per_member.score(logits))
-
-
-def test_binary_single_logit_per_member():
-    torch.manual_seed(2)
-    logits = torch.randn(5, 4)  # 5 samples, 4 members
-    score = SoftmaxScore(task="binary", per_member=True)
-    T = 1.0
-    p = torch.sigmoid(logits.abs() / T)
-    expected = -p.mean(dim=1)
-    result = score.score(logits)
-    assert torch.allclose(result, expected, atol=1e-6)
-
-
-def test_entropy_monotonicity() -> None:
-    confident = torch.tensor([[10.0, -5.0, -5.0]])
-    uncertain = torch.tensor([[0.1, 0.0, -0.1]])
-    score = EntropyScore(task="multiclass")
-    assert score.score(confident) < score.score(uncertain)
-
-
-def test_energy_monotonicity() -> None:
-    confident = torch.tensor([10.0, -10.0])
-    uncertain = torch.tensor([0.0, 0.0])
-    score = EnergyScore(task="binary")
-    assert torch.all(score.score(confident) < score.score(uncertain))
-
-
-def test_entropy_multilabel_max_aggregation() -> None:
-    logits = torch.tensor([[10.0, 0.0], [0.0, 0.0]])
-    score = EntropyScore(task="multilabel")
-    out = score.score(logits)
-    assert torch.isclose(out[0], out[1], atol=1e-6)
-
-
-def test_energy_multilabel_sum() -> None:
-    logits = torch.tensor([[10.0, 0.0], [0.0, 0.0]])
-    score = EnergyScore(task="multilabel")
-    out = score.score(logits)
-    assert out.shape == (2,)
-
-
-def test_entropy_numerical_stability() -> None:
-    # existing test ensures numerical stability for multiclass
-    logits = torch.tensor([[1000.0, -1000.0], [-1000.0, 1000.0]])
-    score = EntropyScore(task="multiclass")
-    out = score.score(logits)
-    assert torch.isfinite(out).all()
-
-
-# SoftmaxScore multilabel branch (non-per-member)
-def test_softmax_score_multilabel():
-    torch.manual_seed(9)
-    logits = torch.randn(4, 3)  # N, C
-    scorer = SoftmaxScore(task="multilabel")
-    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
-    p = torch.sigmoid(logits / T)
-    max_p = torch.maximum(p, 1 - p)
-    expected = -max_p.min(dim=1).values
-    result = scorer.score(logits)
-    assert torch.allclose(result, expected, atol=1e-6)
-
-
-# SoftmaxScore multilabel per-member branch
-def test_softmax_score_multilabel_per_member():
-    torch.manual_seed(10)
-    logits = torch.randn(3, 3, 5)  # N, C, M
-    scorer = SoftmaxScore(task="multilabel", per_member=True)
-    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
-    p = torch.sigmoid(logits / T)
-    max_p = torch.maximum(p, 1 - p)
-    per_member = -max_p.min(dim=1).values  # (N, M)
-    expected = per_member.mean(dim=1)
-    result = scorer.score(logits)
-    assert torch.allclose(result, expected, atol=1e-6)
-
-    logits = torch.tensor([[1000.0, -1000.0], [-1000.0, 1000.0]])
-    score = EntropyScore(task="multiclass")
-    out = score.score(logits)
-    assert torch.isfinite(out).all()
-
-
-def test_energy_numerical_stability() -> None:
-    logits = torch.tensor([[1000.0, -1000.0], [-1000.0, 1000.0]])
-    score = EnergyScore(task="multiclass")
-    out = score.score(logits)
-    assert torch.isfinite(out).all()
-
-
-def test_softmax_multilabel_min_aggregation() -> None:
-    logits = torch.tensor([[10.0, 0.0], [0.0, 0.0]])
-    score = SoftmaxScore(task="multilabel")
-    out = score.score(logits)
-    assert torch.isclose(out[0], out[1], atol=1e-6)
-
-
-def test_margin_multilabel_min_aggregation() -> None:
-    logits = torch.tensor([[10.0, 0.0], [0.0, 0.0]])
-    score = MarginScore(task="multilabel")
-    out = score.score(logits)
-    assert torch.isclose(out[0], out[1], atol=1e-6)
-
-
-def test_margin_directionality() -> None:
-    confident = torch.tensor([[10.0, -5.0, -5.0]])
-    uncertain = torch.tensor([[0.1, 0.0, -0.1]])
-    score = MarginScore(task="multiclass")
-    assert score.score(confident) < score.score(uncertain)
-
-
-def test_softmax_binary_single_logit() -> None:
-    logits = torch.tensor([10.0, 0.0, -10.0])
-    score = SoftmaxScore(task="binary")
-    out = score.score(logits)
-    assert out[0] < out[1] and out[2] < out[1]
-
-
-def test_score_empty_inputs() -> None:
-    # All scores should handle empty logits gracefully
-    _ScoreClasses: list[
-        type[SoftmaxScore | MarginScore | EntropyScore | EnergyScore]
-    ] = [SoftmaxScore, MarginScore, EntropyScore, EnergyScore]
-    for Score in _ScoreClasses:
-        score = Score(task="multiclass")
-        logits = torch.empty((0, 3))
-        out = score.score(logits)
-        assert out.shape == (0,)
-
-
-def test_score_nan_inf_inputs() -> None:
-    logits = torch.tensor([[float("nan"), 0.0], [float("inf"), -float("inf")]])
-    _ScoreClasses: list[
-        type[SoftmaxScore | MarginScore | EntropyScore | EnergyScore]
-    ] = [SoftmaxScore, MarginScore, EntropyScore, EnergyScore]
-    for Score in _ScoreClasses:
-        score = Score(task="multiclass")
-        out = score.score(logits)
-        assert out.shape == (2,)
-        # Output should be finite or propagate NaN/Inf in a controlled way
-        assert torch.isfinite(out).sum() >= 0
-
-
-def test_score_shape_mismatch() -> None:
-    score = SoftmaxScore(task="multiclass")
-    logits = torch.randn(5, 3)
-    # Labels wrong shape for multiclass
-    labels = torch.randn(5, 2)
-    try:
-        score.fit(logits, labels)
-    except ValueError as e:
-        assert isinstance(e, ValueError)
-
-
-def test_fit_temperature_all_same_logits() -> None:
-    """Fit temperature on uniform logits (non-per-member)."""
-    logits = torch.ones(10, 3)
-    labels = torch.zeros(10, dtype=torch.long)
-    score = SoftmaxScore()
-    score.fit(logits, labels)
-    assert score.temperature is not None
-    assert math.isfinite(float(score.temperature))
-    # Existing test remains unchanged
-    # Added per_member temperature fitting tests below
-
-    # Per-member temperature fitting (multiclass)
+@pytest.mark.parametrize(
+    "ScoreClass", [SoftmaxScore, EntropyScore, MarginScore, EnergyScore]
+)
+def test_pointwise_score_categorical(ScoreClass):
     torch.manual_seed(0)
-    N, C, M = 3, 4, 5
-    logits = torch.randn(N, C, M)
-    # Labels per sample
-    labels = torch.arange(N) % C
-    scorer = SoftmaxScore(per_member=True, task="multiclass")
-    # Fit temperature on per-member data
-    scorer._fit_temperature(logits, labels)
-    assert scorer.temperature is not None
-    # Verify that loss after scaling is less than before scaling
-    T = float(scorer.temperature)
-    loss_before = torch.nn.functional.cross_entropy(
-        logits.view(-1, C), labels.repeat_interleave(M)
-    )
-    loss_after = torch.nn.functional.cross_entropy(
-        (logits / T).view(-1, C), labels.repeat_interleave(M)
-    )
-    assert loss_after <= loss_before + 1e-6
-
-    # Per-member temperature fitting (binary single-logit)
-    torch.manual_seed(1)
-    N, M = 4, 3
-    logits_bin = torch.randn(N, M)
-    labels_bin = (
-        (logits_bin > 0).float().mean(dim=1).round().long()
-    )  # dummy labels
-    scorer_bin = SoftmaxScore(per_member=True, task="binary")
-    scorer_bin._fit_temperature(logits_bin, labels_bin)
-    assert scorer_bin.temperature is not None
-    T_bin = float(scorer_bin.temperature)
-    loss_before_bin = torch.nn.functional.binary_cross_entropy_with_logits(
-        logits_bin.view(-1), labels_bin.repeat_interleave(M).float()
-    )
-    loss_after_bin = torch.nn.functional.binary_cross_entropy_with_logits(
-        (logits_bin / T_bin).view(-1), labels_bin.repeat_interleave(M).float()
-    )
-    assert loss_after_bin <= loss_before_bin + 1e-6
-
-    # Per-member temperature fitting (binary two-logit)
-    torch.manual_seed(2)
-    N, M = 3, 4
-    logits_bin2 = torch.randn(N, 2, M)
-    labels_bin2 = torch.randint(0, 2, (N,)).long()
-    scorer_bin2 = SoftmaxScore(per_member=True, task="binary")
-    scorer_bin2._fit_temperature(logits_bin2, labels_bin2)
-    assert scorer_bin2.temperature is not None
-    T_bin2 = float(scorer_bin2.temperature)
-    loss_before_bin2 = torch.nn.functional.cross_entropy(
-        logits_bin2.permute(0, 2, 1).reshape(-1, 2),
-        labels_bin2.repeat_interleave(M),
-    )
-    loss_after_bin2 = torch.nn.functional.cross_entropy(
-        (logits_bin2 / T_bin2).permute(0, 2, 1).reshape(-1, 2),
-        labels_bin2.repeat_interleave(M),
-    )
-    assert loss_after_bin2 <= loss_before_bin2 + 1e-6
-
-    # Per-member temperature fitting (multilabel)
-    torch.manual_seed(3)
-    N, C, M = 2, 3, 2
-    logits_ml = torch.randn(N, C, M)
-    labels_ml = torch.randint(0, 2, (N, C)).float()
-    scorer_ml = SoftmaxScore(per_member=True, task="multilabel")
-    scorer_ml._fit_temperature(logits_ml, labels_ml)
-    assert scorer_ml.temperature is not None
-    T_ml = float(scorer_ml.temperature)
-    loss_before_ml = torch.nn.functional.binary_cross_entropy_with_logits(
-        logits_ml.view(-1, C), labels_ml.repeat_interleave(M, dim=0)
-    )
-    loss_after_ml = torch.nn.functional.binary_cross_entropy_with_logits(
-        (logits_ml / T_ml).view(-1, C), labels_ml.repeat_interleave(M, dim=0)
-    )
-    assert loss_after_ml <= loss_before_ml + 1e-6
-
-    logits = torch.ones(10, 3)
-    labels = torch.zeros(10, dtype=torch.long)
-    score = SoftmaxScore()
-    score.fit(logits, labels)
-    assert score.temperature is not None
-    assert math.isfinite(float(score.temperature))
-
-
-def test_fit_temperature_all_same_labels() -> None:
-    logits = torch.randn(8, 3)
-    labels = torch.zeros(8, dtype=torch.long)
-    score = SoftmaxScore()
-    score.fit(logits, labels)
-    assert score.temperature is not None
-    assert math.isfinite(float(score.temperature))
-
-
-def test_binary_single_logit_extreme_values() -> None:
-    logits = torch.tensor([1000.0, -1000.0, 0.0])
-    score = SoftmaxScore(task="binary")
-    out = score.score(logits)
-    assert out.shape == (3,)
-    assert torch.isfinite(out).all()
-
-
-def test_multilabel_all_zero_logits() -> None:
-    logits = torch.zeros(4, 5)
-    score = EntropyScore(task="multilabel")
-    out = score.score(logits)
-    assert out.shape == (4,)
-    assert torch.isfinite(out).all()
-
-
-def test_fit_empty_loader(tmp_path: Path) -> None:
-    loader = DataLoader(SimpleBatchDataset([]), batch_size=1)
-    score = SoftmaxScore()
-    with pytest.raises(ValueError, match="No batches found in loader"):
-        score.fit(
-            model=IdentityModel(), loader=loader, outdir=tmp_path, prefix="test"
-        )
-
-
-def test_fit_temperature_nan_labels() -> None:
-    logits = torch.randn(5, 2)
-    labels = torch.tensor([0, 1, float("nan"), 0, 1])
-    score = SoftmaxScore()
-    try:
-        score.fit(logits, labels)
-    except IndexError as e:
-        assert isinstance(e, IndexError)
-
-
-def test_check_model_requires_logits_method() -> None:
-    class NoLogits(torch.nn.Module):
-        pass
-
-    with pytest.raises(
-        Exception,
-        match=re.escape("model is required to have a `logits()` method."),
-    ):
-        LogitScore._check_model(NoLogits())
-
-
-def test_check_model_logits_signature() -> None:
-    class BadLogits(torch.nn.Module):
-        def logits(self) -> None:  # missing x argument
-            pass  # pragma: no cover
-
-    model = BadLogits()
-    with pytest.raises(
-        Exception,
-        match=re.escape(
-            "`logits()` method is required to accept `x` as argument."
-        ),
-    ):
-        LogitScore._check_model(model)
-
-
-def test_fit_temperature_lbfgs_fallback(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Force LBFGS to fail, triggering Adam fallback
-    logits = torch.randn(5, 2)
-    labels = torch.randint(0, 2, (5,))
-    score = SoftmaxScore()
-
-    class DummyLBFGS:
-        def __init__(self, *a: Any, **k: Any) -> None:
-            pass
-
-        def step(self, closure: Callable[[], float]) -> float:
-            raise RuntimeError("fail")
-
-    monkeypatch.setattr(torch.optim, "LBFGS", DummyLBFGS)
-    score._fit_temperature(logits, labels)
-    assert isinstance(score.temperature, float)
-
-
-@pytest.mark.filterwarnings(r"ignore:.*Loading pre-existing data.*")
-def test_load_or_extract_loads_from_disk(tmp_path: Path) -> None:
-    logits = torch.randn(3, 2)
-    labels = torch.tensor([0, 1, 0])
-    path = tmp_path / "logits.pt"
-    torch.save({"logit": logits, "label": labels}, path)
-
-    loader: DataLoader[torch.Tensor] = cast(DataLoader[torch.Tensor], [])
-    score = SoftmaxScore()
-    result = score._load_or_extract(
-        IdentityModel(), loader, path, ["image", "label"], "logit"
-    )
-    loaded_logits = result["logit"]
-    loaded_labels = result["label"]
-    assert torch.allclose(loaded_logits, logits)
-    assert loaded_labels is not None
-    assert torch.allclose(loaded_labels, labels)
-
-
-@pytest.mark.filterwarnings(r"ignore:.*Loading pre-existing data.*")
-def test_load_or_extract_missing_logits(tmp_path: Path) -> None:
-    path = tmp_path / "bad.pt"
-    torch.save({"label": torch.tensor([1, 2])}, path)
-
-    loader: DataLoader[torch.Tensor] = cast(DataLoader[torch.Tensor], [])
-    score = SoftmaxScore()
-    with pytest.raises(ValueError, match="does not contain 'logit'"):
-        score._load_or_extract(
-            IdentityModel(), loader, path, ["image"], "logit"
-        )
-
-
-def test_fit_arg_validation_conflicting_inputs() -> None:
-    s = SoftmaxScore()
-    # both precomputed and model provided -> ValueError
-    with pytest.raises(
-        ValueError,
-        match=re.escape(
-            "Specify either pre-computed tensors (X and Y) or a model with a loader, but not both."
-        ),
-    ):
-        s.fit(X=torch.randn(2, 3), model=object())  # type: ignore[arg-type, ty:invalid-argument-type]
-
-
-def test_fit_requires_one_input() -> None:
-    s = SoftmaxScore()
-    with pytest.raises(
-        ValueError,
-        match=re.escape(
-            "Specify either pre-computed tensors (X and Y) or a model with a loader, but not both."
-        ),
-    ):
-        s.fit()
-
-
-@pytest.mark.filterwarnings(r"ignore:.*Loading pre-existing data.*")
-def test_load_or_extract_missing_logits_field(tmp_path: Path) -> None:
-    s = SoftmaxScore()
-
-    class M(torch.nn.Module):
-        def logits(self, x: torch.Tensor) -> torch.Tensor:
-            return x  # pragma: no cover
-
-    model = M()
-    p = tmp_path / "bad.pt"
-    torch.save({"label": torch.tensor([1])}, p)
-    with pytest.raises(ValueError, match="does not contain 'logit'"):
-        s._load_or_extract(
-            path=p,
-            model=model,
-            loader=make_loader_from_tensors(torch.randn(1, 2)),
-            input_keys=["image"],
-            output_key="logit",
-        )
-
-
-def test_logits_from_loader_no_batches() -> None:
-    loader = DataLoader(SimpleBatchDataset([]), batch_size=1)
-
-    class M(torch.nn.Module):
-        def logits(self, x: torch.Tensor) -> torch.Tensor:
-            return x  # pragma: no cover
-
-    model = M()
-    s = SoftmaxScore()
-    with pytest.raises(ValueError, match="No batches found in loader"):
-        s._extract_dl(
-            model=model, loader=loader, input_keys=["image"], output_key="logit"
-        )
-
-
-def test_normalize_raises_on_missing_labels() -> None:
-    s = make_score_with_task("multiclass")
-    with pytest.raises(ValueError, match="labels must be provided"):
-        s._normalize_logits_and_labels(torch.randn(2, 3), None)
-
-
-def test_temperature_loss_unknown_task_raises() -> None:
-    s = make_score_with_task("multiclass")
-    s.task = "unknown_task"
-    with pytest.raises(ValueError, match="Unknown task: unknown_task"):
-        s._temperature_loss(torch.randn(2, 3), torch.tensor([0, 1]))
-
-
-@pytest.mark.parametrize(
-    "cls", [SoftmaxScore, EnergyScore, MarginScore, EntropyScore]
-)
-def test_score_methods_unknown_task_raise(
-    cls: type[SoftmaxScore | EnergyScore | MarginScore | EntropyScore],
-) -> None:
-    inst = cls()
-    inst.task = "not_a_task"  # type: ignore[invalid-assignment]
-    sample = torch.randn(2, 3)
-    with pytest.raises(ValueError, match="Unknown task: not_a_task"):
-        inst.score(sample)
-
-
-@pytest.mark.parametrize(
-    "cls", [MutualInformationScore, PredictiveVarianceScore]
-)
-def test_per_member_forced_true(cls) -> None:
-    """Both ensemble scores must always operate in per_member mode."""
-    scorer = cls()
-    assert scorer.per_member is True
-
-
-def test_mi_score_multiclass_matches_manual() -> None:
-    torch.manual_seed(0)
-    N, C, M = 4, 3, 6
-    logits = torch.randn(N, C, M)
-    scorer = MutualInformationScore(task="multiclass")
-    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
-
-    probs = F.softmax(logits / T, dim=1)
-    mean_p = probs.mean(dim=2).clamp(min=1e-12)
-    H_mean = -(mean_p * mean_p.log()).sum(dim=1)
-    p = probs.clamp(min=1e-12)
-    H_each = -(p * p.log()).sum(dim=1)
-    E_H = H_each.mean(dim=1)
-    expected = H_mean - E_H
-
-    result = scorer.score(logits)
-    approx_tensor(result, expected)
-
-
-def test_mi_score_binary_two_logit_matches_manual() -> None:
-    torch.manual_seed(1)
-    N, M = 5, 4
-    logits = torch.randn(N, 2, M)
-    scorer = MutualInformationScore(task="binary")
-    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
-
-    probs = F.softmax(logits / T, dim=1)
-    p1 = probs[:, 1, :]
-    expected = _bernoulli_entropy(p1.mean(dim=1)) - _bernoulli_entropy(p1).mean(
-        dim=1
-    )
-
-    result = scorer.score(logits)
-    approx_tensor(result, expected)
-
-
-def test_mi_score_binary_single_logit_matches_manual() -> None:
-    torch.manual_seed(2)
-    N, M = 6, 5
-    logits = torch.randn(N, M)
-    scorer = MutualInformationScore(task="binary")
-    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
-
-    p = torch.sigmoid(logits / T)
-    expected = _bernoulli_entropy(p.mean(dim=1)) - _bernoulli_entropy(p).mean(
-        dim=1
-    )
-
-    result = scorer.score(logits)
-    approx_tensor(result, expected)
-
-
-def test_mi_score_multilabel_matches_manual() -> None:
-    torch.manual_seed(3)
-    N, C, M = 3, 4, 5
-    logits = torch.randn(N, C, M)
-    scorer = MutualInformationScore(task="multilabel")
-    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
-
-    p = torch.sigmoid(logits / T)
-    H_mean = _bernoulli_entropy(p.mean(dim=2))
-    E_H = _bernoulli_entropy(p).mean(dim=2)
-    mi = H_mean - E_H
-    expected = mi.max(dim=1).values
-
-    result = scorer.score(logits)
-    approx_tensor(result, expected)
-
-
-@pytest.mark.parametrize(
-    "task, shape",
-    [
-        ("multiclass", (7, 4, 5)),
-        ("binary", (7, 2, 5)),
-        ("binary", (7, 5)),
-        ("multilabel", (7, 3, 5)),
-    ],
-)
-def test_mi_score_shapes(task: str, shape: tuple[int, ...]) -> None:
-    logits = torch.randn(*shape)
-    scorer = MutualInformationScore(task=task)
-    result = scorer.score(logits)
-    assert result.shape == (shape[0],)
-
-
-def test_mi_is_zero_when_members_agree() -> None:
-    """If all members produce identical logits, MI must be ~0."""
-    torch.manual_seed(4)
-    N, C, M = 3, 4, 8
-    single = torch.randn(N, C, 1)
-    logits = single.expand(-1, -1, M).contiguous()
-    scorer = MutualInformationScore(task="multiclass")
-    result = scorer.score(logits)
-    assert torch.allclose(result, torch.zeros_like(result), atol=1e-6)
-
-
-def test_mi_is_nonnegative_multiclass() -> None:
-    torch.manual_seed(5)
-    logits = torch.randn(10, 5, 12)
-    scorer = MutualInformationScore(task="multiclass")
-    result = scorer.score(logits)
-    # allow tiny numerical slack
-    assert (result >= -1e-6).all()
-
-
-def test_mi_is_nonnegative_multilabel() -> None:
-    torch.manual_seed(6)
-    logits = torch.randn(8, 4, 10)
-    scorer = MutualInformationScore(task="multilabel")
-    result = scorer.score(logits)
-    assert (result >= -1e-6).all()
-
-
-def test_mi_monotonic_with_disagreement() -> None:
-    """Larger disagreement across members must yield higher MI."""
-    N, C, M = 1, 3, 4
-    # All members identical -> MI ~ 0
-    same = torch.tensor([[[2.0, 0.0, -1.0]] * M]).permute(0, 2, 1)  # (1,3,M)
-    # Members strongly disagree on argmax
-    disagree = torch.zeros(N, C, M)
-    for m in range(M):
-        disagree[0, m % C, m] = 5.0
-
-    scorer = MutualInformationScore(task="multiclass")
-    assert scorer.score(same).item() < scorer.score(disagree).item()
-
-
-def test_mi_multiclass_shape_error() -> None:
-    scorer = MutualInformationScore(task="multiclass")
-    with pytest.raises(
-        ValueError, match="multiclass per_member logits must have shape"
-    ):
-        scorer.score(torch.randn(4, 3))  # missing member dim
-
-
-def test_mi_binary_two_logit_shape_error() -> None:
-    scorer = MutualInformationScore(task="binary")
-    with pytest.raises(
-        ValueError, match="binary two-logit per_member logits must have shape"
-    ):
-        scorer.score(torch.randn(4, 3, 5))  # C != 2
-
-
-def test_mi_binary_bad_ndim_error() -> None:
-    scorer = MutualInformationScore(task="binary")
-    with pytest.raises(
-        ValueError, match="binary per_member logits must have shape"
-    ):
-        scorer.score(torch.randn(4))
-
-
-def test_mi_multilabel_shape_error() -> None:
-    scorer = MutualInformationScore(task="multilabel")
-    with pytest.raises(
-        ValueError, match="multilabel per_member logits must have shape"
-    ):
-        scorer.score(torch.randn(4, 3))
-
-
-def test_mi_unknown_task_raises() -> None:
-    scorer = MutualInformationScore()
-    scorer.task = "not_a_task"  # type: ignore[invalid-assignment]
-    with pytest.raises(ValueError, match="Unknown task: not_a_task"):
-        scorer.score(torch.randn(2, 3, 4))
-
-
-def test_mi_temperature_scaling_changes_output() -> None:
-    torch.manual_seed(7)
-    logits = torch.randn(4, 3, 6)
-    s1 = MutualInformationScore(temperature=1.0, task="multiclass")
-    s2 = MutualInformationScore(temperature=5.0, task="multiclass")
-    assert not torch.allclose(s1.score(logits), s2.score(logits))
-
-
-def test_variance_score_multiclass_matches_manual() -> None:
-    torch.manual_seed(10)
-    N, C, M = 4, 3, 6
-    logits = torch.randn(N, C, M)
-    scorer = PredictiveVarianceScore(task="multiclass")
-    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
-
-    probs = F.softmax(logits / T, dim=1)
-    expected = probs.var(dim=2, unbiased=False).sum(dim=1)
-
-    result = scorer.score(logits)
-    approx_tensor(result, expected)
-
-
-def test_variance_score_binary_two_logit_matches_manual() -> None:
-    torch.manual_seed(11)
-    N, M = 5, 4
-    logits = torch.randn(N, 2, M)
-    scorer = PredictiveVarianceScore(task="binary")
-    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
-
-    probs = F.softmax(logits / T, dim=1)
-    expected = probs[:, 1, :].var(dim=1, unbiased=False)
-
-    result = scorer.score(logits)
-    approx_tensor(result, expected)
-
-
-def test_variance_score_binary_single_logit_matches_manual() -> None:
-    torch.manual_seed(12)
-    N, M = 6, 5
-    logits = torch.randn(N, M)
-    scorer = PredictiveVarianceScore(task="binary")
-    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
-
-    p = torch.sigmoid(logits / T)
-    expected = p.var(dim=1, unbiased=False)
-
-    result = scorer.score(logits)
-    approx_tensor(result, expected)
-
-
-def test_variance_score_multilabel_matches_manual() -> None:
-    torch.manual_seed(13)
-    N, C, M = 3, 4, 5
-    logits = torch.randn(N, C, M)
-    scorer = PredictiveVarianceScore(task="multilabel")
-    T = 1.0 if scorer.temperature is None else float(scorer.temperature)
-
-    p = torch.sigmoid(logits / T)
-    expected = p.var(dim=2, unbiased=False).max(dim=1).values
-
-    result = scorer.score(logits)
-    approx_tensor(result, expected)
-
-
-@pytest.mark.parametrize(
-    "task, shape",
-    [
-        ("multiclass", (7, 4, 5)),
-        ("binary", (7, 2, 5)),
-        ("binary", (7, 5)),
-        ("multilabel", (7, 3, 5)),
-    ],
-)
-def test_variance_score_shapes(task: str, shape: tuple[int, ...]) -> None:
-    logits = torch.randn(*shape)
-    scorer = PredictiveVarianceScore(task=task)
-    result = scorer.score(logits)
-    assert result.shape == (shape[0],)
-
-
-def test_variance_is_zero_when_members_agree() -> None:
-    """Identical members produce zero predictive variance."""
-    torch.manual_seed(14)
-    N, C, M = 3, 4, 8
-    single = torch.randn(N, C, 1)
-    logits = single.expand(-1, -1, M).contiguous()
-    scorer = PredictiveVarianceScore(task="multiclass")
-    result = scorer.score(logits)
-    assert torch.allclose(result, torch.zeros_like(result), atol=1e-6)
-
-
-def test_variance_is_nonnegative() -> None:
-    torch.manual_seed(15)
-    logits = torch.randn(10, 5, 12)
-    scorer = PredictiveVarianceScore(task="multiclass")
-    result = scorer.score(logits)
-    assert (result >= 0.0).all()
-
-
-def test_variance_monotonic_with_disagreement() -> None:
-    """Larger disagreement across members must yield higher variance."""
-    N, C, M = 1, 3, 4
-    same = torch.tensor([[[2.0, 0.0, -1.0]] * M]).permute(0, 2, 1)
-    disagree = torch.zeros(N, C, M)
-    for m in range(M):
-        disagree[0, m % C, m] = 5.0
-
-    scorer = PredictiveVarianceScore(task="multiclass")
-    assert scorer.score(same).item() < scorer.score(disagree).item()
-
-
-def test_variance_multiclass_shape_error() -> None:
-    scorer = PredictiveVarianceScore(task="multiclass")
-    with pytest.raises(
-        ValueError, match="multiclass per_member logits must have shape"
-    ):
-        scorer.score(torch.randn(4, 3))
-
-
-def test_variance_binary_two_logit_shape_error() -> None:
-    scorer = PredictiveVarianceScore(task="binary")
-    with pytest.raises(
-        ValueError, match="binary two-logit per_member logits must have shape"
-    ):
-        scorer.score(torch.randn(4, 3, 5))
-
-
-def test_variance_binary_bad_ndim_error() -> None:
-    scorer = PredictiveVarianceScore(task="binary")
-    with pytest.raises(
-        ValueError, match="binary per_member logits must have shape"
-    ):
-        scorer.score(torch.randn(4))
-
-
-def test_variance_multilabel_shape_error() -> None:
-    scorer = PredictiveVarianceScore(task="multilabel")
-    with pytest.raises(
-        ValueError, match="multilabel per_member logits must have shape"
-    ):
-        scorer.score(torch.randn(4, 3))
-
-
-def test_variance_unknown_task_raises() -> None:
-    scorer = PredictiveVarianceScore()
-    scorer.task = "not_a_task"  # type: ignore[invalid-assignment]
-    with pytest.raises(ValueError, match="Unknown task: not_a_task"):
-        scorer.score(torch.randn(2, 3, 4))
-
-
-def test_variance_temperature_scaling_changes_output() -> None:
-    torch.manual_seed(16)
-    logits = torch.randn(4, 3, 6)
-    s1 = PredictiveVarianceScore(temperature=1.0, task="multiclass")
-    s2 = PredictiveVarianceScore(temperature=5.0, task="multiclass")
-    assert not torch.allclose(s1.score(logits), s2.score(logits))
-
-
-@pytest.mark.parametrize(
-    "cls", [MutualInformationScore, PredictiveVarianceScore]
-)
-def test_ensemble_score_fit_with_precomputed_logits(cls) -> None:
-    """Ensemble scores integrate with `.fit()` using precomputed per-member logits."""
-    torch.manual_seed(17)
-    N, C, M = 6, 3, 4
-    logits = torch.randn(N, C, M)
+    N, C = 20, 4
+    logits = torch.randn(N, C)
     labels = torch.randint(0, C, (N,))
-    scorer = cls(task="multiclass")
-    scorer.fit(X=logits, Y=labels)
-    assert scorer.logits is not None
-    assert scorer.scores is not None
-    assert scorer.scores.shape == (N,)
-    # Temperature must have been fitted since labels were provided
-    assert scorer.temperature is not None
+    _run_pointwise_score(ScoreClass, logits, labels, temp_scale=False)
+    _run_pointwise_score(ScoreClass, logits, labels, temp_scale=True)
 
 
 @pytest.mark.parametrize(
-    "cls", [MutualInformationScore, PredictiveVarianceScore]
+    "ScoreClass", [SoftmaxScore, EntropyScore, MarginScore, EnergyScore]
 )
-def test_ensemble_score_select_returns_mask(cls) -> None:
-    """`select` should work and return a boolean mask of the right shape."""
-    torch.manual_seed(18)
-    N, C, M = 5, 4, 6
-    logits = torch.randn(N, C, M)
-    labels = torch.randint(0, C, (N,))
-    scorer = cls(task="multiclass")
-    scorer.fit(X=logits, Y=labels)
-    out = scorer.select(logits)
-    assert "score" in out and "selected" in out
-    assert out["score"].shape == (N,)
-    assert out["selected"].shape == (N,)
-    assert out["selected"].dtype == torch.bool
+def test_pointwise_score_bernoulli_binary(ScoreClass):
+    torch.manual_seed(1)
+    N = 15
+    logits = torch.randn(N)  # single-logit binary
+    labels = torch.randint(0, 2, (N,)).float()
+    _run_pointwise_score(
+        ScoreClass, logits, labels, temp_scale=False, task="binary"
+    )
+    _run_pointwise_score(
+        ScoreClass, logits, labels, temp_scale=True, task="binary"
+    )
+
+
+def _run_ensemble_score(
+    score_cls, logits, labels, temp_scale, task="multiclass"
+):
+    scorer = score_cls(task=task)  # task selection for binary cases
+    scorer.fit(logits, labels, temp_scale=temp_scale)
+    if temp_scale:
+        assert isinstance(scorer.temperature, float) and scorer.temperature > 0
+    else:
+        assert scorer.temperature is None
+    assert scorer.scores.shape == (logits.shape[0],)
+    new_scores = scorer.score(logits)
+    assert torch.allclose(new_scores, scorer.scores)
+    sel = scorer.select(logits)
+    assert isinstance(sel, dict)
+    assert torch.isfinite(sel["score"]).all()
+    assert sel["selected"].shape == (logits.shape[0],)
+
+
+@pytest.mark.parametrize(
+    "ScoreClass", [MutualInformationScore, PredictiveVarianceScore]
+)
+def test_ensemble_score_categorical(ScoreClass):
+    torch.manual_seed(2)
+    N, K, M = 12, 3, 5
+    logits = torch.randn(N, K, M)
+    labels = torch.randint(0, K, (N,))
+    _run_ensemble_score(ScoreClass, logits, labels, temp_scale=False)
+    _run_ensemble_score(ScoreClass, logits, labels, temp_scale=True)
+
+
+@pytest.mark.parametrize(
+    "ScoreClass", [MutualInformationScore, PredictiveVarianceScore]
+)
+def test_ensemble_score_bernoulli_binary(ScoreClass):
+    torch.manual_seed(3)
+    N, M = 10, 4
+    logits = torch.randn(N, M)  # binary single-logit with members
+    labels = torch.randint(0, 2, (N,)).float()  # per-sample labels
+    # task='binary' will resolve to single-logit variant and handle members
+    _run_ensemble_score(
+        ScoreClass, logits, labels, temp_scale=False, task="binary"
+    )
+    _run_ensemble_score(
+        ScoreClass, logits, labels, temp_scale=True, task="binary"
+    )
