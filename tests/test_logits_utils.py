@@ -160,3 +160,21 @@ def test_temperature_scaler_fallback_to_adam(monkeypatch):
     labels = torch.tensor([0, 1, 0, 1])
     temp = scaler.fit(logits, labels, lu.F.cross_entropy)
     assert math.isfinite(temp) and temp > 0
+
+
+def test_bernoulli_task_prepare_labels_float():
+    class DummyTask(lu.BernoulliTask):
+        def canonicalize(self, logits, per_member):
+            return logits
+
+    task = DummyTask()
+    labels = torch.tensor([0, 1, 2], dtype=torch.int32)
+    out = task.prepare_labels(labels)
+    assert out.dtype == torch.float
+    assert torch.allclose(out, labels.float())
+
+
+def test_binary_task_canonicalize_raises():
+    task = lu.BinaryTask()
+    with pytest.raises(RuntimeError):
+        task.canonicalize(torch.randn(2, 2), per_member=False)

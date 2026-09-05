@@ -450,3 +450,17 @@ def test_finalize_all_components_path(monkeypatch: pytest.MonkeyPatch) -> None:
     assert pca.q == pca.s.numel()
     # u_q should have the same number of columns as total components
     assert pca.u_q.shape[1] == pca.q
+
+
+def test_rff_method_validation_raises() -> None:
+    """_rff should raise when M <= input dimension D even after initialization."""
+    # Set up PCA with M less than expected D and force RFF mode
+    pca = TensorPCA(gamma=1.0, M=2, mode="rff")
+    # Manually mark RFF as initialized and provide dummy buffers
+    pca._rff_initialized.fill_(True)
+    assert isinstance(pca.M, int)
+    pca._rff_w = torch.randn((pca.M, 3))
+    pca._rff_u = torch.randn(pca.M)
+    X = torch.randn(4, 3)  # D=3 > M=2
+    with pytest.raises(ValueError, match="RFF dimension M must be greater"):
+        pca._rff(X)

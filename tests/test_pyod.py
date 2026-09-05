@@ -4,6 +4,7 @@ import torch
 
 pytest.importorskip("pyod")
 
+
 from seapig.scores.pyod import PyODScore
 from seapig.scores.utils import TensorPCA
 
@@ -128,3 +129,27 @@ def test_pca_predict_is_applied_before_detector_fit() -> None:
     score.cal_required = False
     score.fit(refs, q=False)
     assert score.ref_embeddings.shape[1] < refs.shape[1]
+
+
+def test_score_applies_pca_before_decision_function(monkeypatch) -> None:
+    """When a PCA object with a transform method is provided, _score should apply it before
+    calling the detector's decision_function."""
+
+    class DummyPCA:
+        def transform(self, X):
+            # double the input values
+            return X * 2
+
+    class DetSum(_MockDetectorBasic):
+        def decision_function(self, X: np.ndarray) -> np.ndarray:
+            # return sum of each row
+            return X.sum(axis=1)
+
+    det = DetSum()
+    score = PyODScore(detector=det, pca=DummyPCA())  # type: ignore[argument-type, ty:invalid-argument-type]
+    # no need to fit; directly score
+    data = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+    out = score.score(data)
+    # after doubling, rows become [2,4] sum=6 and [6,8] sum=14
+    expected = torch.tensor([6.0, 14.0])
+    assert torch.allclose(out, expected)

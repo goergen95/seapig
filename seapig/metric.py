@@ -276,7 +276,7 @@ class RiskCoverageMetric(Metric):
         tensor: torch.Tensor, name: str | None = None
     ) -> torch.Tensor:
         """Validate that the provided tensor is a 1‑D tensor of per‑sample residuals."""
-        if not isinstance(tensor, torch.Tensor):  # pragma: no cover
+        if not isinstance(tensor, torch.Tensor):
             raise TypeError(
                 f"Metric{' ' + name if name else ''} must return a torch.Tensor."
             )

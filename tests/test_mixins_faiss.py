@@ -143,3 +143,20 @@ def test_suggest_query_params_consistency():
     assert query_params["efSearch"] <= build_params["efConstruction"]
     # Should be at least k
     assert query_params["efSearch"] >= 5
+
+
+def test_build_index_for_class_existing(tmp_path: pathlib.Path):
+    class SimpleKNN(FAISSIndexMixin):
+        def __init__(self, k, index_path):
+            self.k = k
+            self.index = None
+            self.indices_by_class = {}
+            self.index_path = index_path
+
+    knn = SimpleKNN(k=2, index_path=tmp_path)
+    embs = torch.randn(5, 32)
+    # First build creates the index file
+    knn._build_index_for_class(0, embs)
+    # Second build should load existing index and emit a warning
+    with pytest.warns(UserWarning, match="already exists"):
+        knn._build_index_for_class(0, embs)

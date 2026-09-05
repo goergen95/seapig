@@ -405,14 +405,14 @@ class EmbeddingScore(UncertaintyScore, ModelExtractorMixin, ABC):
                     "t-SNE is not installed. Please install it with `pip install scikit-learn`."
                 )
             reducer = TSNE(n_components=2, **method_args)
-        elif method == "umap":  # pragma: no cover
+        elif method == "umap":
             try:
                 from umap import UMAP
             except ImportError:
                 raise ImportError(
                     "UMAP is not installed. Please install it with `pip install umap-learn`."
                 )
-            reducer = UMAP(n_components=2, **method_args)
+            reducer = UMAP(n_components=2, **method_args)  # pragma: no cover
         else:
             raise ValueError("Invalid method. Choose 'tsne' or 'umap'.")
 

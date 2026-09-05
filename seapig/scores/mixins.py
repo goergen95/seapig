@@ -33,7 +33,7 @@ class ModelExtractorMixin:
         method = getattr(model, cls.method_name)
         if not callable(method):
             raise TypeError(
-                f"`{cls.method_name}()` must be callable on the model."  # pragma: no cover
+                f"`{cls.method_name}()` must be callable on the model."
             )
         sig = inspect.signature(obj=method)
         if "x" not in sig.parameters:
@@ -98,7 +98,7 @@ class ModelExtractorMixin:
 
         try:
             device = next(model.parameters()).device
-        except StopIteration:  # pragma: no cover
+        except StopIteration:
             device = "cpu"
 
         assert isinstance(data, dict)
@@ -129,7 +129,7 @@ class ModelExtractorMixin:
                 batch, model, input_keys, output_key
             )
             for k, v in batch_dict.items():
-                if v is None:  # pragma: no cover
+                if v is None:
                     continue
                 collected.setdefault(k, []).append(v)
 
@@ -184,10 +184,10 @@ class ModelExtractorMixin:
 
     @staticmethod
     def _normalise_input(
-        batch: Any, keys: list[str]
+        batch: Any, keys: list[str] | None
     ) -> dict[str, torch.Tensor]:
         if keys is None:
-            keys = ["image"]  # pragma: no cover
+            keys = ["image"]
         if isinstance(batch, torch.Tensor):
             return {keys[0]: batch}
         if isinstance(batch, (list, tuple)):
@@ -311,7 +311,7 @@ class FAISSIndexMixin:
         if self.index_path is not None:
             idx_path = self.index_path / f"class{c}.bin"
 
-        if idx_path is not None and idx_path.exists():  # pragma: no cover
+        if idx_path is not None and idx_path.exists():
             warnings.warn(
                 f"Class index {idx_path} already exists. Loading from disk.",
                 UserWarning,
@@ -356,7 +356,7 @@ class FAISSIndexMixin:
     @staticmethod
     def _suggest_build_params(embs: torch.Tensor, k: int = 1) -> dict[str, Any]:
         if embs.dim() != 2:
-            raise ValueError("embeddings must be 2D (N, D)")  # pragma: no cover
+            raise ValueError("embeddings must be 2D (N, D)")
         n, d = map(int, embs.shape)
         if d <= 64:
             M = 16

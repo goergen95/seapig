@@ -206,3 +206,11 @@ def test_track_total_none_works() -> None:
 def test_track_empty_iterable() -> None:
     disable()
     assert list(track([])) == []
+
+
+def test_track_unknown_backend_raises() -> None:
+    enable()
+    # Directly set an invalid backend to trigger error path
+    _prog_mod._backend = "invalid"
+    with pytest.raises(ValueError, match="Unknown backend"):
+        list(track([1, 2, 3]))

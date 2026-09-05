@@ -79,15 +79,11 @@ def _is_interactive() -> bool:
     * A standard terminal whose *stdout* is connected to a TTY.
     """
     # IPython / Jupyter detection
-    try:
-        import builtins
+    import builtins
 
-        get_ipython = getattr(builtins, "get_ipython", None)
-        if get_ipython is not None and get_ipython() is not None:
-            return True
-    except ImportError:  # pragma: no cover
-        pass
-
+    get_ipython = getattr(builtins, "get_ipython", None)
+    if get_ipython is not None and get_ipython() is not None:
+        return True
     return sys.stdout.isatty()
 
 

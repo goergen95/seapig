@@ -503,10 +503,6 @@ class TensorPCA(torch.nn.Module):
             if key in state_dict:
                 val = state_dict[key]
                 if hasattr(self, name):
-                    try:
-                        setattr(self, name, val)
-                    except AttributeError:  # pragma: no cover
-                        # fallback to register_buffer if direct set fails
-                        self.register_buffer(name, val)
+                    setattr(self, name, val)
                 else:
                     self.register_buffer(name, val)

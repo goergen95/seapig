@@ -161,7 +161,7 @@ class BinaryTask(Task):
         two = class_dim is not None and logits.shape[1] == 2
         return BinaryTwoLogitTask() if two else BinarySingleLogitTask()
 
-    def canonicalize(self, logits, per_member):  # pragma: no cover
+    def canonicalize(self, logits, per_member):
         """Reshape raw logits to `(N, K, M)`; raise on unexpected rank."""
         raise RuntimeError("call resolve() first")
 

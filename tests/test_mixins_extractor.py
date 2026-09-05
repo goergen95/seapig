@@ -48,6 +48,7 @@ def make_loader(tensor: torch.Tensor, batch_size: int = 1):
 
 
 def test_check_model_valid_and_invalid():
+
     # Valid model should not raise
     ModelExtractorMixin._check_model(DummyModel())
 
@@ -260,5 +261,95 @@ def test_extract_dict_missing_key_and_prefix_handling(tmp_path: pathlib.Path):
         prefix="base",
     )
     expected_path = tmp_path / "base-embeddings-train.pt"
+    assert expected_path.exists()
+    assert "embedding" in out
+
+
+def test_load_or_extract_missing_output_key_file(tmp_path: pathlib.Path):
+    class SimpleModel(torch.nn.Module):
+        def embed(self, x):
+            return x
+
+    model = SimpleModel()
+    # Create a cache file missing the required output key
+    bad_data = {"wrong": torch.tensor([1])}
+    path = tmp_path / "bad.pt"
+    ModelExtractorMixin._write_pt(bad_data, path)
+    loader = make_loader(torch.randn(2, 2))
+    with pytest.raises(ValueError, match="does not contain 'embedding'"):
+        ModelExtractorMixin._load_or_extract(
+            model, loader, path, ["image"], "embedding"
+        )
+
+
+def test_check_model_non_callable_method():
+    class BadModelNonCallable(torch.nn.Module):
+        embed = 42  # not callable
+
+    with pytest.raises(TypeError, match=r"`embed\(\)` must be callable"):
+        ModelExtractorMixin._check_model(BadModelNonCallable())
+
+
+def test_load_or_extract_missing_output_key(tmp_path: pathlib.Path):
+    class ModelMissingKey(torch.nn.Module):
+        def embed(self, x):
+            return {"wrong": torch.tensor([1])}
+
+    model = ModelMissingKey()
+    loader = make_loader(torch.randn(2, 2))
+    # path is None to avoid caching
+    with pytest.raises(KeyError, match="Expected key embedding"):
+        ModelExtractorMixin._load_or_extract(
+            model, loader, None, ["image"], "embedding"
+        )
+
+
+def test_extract_dl_skips_none_output(tmp_path: pathlib.Path):
+    class ModelReturnsNone(torch.nn.Module):
+        def embed(self, x):
+            return {"embedding": None}
+
+    model = ModelReturnsNone()
+    loader = make_loader(torch.randn(2, 2))
+    result = ModelExtractorMixin._extract_dl(
+        model, loader, ["image"], "embedding"
+    )
+    assert result == {}
+
+
+def test_normalise_input_default_key():
+    t = torch.randn(3, 4)
+    out = ModelExtractorMixin._normalise_input(t, None)
+    assert list(out.keys()) == ["image"]
+    assert torch.equal(out["image"], t)
+
+
+def test_extract_dict_logits_prefix(tmp_path: pathlib.Path):
+    class DummyLogits(ModelExtractorMixin):
+        method_name = "logits"
+
+        def logits(self, x):
+            return x
+
+    class SimpleLogitsModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+
+        def logits(self, x):
+            return x
+
+    model = SimpleLogitsModel()
+    loader = make_loader(torch.randn(2, 2))
+    loaders = {"train": loader}
+    out = DummyLogits._extract_dict(
+        model=model,
+        loaders=loaders,
+        input_keys=["image"],
+        output_key="embedding",
+        key="train",
+        outdir=tmp_path,
+        prefix="base",
+    )
+    expected_path = tmp_path / "base-logits-train.pt"
     assert expected_path.exists()
     assert "embedding" in out

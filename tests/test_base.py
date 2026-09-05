@@ -88,6 +88,40 @@ def test_flag_methods_and_setters() -> None:
 
 
 def test_set_threshold_invalid_quantile_raises() -> None:
+    # existing test for invalid quantile (assert)
+    s = Dummy()
+    with pytest.raises(AssertionError):
+        s.set_threshold(q=1.0)
+    with pytest.raises(AssertionError):
+        s.set_threshold(q=0.0)
+
+
+def test_set_threshold_without_scores_raises() -> None:
+    """Ensure ValueError is raised when scores are missing."""
+    s = Dummy()
+    # Ensure scores attribute is None
+    s.scores = None
+    with pytest.raises(ValueError):
+        s.set_threshold(q=0.5)
+
+
+def test_set_threshold_computes_quantile_and_calibrates() -> None:
+    """Test that set_threshold computes correct quantile and sets calibrated flag."""
+    s = Dummy()
+    # set deterministic scores
+    scores = torch.tensor([0.1, 0.4, 0.6, 0.9])
+    s.scores = scores
+    # initial calibrated flag false
+    assert not s.is_calibrated()
+    s.set_threshold(q=0.5)
+    # Expected quantile using torch.nanquantile
+    expected = torch.nanquantile(scores, q=0.5)
+    thres = s.get_threshold()
+    assert thres is not None
+    assert torch.isclose(thres, expected)
+    # calibrated flag should be True after set_threshold
+    assert s.is_calibrated()
+
     s = Dummy()
     with pytest.raises(AssertionError):
         s.set_threshold(q=1.0)
@@ -139,3 +173,15 @@ def test_randomscore_select_logs_warning_when_threshold_none(
     messages = [r.message for r in caplog.records]
     assert any("Trying to set it via `set_threshold()`" in m for m in messages)
     assert sel["score"].shape[0] == X.shape[0]
+
+
+@pytest.mark.parametrize("include_query", [False, True])
+def test_plot_without_threshold(include_query: bool) -> None:
+    pytest.importorskip("matplotlib")
+    dummy = Dummy()
+    dummy.scores = torch.randn(20)
+    query = torch.randn(10) if include_query else None
+    with patch("matplotlib.pyplot.show") as mock_show:
+        dummy.plot(query_scores=query, bins=5)
+        mock_show.assert_called_once()
+    assert dummy.threshold is None

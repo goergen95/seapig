@@ -215,6 +215,29 @@ def test_embed_from_dict_errors_and_saves(tmp_path: pathlib.Path) -> None:
 
 
 def test_fit_pca_sets_pca_and_device() -> None:
+    # existing test ensures PCA can be fit
+    e = DummyEmbedding(pca=TensorPCA(n_components=0.5))
+    e.ref_embeddings = torch.randn(10, 5)
+    e._fit_pca()
+    assert isinstance(e.pca, TensorPCA)
+
+
+def test_apply_pca_transforms_cal_embeddings() -> None:
+    """Ensure _apply_pca transforms both ref and cal embeddings when PCA is set."""
+    e = DummyEmbedding(pca=TensorPCA(n_components=0.5))
+    # create distinct embeddings
+    ref = torch.randn(8, 6)
+    cal = torch.randn(3, 6)
+    e.ref_embeddings = ref.clone()
+    e.cal_embeddings = cal.clone()
+    # Apply PCA which fits on ref and transforms both
+    e._apply_pca()
+    # After applying, ref should be transformed
+    transformed_ref = e.pca.transform(ref)
+    assert torch.allclose(e.ref_embeddings, transformed_ref)
+    # Cal should also be transformed
+    transformed_cal = e.pca.transform(cal)
+    assert torch.allclose(e.cal_embeddings, transformed_cal)
     e = DummyEmbedding(pca=TensorPCA(n_components=0.5))
     e.ref_embeddings = torch.randn(10, 5)
     e._fit_pca()
@@ -754,23 +777,39 @@ def test_fit_errors_when_both_or_neither_provided() -> None:
 def test_select_triggers_set_threshold_when_none(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    # existing test
     s = MinimalEmbedding()
     s.train_required = False
     s.cal_required = False
-    # provide scores so set_threshold can run
     s.scores = torch.tensor([0.0, 1.0, 2.0])
     s.threshold = None
-
     caplog.clear()
     caplog.set_level("WARNING")
-
-    # call select with embeddings which will cause set_threshold to be called
     X = torch.tensor([[0.0, 0.0], [1.0, 1.0]])
     res = s.select(X=X)
-
-    # logger.warning should have been emitted about missing threshold
     assert any(
         "Threshold has not been set" in rec.message for rec in caplog.records
     )
     assert s.threshold is not None
     assert "score" in res and "selected" in res
+
+
+def test_select_and_set_threshold_with_calibrated() -> None:
+    """Test select and set_threshold when calibration is required and provided."""
+    e = DummyEmbedding(pca=None)
+    e.train_required = False
+    e.cal_required = True
+    # set embeddings
+    e.ref_embeddings = torch.randn(5, 4)
+    e.cal_embeddings = torch.randn(3, 4)
+    # compute scores for calibration embeddings via dummy _score (sum)
+    e.scores = e._score(e.cal_embeddings)
+    e.set_calibrated()
+    # set threshold based on calibration scores
+    e.set_threshold(q=0.5)
+    # now select with query embeddings
+    X = torch.randn(2, 4)
+    result = e.select(X=X)
+    assert "score" in result and "selected" in result
+    assert result["score"].shape[0] == X.shape[0]
+    assert result["selected"].dtype == torch.bool

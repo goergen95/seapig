@@ -381,6 +381,55 @@ def test_validate_tensor_cases() -> None:
         metric._validate_tensor(bad, name="BadMetric")
 
 
+def test_default_error_fn_multi_dimensional_residual():
+    """Ensure `_default_error_fn` correctly reduces multi-dimensional residuals."""
+    metric = RiskCoverageMetric()
+    # preds and target with shape (B, C, D) to trigger reduction path
+    preds = torch.tensor([[[0.2, 0.8], [0.5, 0.5]], [[0.1, 0.9], [0.3, 0.7]]])
+    target = torch.zeros_like(preds)
+    scores = torch.tensor([0.1, 0.2])
+    # update uses default error function because no error_metric nor error_fn provided
+    metric.update(preds=preds, target=target, scores=scores)
+    # after update, residuals should be a (B,) tensor equal to mean absolute values per sample
+    expected = torch.mean(torch.abs(preds - target), dim=(1, 2))
+    assert torch.allclose(metric.residuals, expected)
+    # compute should succeed and produce non‑nan AUC values
+    out = metric.compute()
+    for key in ("rc/auc_empirical", "rc/auc_reference", "rc/auc_excess"):
+        assert key in out
+        assert torch.isfinite(out[key]).all()
+
+
+def test_default_error_fn_1d_residual():
+    """Ensure `_default_error_fn` returns the residual unchanged when already 1‑D."""
+    metric = RiskCoverageMetric()
+    preds = torch.tensor([0.2, 0.5, 0.7])
+    target = torch.tensor([0.0, 0.5, 1.0])
+    residual = metric._default_error_fn(preds, target)
+    expected = torch.abs(preds - target)
+    assert torch.equal(residual, expected)
+    assert residual.ndim == 1
+
+
+def test_validate_tensor_type_error():
+    """`_validate_tensor` should raise TypeError for non‑tensor inputs."""
+    metric = RiskCoverageMetric()
+    with pytest.raises(TypeError, match="must return a torch.Tensor"):
+        metric._validate_tensor([1, 2, 3], name="NonTensor")  # ty: ignore[invalid-argument-type]
+
+
+def test_compute_curves_empty_returns_dict():
+    """When no scores are present, `_compute_curves` should return an empty dict."""
+    metric = RiskCoverageMetric()
+    curves = metric._compute_curves()
+    assert isinstance(curves, dict) and curves == {}
+
+    """`_validate_tensor` should raise TypeError for non‑tensor inputs."""
+    metric = RiskCoverageMetric()
+    with pytest.raises(TypeError, match="must return a torch.Tensor"):
+        metric._validate_tensor([1, 2, 3], name="NonTensor")  # ty: ignore[invalid-argument-type]
+
+
 def test_multi_metric_support_and_reset() -> None:
     """Validate multi‑metric handling via a MetricCollection."""
     coll = MetricCollection({"mae": AbsErrorMetric(), "mse": SqErrorMetric()})

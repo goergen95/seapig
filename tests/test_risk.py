@@ -302,3 +302,49 @@ class TestRiskCoverage:
             ValueError, match="At least one of empirical, reference, or excess"
         ):
             rc.plot(empirical=False, reference=False, excess=False)
+
+    def test_plot_importerror(self, simple_data, monkeypatch):
+        """Test that missing matplotlib raises ImportError."""
+        score, residuals = simple_data
+        rc = risk_coverage(score, residuals)
+        # monkeypatch builtins.__import__ to raise ImportError for matplotlib
+        original_import = __import__
+
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name.startswith("matplotlib"):
+                raise ImportError("No module named 'matplotlib'")
+            return original_import(name, globals, locals, fromlist, level)
+
+        monkeypatch.setattr("builtins.__import__", fake_import)
+        with pytest.raises(
+            ImportError, match="matplotlib is required for plotting"
+        ):
+            rc.plot()
+
+    def test_gap_ordering_error(self, monkeypatch):
+        """Test that risk_coverage raises ValueError when reference exceeds empirical."""
+        import torch
+
+        call = {"count": 0}
+
+        def fake_rc_curve(score, residuals, risk_type):
+            if call["count"] == 0:
+                # empirical: low risk
+                cov = torch.tensor([0.5, 1.0])
+                thr = score
+                risk = torch.tensor([0.0, 0.0])
+            else:
+                # reference: higher risk
+                cov = torch.tensor([0.5, 1.0])
+                thr = score
+                risk = torch.tensor([1.0, 1.0])
+            call["count"] += 1
+            return cov, thr, risk
+
+        monkeypatch.setattr("seapig.risk._rc_curve", fake_rc_curve)
+        score = torch.rand(2)
+        residuals = torch.rand(2)
+        with pytest.raises(
+            ValueError, match="reference exceeds empirical risk"
+        ):
+            risk_coverage(score, residuals, risk="generalized")
