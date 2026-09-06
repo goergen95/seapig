@@ -2,69 +2,15 @@ from typing import Any
 
 import pytest
 import torch
-from lightning import LightningModule
-from torchmetrics import Accuracy, MetricCollection
-from typing_extensions import override
 
 from seapig import RiskCoverageMetric, SelectiveInferenceTask
-from seapig.scores.base import UncertaintyScore
-
-
-class DummyScore(UncertaintyScore):
-    """Minimal duck-typed score with select()."""
-
-    def select(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
-        b = x.shape[0]
-        return {
-            "score": torch.arange(b, dtype=x.dtype, device=x.device),
-            "selected": torch.ones(b, dtype=torch.bool, device=x.device),
-        }
-
-    def score(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.zeros(
-            x.shape[0], dtype=x.dtype, device=x.device
-        )  # pragma: no cover
-
-    def fit(
-        self,
-        X: torch.Tensor | None = None,
-        Y: torch.Tensor | None = None,
-        *args: Any,
-        **kwargs: Any,
-    ) -> None:
-        """Dummy implementation of fit."""
-        raise NotImplementedError()
-
-    @override
-    def set_threshold(self, q: float = 0.99) -> None:  # pragma: no cover
-        """Dummy implementation of set_threshold."""
-        self.threshold = torch.tensor(q)
-
-
-class DummyTaskTensor(LightningModule):
-    """Task that returns a tensor from predict()."""
-
-    test_metrics: MetricCollection = MetricCollection(Accuracy(task="binary"))
-
-    def predict(self, x: torch.Tensor) -> torch.Tensor:
-        if isinstance(x, list):
-            x = x[0]
-        if isinstance(x, dict):
-            x = next(iter(x.values()))
-        return 2 * x
-
-    def embed(self, x: torch.Tensor) -> torch.Tensor:
-        return x  # pragma: no cover
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.predict(x)
-
-
-class DummyTaskDict(DummyTaskTensor):
-    """Task that returns a mapping from predict()."""
-
-    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:  # type: ignore[override, ty:invalid-method-override]
-        return {"predictions": 3 * x, "extra": x.sum(dim=1)}
+from tests.fixtures import (
+    BadTask,
+    DummyScore,
+    DummyTaskDict,
+    DummyTaskTensor,
+    NoMetricTask,
+)
 
 
 def test_init_accepts_default_and_alt_keys() -> None:
@@ -136,9 +82,6 @@ def test_forward_keeps_dict_output_and_extra_keys() -> None:
 
 
 def test_forward_raises_when_predict_not_tensor_or_dict() -> None:
-    class BadTask(DummyTaskTensor):
-        def predict(self, x: torch.Tensor) -> list[torch.Tensor]:  # type: ignore[override, ty:invalid-method-override]
-            return [x]  # wrong type
 
     w = SelectiveInferenceTask(task=BadTask(), score=DummyScore())
     with pytest.raises(AssertionError):
@@ -332,10 +275,6 @@ def test_return_test_outputs_without_metrics(
     """If the wrapped task does not expose test_metrics, the wrapper
     should still collect per-batch outputs when return_test_outputs=True.
     """
-
-    class NoMetricTask(DummyTaskDict):
-        # Explicitly remove metrics to simulate tasks that don't define them
-        test_metrics: None = None  # type: ignore[assignment]
 
     task = NoMetricTask()
     score = DummyScore()

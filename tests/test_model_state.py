@@ -5,30 +5,18 @@ properly preserve the model's training/evaluation state, which is critical
 for models with BatchNorm or Dropout layers.
 """
 
-from typing import Any, cast
+from typing import cast
 
 import torch
 from lightning import LightningModule
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 from torchmetrics import Accuracy, MetricCollection
 
 from seapig import SelectiveInferenceTask
 from seapig.scores.knn import EuclideanScore
+from tests.fixtures import DictDataset
 
 _EmbedLoader = DataLoader[torch.Tensor | dict[str, torch.Tensor]]
-
-
-class DictDataset(Dataset):
-    """Dataset that returns dict with 'image' key for compatibility with EmbeddingScore."""
-
-    def __init__(self, data: torch.Tensor) -> None:
-        self.data = data
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    def __getitem__(self, idx: int) -> Any:  # type: ignore[override, ty:invalid-method-override]
-        return {"image": self.data[idx]}
 
 
 class ModelWithBatchNorm(LightningModule):

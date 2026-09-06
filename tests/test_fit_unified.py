@@ -7,7 +7,6 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from seapig.scores.embed import EmbeddingScore
 from seapig.scores.knn import EuclideanScore
 from seapig.scores.logits import (
     EnergyScore,
@@ -19,36 +18,34 @@ from seapig.scores.logits import (
 )
 from seapig.scores.pca import PCAScore
 from seapig.scores.utils import TensorPCA
+from tests.fixtures import DummyModel, MinimalEmbedding
 
 _EmbedLoader = DataLoader[torch.Tensor | dict[str, torch.Tensor]]
 
 
-class DummyModel(torch.nn.Module):
-    """Dummy model for testing embedding extraction."""
-
-    def __init__(self):
+# Simple dummy model that returns logits of a specified shape
+class DummyLogitModel(torch.nn.Module):
+    def __init__(self, task: str, per_member: bool, K: int = 3, M: int = 5):
         super().__init__()
-        self.layer = torch.nn.Linear(1, 1)
+        self.task = task
+        self.per_member = per_member
+        self.K = K
+        self.M = M
 
-    def embed(self, x: torch.Tensor | dict[str, torch.Tensor]) -> torch.Tensor:
-        if isinstance(x, dict):
-            x = x["image"]  # type: ignore[argument-type] # pragma: no cover
-        return x
-
-
-class MinimalEmbedding(EmbeddingScore):
-    """Minimal concrete EmbeddingScore for testing."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.train_required = False
-        self.cal_required = False
-
-    def _score(self, X: torch.Tensor) -> torch.Tensor:
-        return X.sum(dim=1)  # pragma: no cover
-
-    def _fit(self, q: bool | float = False):
-        return
+    def logits(self, x: torch.Tensor):
+        N = x.shape[0]
+        if self.task == "multiclass":
+            if self.per_member:
+                return torch.randn(N, self.K, self.M)
+            return torch.randn(N, self.K)
+        if self.task == "binary":
+            if self.per_member:
+                return torch.randn(N, self.M)
+            return torch.randn(N)
+        if self.task == "multilabel":
+            if self.per_member:
+                return torch.randn(N, self.K, self.M)
+            return torch.randn(N, self.K)
 
 
 def test_fit_with_embeddings_only() -> None:
@@ -291,31 +288,6 @@ def test_pyod_score_fit_with_model() -> None:
     assert score.ref_embeddings is not None
     assert score.is_trained()
     assert score.is_calibrated()
-
-
-# Simple dummy model that returns logits of a specified shape
-class DummyLogitModel(torch.nn.Module):
-    def __init__(self, task: str, per_member: bool, K: int = 3, M: int = 5):
-        super().__init__()
-        self.task = task
-        self.per_member = per_member
-        self.K = K
-        self.M = M
-
-    def logits(self, x: torch.Tensor):
-        N = x.shape[0]
-        if self.task == "multiclass":
-            if self.per_member:
-                return torch.randn(N, self.K, self.M)
-            return torch.randn(N, self.K)
-        if self.task == "binary":
-            if self.per_member:
-                return torch.randn(N, self.M)
-            return torch.randn(N)
-        if self.task == "multilabel":
-            if self.per_member:
-                return torch.randn(N, self.K, self.M)
-            return torch.randn(N, self.K)
 
 
 @pytest.mark.parametrize(
