@@ -15,10 +15,10 @@ from seapig.utils import get_logger
 logger = get_logger(__name__)
 
 
-from seapig.scores.mixins import ModelExtractorMixin
+from seapig.scores.extractor import ModelExtractor
 
 
-class EmbeddingScore(UncertaintyScore, ModelExtractorMixin, ABC):
+class EmbeddingScore(UncertaintyScore, ABC):
     """Base class for embedding-based uncertainty scores.
 
     Embedding-based scores quantify deviation from the training distribution using
@@ -65,6 +65,9 @@ class EmbeddingScore(UncertaintyScore, ModelExtractorMixin, ABC):
         self.pca = pca
         self.register_buffer("ref_embeddings", None)
         self.register_buffer("cal_embeddings", None, persistent=False)
+        self.extractor = ModelExtractor(
+            method_name="embed", output_key="embedding", input_keys=("image",)
+        )
 
     def _fit_pca(self) -> None:
         assert self.ref_embeddings is not None
@@ -146,27 +149,23 @@ class EmbeddingScore(UncertaintyScore, ModelExtractorMixin, ABC):
             assert model is not None
             assert loaders is not None
             assert "train" in loaders
-            out = self._extract_dict(
+            data = self.extractor.extract(
                 model=model,
-                loaders=loaders,
-                input_keys=["image"],
-                output_key="embedding",
-                key="train",
+                loader=loaders["train"],
                 outdir=outdir,
                 prefix=prefix,
+                overwrite=False,
             )
-            X = out.get("embedding")
+            X = data.get("embedding")
             if "val" in loaders:
-                out = self._extract_dict(
+                data = self.extractor.extract(
                     model=model,
-                    loaders=loaders,
-                    input_keys=["image"],
-                    output_key="embedding",
-                    key="val",
+                    loader=loaders["val"],
                     outdir=outdir,
                     prefix=prefix,
+                    overwrite=False,
                 )
-                Y = out.get("embedding")
+                Y = data.get("embedding")
         self.ref_embeddings = X
         self.cal_embeddings = Y
         self._fit(q=q)
@@ -239,15 +238,10 @@ class EmbeddingScore(UncertaintyScore, ModelExtractorMixin, ABC):
                 "Specify either pre-computed tensors (X and Y) or a model with a loader, but not both."
             )
         if model_mode:
-            out = self._extract_loader(
-                model=model,
-                loader=loader,
-                input_keys=["image"],
-                output_key="embedding",
-                outdir=outdir,
-                prefix=prefix,
+            data = self.extractor.extract(
+                model=model, loader=loader, outdir=outdir, prefix=prefix
             )
-            X = out.get("embedding")
+            X = data.get("embedding")
         assert isinstance(X, torch.Tensor)
         return self._score(X)
 

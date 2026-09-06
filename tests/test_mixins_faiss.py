@@ -160,3 +160,9 @@ def test_build_index_for_class_existing(tmp_path: pathlib.Path):
     # Second build should load existing index and emit a warning
     with pytest.warns(UserWarning, match="already exists"):
         knn._build_index_for_class(0, embs)
+
+
+def test_suggest_build_params_fails_with_wrong_size():
+    embs = torch.randn(10, 2, 3)
+    with pytest.raises(ValueError):
+        FAISSIndexMixin._suggest_build_params(embs, k=1)

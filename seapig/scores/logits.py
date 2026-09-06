@@ -13,8 +13,8 @@ from torch.utils.data import DataLoader
 from typing_extensions import override
 
 from seapig.scores.base import UncertaintyScore
+from seapig.scores.extractor import ModelExtractor
 from seapig.scores.logits_utils import Task, TemperatureScaler, get_task
-from seapig.scores.mixins import ModelExtractorMixin
 
 EPS = 1e-12
 Batch = torch.Tensor | dict[str, torch.Tensor]
@@ -37,7 +37,7 @@ def _shannon_entropy(p: torch.Tensor, dim: int = 1) -> torch.Tensor:
     return -(p * p.log()).sum(dim=dim)
 
 
-class LogitScore(UncertaintyScore, ModelExtractorMixin, abc.ABC):
+class LogitScore(UncertaintyScore, abc.ABC):
     """Base class for logit-based uncertainty scores.
 
     Supports multiclass, binary (single/two-logit), and multilabel tasks.
@@ -86,7 +86,6 @@ class LogitScore(UncertaintyScore, ModelExtractorMixin, abc.ABC):
     ```
     """
 
-    method_name: str = "logits"
     ident: str
 
     logits: torch.Tensor | None
@@ -154,7 +153,7 @@ class LogitScore(UncertaintyScore, ModelExtractorMixin, abc.ABC):
         Labels are required for temperature fitting to minimize NLL for the task.
         """
         logits, extracted_labels = self._resolve(
-            X, model, loader, outdir, prefix, want_labels=True
+            X, model, loader, outdir, prefix, want_labels=temp_scale
         )
         labels = Y if Y is not None else extracted_labels
 
@@ -282,16 +281,19 @@ class LogitScore(UncertaintyScore, ModelExtractorMixin, abc.ABC):
             return logits, None
         if model is None or loader is None:
             raise ValueError("`model` and `loader` must be given together.")
-
-        out = self._extract_loader(
+        extractor = ModelExtractor(
+            method_name="logits",
+            output_key="logit",
+            input_keys=("image", "label") if want_labels else ("image",),
+        )
+        data = extractor.extract(
             model=model,
             loader=loader,
-            input_keys=["image", "label"] if want_labels else ["image"],
-            output_key="logit",
             outdir=outdir,
             prefix=prefix,
+            overwrite=False,
         )
-        return out["logit"], out.get("label")
+        return data["logit"], data.get("label")
 
     @property
     def T(self) -> float:
