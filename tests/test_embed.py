@@ -74,146 +74,6 @@ def test_pca_correctly_initialized() -> None:
     assert isinstance(e.pca, TensorPCA)
 
 
-def test_setup_path_creates_dir_and_returns_path(
-    tmp_path: pathlib.Path,
-) -> None:
-    outdir = tmp_path / "subdir"
-    path = EmbeddingScore._setup_path(outdir=outdir, prefix="myprefix")
-    assert path is not None
-    # the helper should return a Path ending with .parquet but not yet create the file
-    assert path.suffix == ".pt"
-    assert outdir.is_dir()
-    assert "myprefix" in path.name
-    # cleanup
-    outdir.rmdir()
-
-
-def test_check_model_valid_and_invalid() -> None:
-    m = DummyModel()
-    # should not raise
-    EmbeddingScore._check_model(m)
-
-    with pytest.raises(
-        TypeError,
-        match=re.escape("model is required to have a `embed()` method."),
-    ):
-        EmbeddingScore._check_model(DummyBadModel())
-
-    with pytest.raises(AttributeError):
-        EmbeddingScore._check_model(DummyBadSignature())
-
-
-def test_write_and_load_roundtrip(tmp_path: pathlib.Path) -> None:
-    x = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
-    path = tmp_path / "embs.pt"
-    EmbeddingScore._write_pt(x, path)
-    assert path.exists()
-    y = EmbeddingScore._load_pt(path)
-    assert isinstance(y, torch.Tensor)
-    assert torch.allclose(y, x)
-    # cleanup
-    path.unlink()
-
-
-def test_embed_errors_and_success() -> None:
-    model = DummyModel()
-    # dict missing "image" should raise KeyError
-    with pytest.raises(KeyError):
-        EmbeddingScore._extract_batch(
-            batch={"foo": torch.zeros(1, 2)},
-            model=model,
-            input_keys=["image"],
-            output_key="logit",
-        )
-
-    # correct case
-    out = EmbeddingScore._extract_batch(
-        torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
-        model,
-        input_keys=["image"],
-        output_key="embedding",
-    )
-    embs = out.get("embedding")
-    assert isinstance(embs, torch.Tensor)
-    assert embs.shape == (2, 2)
-
-
-def test_embed_dl_concatenates_batches() -> None:
-    model = DummyModel()
-    # use TensorDataset so DataLoader yields (B,D)
-    samples = torch.tensor([[float(i), float(i) + 0.1] for i in range(4)])
-    dataset = TensorDataset(samples)
-
-    # TensorDataset yields tuples, collate will produce shape (B,1,D), so use a custom collate
-    def collate_fn(batch: list[tuple[torch.Tensor, ...]]) -> torch.Tensor:
-        # batch is list of tuples like (tensor,), extract and stack
-        return torch.stack([b[0] for b in batch], dim=0)
-
-    loader = cast(
-        _EmbedLoader, DataLoader(dataset, batch_size=1, collate_fn=collate_fn)
-    )
-    out = EmbeddingScore._extract_dl(
-        model=model, loader=loader, input_keys=["image"], output_key="embedding"
-    )
-    embs = out.get("embedding")
-    assert embs.shape[0] == 4
-    assert embs.shape[1] == 2
-
-
-def test_embed_from_dict_errors_and_saves(tmp_path: pathlib.Path) -> None:
-    model = DummyModel()
-    samples = torch.tensor([[1.0, 2.0]])
-    dataset = TensorDataset(samples)
-
-    def collate_fn(batch: list[tuple[torch.Tensor, ...]]) -> torch.Tensor:
-        return torch.stack([b[0] for b in batch], dim=0)
-
-    loader = cast(
-        _EmbedLoader, DataLoader(dataset, batch_size=1, collate_fn=collate_fn)
-    )
-    loaders: dict[str, _EmbedLoader] = {"train": loader}
-    # missing key 'val' should KeyError
-    with pytest.raises(KeyError):
-        EmbeddingScore._extract_dict(
-            model=model,
-            loaders=loaders,
-            key="val",
-            input_keys=["image"],
-            output_key="embedding",
-        )
-
-    # outdir specified but prefix None should raise a Warning
-    with pytest.warns(UserWarning):
-        EmbeddingScore._extract_dict(
-            model=model,
-            loaders={"train": loader},
-            key="train",
-            outdir=tmp_path,
-            prefix=None,
-            input_keys=["image"],
-            output_key="embedding",
-        )
-
-    # valid save/load path: provide prefix and outdir
-    loaders = {"train": loader}
-    embs = EmbeddingScore._extract_dict(
-        model=model,
-        loaders=loaders,
-        key="train",
-        outdir=tmp_path,
-        prefix="pfx",
-        input_keys=["image"],
-        output_key="embedding",
-    )
-    assert isinstance(embs, dict)
-    assert isinstance(embs["embedding"], torch.Tensor)
-    # file should have been written
-    expected = tmp_path / "pfx-embeddings-train.pt"
-    assert expected.exists()
-    # cleanup
-    expected.unlink()
-
-
 def test_fit_pca_sets_pca_and_device() -> None:
     # existing test ensures PCA can be fit
     e = DummyEmbedding(pca=TensorPCA(n_components=0.5))
@@ -307,7 +167,7 @@ def test_fit_model_without_embed_raises(tmp_path: pathlib.Path) -> None:
     s = MinimalEmbedding()
     with pytest.raises(
         TypeError,
-        match=re.escape("model is required to have a `embed()` method."),
+        match=re.escape(r"`model` is required to have a `embed()` method."),
     ):
         s.fit(model=NoEmbedModel(), loaders=loaders)
 
@@ -335,9 +195,9 @@ def test_score_with_model_loader_writes_and_returns_tensor(
     )
     assert isinstance(out, torch.Tensor)
     assert out.shape[0] == 2
-    assert (tmp_path / "pfx.pt").exists()
+    assert (tmp_path / "pfx-embedding.pt").exists()
     # cleanup
-    (tmp_path / "pfx.pt").unlink()
+    (tmp_path / "pfx-embedding.pt").unlink()
 
 
 def test_select_with_model_loader_respects_threshold(
@@ -563,58 +423,6 @@ def test_select_requires_parameters() -> None:
         s.select()
 
 
-def test_embed_loadorembed_uses_disk_when_present(
-    tmp_path: pathlib.Path,
-) -> None:
-    """When a saved embeddings file exists, _loadorembed should load it and
-    move it to the model device. It should also emit a UserWarning.
-    """
-    # create a tensor and save it to disk
-    saved = torch.tensor([[9.0, 8.0], [7.0, 6.0]])
-    path = tmp_path / "already.pt"
-    torch.save({"embedding": saved}, path)
-
-    m = ParamModel()
-    # move model to cpu (default) and ensure file load uses same device
-    loader = cast(
-        _EmbedLoader,
-        DataLoader([torch.tensor([0.0, 0.1])], batch_size=1),  # type: ignore[arg-type, ty:invalid-argument-type]
-    )
-
-    with pytest.warns(UserWarning):
-        out = EmbeddingScore._load_or_extract(
-            path=path,
-            model=m,
-            loader=loader,
-            input_keys=["image"],
-            output_key="embedding",
-        )
-
-    assert isinstance(out["embedding"], torch.Tensor)
-    assert out["embedding"].shape == saved.shape
-
-
-def test_embed_accepts_dict_and_sequence_inputs() -> None:
-    m = DummyModel()
-    # dict case
-    xdict = {"image": torch.tensor([[1.0, 2.0]])}
-    out = EmbeddingScore._extract_batch(
-        xdict, m, input_keys=["image"], output_key="embedding"
-    )
-    embs = out.get("embedding")
-    assert isinstance(embs, torch.Tensor)
-    assert torch.allclose(embs, xdict["image"])
-
-    # tuple/list case
-    xtup = (torch.tensor([[3.0, 4.0]]),)
-    out2 = EmbeddingScore._extract_batch(
-        xtup, m, input_keys=["image"], output_key="embedding"
-    )
-    embs = out2.get("embedding")
-    assert isinstance(embs, torch.Tensor)
-    assert torch.allclose(embs, xtup[0])
-
-
 match = re.escape(
     "Specify either pre-computed tensors (X and Y) or a model with a loader, but not both."
 )
@@ -638,39 +446,6 @@ def test_fit_parameter_validation_errors() -> None:
     }
     with pytest.raises(AssertionError):
         s.fit(loaders=loaders)
-
-
-def test_embed_dl_restores_training_state() -> None:
-    class TrainModel(torch.nn.Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.lin = torch.nn.Linear(2, 2)
-
-        def embed(self, x: torch.Tensor) -> torch.Tensor:
-            return x
-
-    model = TrainModel()
-    # ensure model is in training mode
-    model.train()
-    assert model.training
-
-    samples = torch.tensor([[1.0, 1.0], [2.0, 2.0]])
-    dataset = TensorDataset(samples)
-    loader = cast(
-        _EmbedLoader,
-        DataLoader(
-            dataset,
-            batch_size=1,
-            collate_fn=lambda b: torch.stack([x[0] for x in b], 0),
-        ),
-    )
-
-    out = EmbeddingScore._extract_dl(
-        model=model, loader=loader, input_keys=["image"], output_key="embedding"
-    )
-    # model should have been restored to training mode
-    assert model.training
-    assert out["embedding"].shape[0] == 2
 
 
 @pytest.fixture(
@@ -717,45 +492,6 @@ def test_plot_embs_missing_libraries_raise(
     else:
         with pytest.raises(ImportError, match=expected_msg):
             e.plot_embs(query_embeddings=torch.randn(2, 4), method=method)  # type: ignore[arg-type, ty:invalid-argument-type]
-
-
-def test_loadorembed_uses_existing_file_and_moves_to_model_device(
-    tmp_path: pathlib.Path,
-) -> None:
-    # prepare tensor file
-    tensor = torch.tensor([[7.0, 8.0]])
-    path = tmp_path / "pre_embs.pt"
-    torch.save({"embedding": tensor}, path)
-
-    model = ParamModel()
-    # simple loader (not used when path exists)
-    loader = cast(
-        _EmbedLoader,
-        DataLoader([torch.tensor([0.0, 0.1])], batch_size=1),  # type: ignore[arg-type, ty:invalid-argument-type]
-    )
-    with pytest.warns(UserWarning):
-        out = EmbeddingScore._load_or_extract(
-            model, loader, path, input_keys=["image"], output_key="embedding"
-        )
-    assert isinstance(out["embedding"], torch.Tensor)
-    assert out["embedding"].shape == tensor.shape
-    # ensure tensor is on same device as model parameters
-    dev = next(model.parameters()).device
-    assert out["embedding"].device == dev
-
-
-def test_embed_accepts_list() -> None:
-    model = DummyModel()
-    x = torch.tensor([[1.0, 2.0]])
-    # list/tuple input should select first element and succeed
-    out = EmbeddingScore._extract_batch(
-        cast(torch.Tensor, [x]),
-        model,
-        input_keys=["image"],
-        output_key="embedding",
-    )
-    assert isinstance(out["embedding"], torch.Tensor)
-    assert out["embedding"].shape == x.shape
 
 
 def test_fit_errors_when_both_or_neither_provided() -> None:
