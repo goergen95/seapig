@@ -61,7 +61,7 @@ typecheck:
 test:
 	pytest -q
 test-coverage:
-	pytest --cov=seapig
+	pytest --cov --cov-report=term-missing
 test-ci:
 	pytest --maxfail=1 -q
 # pre-commit helpers

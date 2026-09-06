@@ -14,17 +14,6 @@ from seapig.scores.utils import TensorPCA
 _EmbedLoader = DataLoader[torch.Tensor | dict[str, torch.Tensor]]
 
 
-class DummyModel(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.layer = torch.nn.Linear(1, 1)
-
-    def embed(self, x: torch.Tensor) -> torch.Tensor:  # must accept 'x' param
-        if isinstance(x, dict):
-            x = x["image"]  # type: ignore[arg-type] # pragma: no cover
-        return x
-
-
 class DummyBadModel(torch.nn.Module):
     def not_embed(self, x: torch.Tensor) -> torch.Tensor:
         return x  # pragma: no cover
@@ -54,16 +43,6 @@ class DummyEmbedding(EmbeddingScore):
     def _score(self, X: torch.Tensor) -> torch.Tensor:
         # simple deterministic score: sum over features per row
         return X.sum(dim=1)
-
-
-# model must have parameters so next(model.parameters()) works
-class ParamModel(torch.nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-        self.lin = torch.nn.Linear(2, 2)
-
-    def embed(self, x: torch.Tensor) -> torch.Tensor:
-        return x  # pragma: no cover
 
 
 def test_pca_correctly_initialized() -> None:
@@ -146,7 +125,7 @@ class MinimalEmbedding(EmbeddingScore):
         return X.sum(dim=1)
 
     def _fit(self, q: bool | float = False) -> None:
-        return
+        pass  # pragma: no cover
 
 
 def test_fit_model_without_embed_raises(tmp_path: pathlib.Path) -> None:

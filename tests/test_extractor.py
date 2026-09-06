@@ -343,7 +343,7 @@ def test_model_device_returns_parameter_device():
             self.linear = torch.nn.Linear(2, 2).to("cpu")
 
         def forward(self, x):
-            return x
+            pass  # pragma: no cover
 
     model = SimpleModel()
     device = _model_device(model)

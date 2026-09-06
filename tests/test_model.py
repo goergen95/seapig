@@ -54,7 +54,7 @@ class DummyTaskTensor(LightningModule):
         return 2 * x
 
     def embed(self, x: torch.Tensor) -> torch.Tensor:
-        return x
+        return x  # pragma: no cover
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.predict(x)
