@@ -149,7 +149,7 @@ def test_temperature_scaler_fallback_to_adam(monkeypatch):
             pass
 
         def zero_grad(self):
-            pass
+            pass  # pragma: no cover
 
         def step(self, closure):
             raise RuntimeError("forced failure")
@@ -165,7 +165,7 @@ def test_temperature_scaler_fallback_to_adam(monkeypatch):
 def test_bernoulli_task_prepare_labels_float():
     class DummyTask(lu.BernoulliTask):
         def canonicalize(self, logits, per_member):
-            return logits
+            pass  # pragma: no cover
 
     task = DummyTask()
     labels = torch.tensor([0, 1, 2], dtype=torch.int32)

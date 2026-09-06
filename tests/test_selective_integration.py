@@ -26,8 +26,7 @@ class DummyTask(LightningModule):
         return x[:, 1].long()
 
     def embed(self, x: torch.Tensor) -> torch.Tensor:
-        # expose input so the score can decide selection from the first column
-        return x
+        return x  # pragma: no cover
 
 
 class FlagScore(UncertaintyScore):

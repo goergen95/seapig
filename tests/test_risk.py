@@ -307,13 +307,10 @@ class TestRiskCoverage:
         """Test that missing matplotlib raises ImportError."""
         score, residuals = simple_data
         rc = risk_coverage(score, residuals)
-        # monkeypatch builtins.__import__ to raise ImportError for matplotlib
-        original_import = __import__
 
         def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
             if name.startswith("matplotlib"):
                 raise ImportError("No module named 'matplotlib'")
-            return original_import(name, globals, locals, fromlist, level)
 
         monkeypatch.setattr("builtins.__import__", fake_import)
         with pytest.raises(
