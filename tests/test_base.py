@@ -5,26 +5,7 @@ import pytest
 import torch
 
 from seapig.scores import EuclideanScore, RandomScore
-from seapig.scores.base import UncertaintyScore
-
-
-class Dummy(UncertaintyScore):
-    def fit(
-        self,
-        X: torch.Tensor | None = None,
-        Y: torch.Tensor | None = None,
-        *args: Any,
-        **kwargs: Any,
-    ) -> None:
-        return None  # pragma: no cover
-
-    def score(self, X: torch.Tensor, *args: Any, **kwargs: Any) -> torch.Tensor:
-        return X  # pragma: no cover
-
-    def select(
-        self, X: torch.Tensor, *args: Any, **kwargs: Any
-    ) -> dict[str, torch.Tensor]:
-        raise NotImplementedError()  # pragma: no cover
+from tests.fixtures import DummyScore
 
 
 def test_random_score() -> None:
@@ -74,7 +55,7 @@ def test_plot_method(include_query: bool) -> None:
 
 
 def test_flag_methods_and_setters() -> None:
-    dummy = Dummy()
+    dummy = DummyScore()
     # defaults
     assert dummy.requires_training() is False
     assert dummy.requires_calibration() is False
@@ -89,7 +70,7 @@ def test_flag_methods_and_setters() -> None:
 
 def test_set_threshold_invalid_quantile_raises() -> None:
     # existing test for invalid quantile (assert)
-    s = Dummy()
+    s = DummyScore()
     with pytest.raises(AssertionError):
         s.set_threshold(q=1.0)
     with pytest.raises(AssertionError):
@@ -98,7 +79,7 @@ def test_set_threshold_invalid_quantile_raises() -> None:
 
 def test_set_threshold_without_scores_raises() -> None:
     """Ensure ValueError is raised when scores are missing."""
-    s = Dummy()
+    s = DummyScore()
     # Ensure scores attribute is None
     s.scores = None
     with pytest.raises(ValueError):
@@ -107,7 +88,7 @@ def test_set_threshold_without_scores_raises() -> None:
 
 def test_set_threshold_computes_quantile_and_calibrates() -> None:
     """Test that set_threshold computes correct quantile and sets calibrated flag."""
-    s = Dummy()
+    s = DummyScore()
     # set deterministic scores
     scores = torch.tensor([0.1, 0.4, 0.6, 0.9])
     s.scores = scores
@@ -122,7 +103,7 @@ def test_set_threshold_computes_quantile_and_calibrates() -> None:
     # calibrated flag should be True after set_threshold
     assert s.is_calibrated()
 
-    s = Dummy()
+    s = DummyScore()
     with pytest.raises(AssertionError):
         s.set_threshold(q=1.0)
     with pytest.raises(AssertionError):
@@ -135,7 +116,7 @@ def test_plot_raises_import_error_when_matplotlib_missing(
     # Simulate matplotlib not being installed by intercepting imports
     import builtins
 
-    d = Dummy()
+    d = DummyScore()
     d.scores = torch.tensor([0.1, 0.2])
 
     def fake_import(
@@ -178,7 +159,7 @@ def test_randomscore_select_logs_warning_when_threshold_none(
 @pytest.mark.parametrize("include_query", [False, True])
 def test_plot_without_threshold(include_query: bool) -> None:
     pytest.importorskip("matplotlib")
-    dummy = Dummy()
+    dummy = DummyScore()
     dummy.scores = torch.randn(20)
     query = torch.randn(10) if include_query else None
     with patch("matplotlib.pyplot.show") as mock_show:

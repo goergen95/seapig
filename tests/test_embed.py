@@ -8,54 +8,23 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from seapig.scores.embed import EmbeddingScore
 from seapig.scores.utils import TensorPCA
+from tests.fixtures import DummyModel, MinimalEmbedding
 
 _EmbedLoader = DataLoader[torch.Tensor | dict[str, torch.Tensor]]
 
 
-class DummyBadModel(torch.nn.Module):
-    def not_embed(self, x: torch.Tensor) -> torch.Tensor:
-        return x  # pragma: no cover
-
-
-class DummyBadSignature(torch.nn.Module):
-    # missing 'x' param
-    def embed(self) -> torch.Tensor:
-        return torch.zeros(1, 2)  # pragma: no cover
-
-
-class IdentityModel(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.layer = torch.nn.Linear(1, 1)
-
-    def embed(self, x: torch.Tensor | dict[str, torch.Tensor]) -> torch.Tensor:
-        if isinstance(x, dict):
-            x = x["image"]  # type: ignore[arg-type] # pragma: no cover
-        return x
-
-
-class DummyEmbedding(EmbeddingScore):
-    def __init__(self, pca: TensorPCA | None = None) -> None:
-        super().__init__(pca=pca)
-
-    def _score(self, X: torch.Tensor) -> torch.Tensor:
-        # simple deterministic score: sum over features per row
-        return X.sum(dim=1)
-
-
 def test_pca_correctly_initialized() -> None:
-    e = DummyEmbedding(pca=None)
+    e = MinimalEmbedding(pca=None)
     assert e.pca is None
 
-    e = DummyEmbedding(TensorPCA(n_components=0.5))
+    e = MinimalEmbedding(TensorPCA(n_components=0.5))
     assert isinstance(e.pca, TensorPCA)
 
 
 def test_fit_pca_sets_pca_and_device() -> None:
     # existing test ensures PCA can be fit
-    e = DummyEmbedding(pca=TensorPCA(n_components=0.5))
+    e = MinimalEmbedding(pca=TensorPCA(n_components=0.5))
     e.ref_embeddings = torch.randn(10, 5)
     e._fit_pca()
     assert isinstance(e.pca, TensorPCA)
@@ -63,7 +32,7 @@ def test_fit_pca_sets_pca_and_device() -> None:
 
 def test_apply_pca_transforms_cal_embeddings() -> None:
     """Ensure _apply_pca transforms both ref and cal embeddings when PCA is set."""
-    e = DummyEmbedding(pca=TensorPCA(n_components=0.5))
+    e = MinimalEmbedding(pca=TensorPCA(n_components=0.5))
     # create distinct embeddings
     ref = torch.randn(8, 6)
     cal = torch.randn(3, 6)
@@ -77,14 +46,14 @@ def test_apply_pca_transforms_cal_embeddings() -> None:
     # Cal should also be transformed
     transformed_cal = e.pca.transform(cal)
     assert torch.allclose(e.cal_embeddings, transformed_cal)
-    e = DummyEmbedding(pca=TensorPCA(n_components=0.5))
+    e = MinimalEmbedding(pca=TensorPCA(n_components=0.5))
     e.ref_embeddings = torch.randn(10, 5)
     e._fit_pca()
     assert isinstance(e.pca, TensorPCA)
 
 
 def test_set_threshold_and_select_behavior() -> None:
-    e = DummyEmbedding()
+    e = MinimalEmbedding()
     # avoid train/cal checks
     e.train_required = False
     e.cal_required = False
@@ -101,31 +70,6 @@ def test_set_threshold_and_select_behavior() -> None:
     assert len(res["score"].shape) == 1
     assert res["selected"].dtype == torch.bool
     assert len(res["selected"].shape) == 1
-
-
-class MinimalEmbedding(EmbeddingScore):
-    """Small concrete subclass for testing high-level methods.
-
-    Disable training/calibration requirements so tests can call score/select
-    without extra setup.
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-        # allow calling score/select without separate training/calibration
-        self.train_required = False
-        self.cal_required = False
-
-    def _score(self, X: torch.Tensor) -> torch.Tensor:
-        """Simple deterministic score used in tests.
-
-        Compute per-row sum over features so tests can assert shapes and
-        thresholding behavior.
-        """
-        return X.sum(dim=1)
-
-    def _fit(self, q: bool | float = False) -> None:
-        pass  # pragma: no cover
 
 
 def test_fit_model_without_embed_raises(tmp_path: pathlib.Path) -> None:
@@ -170,7 +114,7 @@ def test_score_with_model_loader_writes_and_returns_tensor(
     s.cal_required = False
 
     out = s.score(
-        model=IdentityModel(), loader=loader, outdir=tmp_path, prefix="pfx"
+        model=DummyModel(), loader=loader, outdir=tmp_path, prefix="pfx"
     )
     assert isinstance(out, torch.Tensor)
     assert out.shape[0] == 2
@@ -196,9 +140,7 @@ def test_select_with_model_loader_respects_threshold(
     s = MinimalEmbedding()
     s.threshold = torch.tensor(5.0)
 
-    out = s.select(
-        model=IdentityModel(), loader=loader, outdir=None, prefix=None
-    )
+    out = s.select(model=DummyModel(), loader=loader, outdir=None, prefix=None)
     assert "score" in out and "selected" in out
     assert out["score"].shape[0] == 2
     assert out["selected"].dtype == torch.bool
@@ -215,7 +157,7 @@ def test_visualize_embeddings() -> None:
 
     pca = TensorPCA(n_components=0.75)
 
-    score = DummyEmbedding(pca=pca)
+    score = MinimalEmbedding(pca=pca)
     score.ref_embeddings = ref_embeddings
     score.cal_embeddings = cal_embeddings
     score._fit_pca()
@@ -281,7 +223,7 @@ def test_score_with_model_loader_only() -> None:
     )
 
     # Call score with model and loader
-    scores = s.score(model=IdentityModel(), loader=loader)
+    scores = s.score(model=DummyModel(), loader=loader)
 
     assert isinstance(scores, torch.Tensor)
     assert scores.shape[0] == 2
@@ -300,7 +242,7 @@ def test_score_rejects_mixed_parameters() -> None:
 
     # Should raise ValueError when both X and model are provided
     with pytest.raises(ValueError, match=match):
-        s.score(X=embeddings, model=IdentityModel(), loader=loader)
+        s.score(X=embeddings, model=DummyModel(), loader=loader)
 
 
 def test_score_requires_parameters() -> None:
@@ -322,7 +264,7 @@ def test_score_requires_loader_when_model_provided() -> None:
 
     # Should raise ValueError when model provided without loader
     with pytest.raises(ValueError, match=match):
-        s.score(model=IdentityModel())
+        s.score(model=DummyModel())
 
 
 def test_select_with_embeddings_only() -> None:
@@ -365,7 +307,7 @@ def test_select_with_model_loader_only() -> None:
     )
 
     # Call select with model and loader
-    result = s.select(model=IdentityModel(), loader=loader)
+    result = s.select(model=DummyModel(), loader=loader)
 
     assert "score" in result
     assert "selected" in result
@@ -387,7 +329,7 @@ def test_select_rejects_mixed_parameters() -> None:
 
     # Should raise ValueError when both X and model are provided
     with pytest.raises(ValueError, match=match):
-        s.select(X=embeddings, model=IdentityModel(), loader=loader)
+        s.select(X=embeddings, model=DummyModel(), loader=loader)
 
 
 def test_select_requires_parameters() -> None:
@@ -412,7 +354,7 @@ def test_fit_parameter_validation_errors() -> None:
     X = torch.randn(2, 4)
 
     with pytest.raises(ValueError, match=match):
-        s.fit(X=X, model=IdentityModel(), loaders={"a": 1})  # type: ignore
+        s.fit(X=X, model=DummyModel(), loaders={"a": 1})  # type: ignore
 
     # neither provided should raise
     with pytest.raises(ValueError, match=match):
@@ -462,7 +404,7 @@ def test_plot_embs_missing_libraries_raise(
 ) -> None:
     """Unified test: missing library import should raise the expected ImportError."""
     method, expected_msg = missing_library
-    e = DummyEmbedding()
+    e = MinimalEmbedding()
     e.ref_embeddings = torch.randn(3, 4)
 
     if method is None:
@@ -483,9 +425,7 @@ def test_fit_errors_when_both_or_neither_provided() -> None:
 
     with pytest.raises(ValueError, match=match):
         s.fit(
-            X=emb,
-            model=IdentityModel(),
-            loaders=cast(dict[str, _EmbedLoader], {}),
+            X=emb, model=DummyModel(), loaders=cast(dict[str, _EmbedLoader], {})
         )
 
 
@@ -511,7 +451,7 @@ def test_select_triggers_set_threshold_when_none(
 
 def test_select_and_set_threshold_with_calibrated() -> None:
     """Test select and set_threshold when calibration is required and provided."""
-    e = DummyEmbedding(pca=None)
+    e = MinimalEmbedding(pca=None)
     e.train_required = False
     e.cal_required = True
     # set embeddings

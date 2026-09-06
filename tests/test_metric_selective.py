@@ -1,6 +1,5 @@
 import pytest
 import torch
-from lightning import LightningModule
 from torchmetrics import (
     Accuracy,
     MeanAbsoluteError,
@@ -12,30 +11,6 @@ from torchmetrics import (
 )
 
 from seapig import SelectiveMetric
-
-
-class DummyTaskTensor(LightningModule):
-    """Task that returns a tensor from predict()."""
-
-    test_metrics: MetricCollection = MetricCollection(Accuracy(task="binary"))
-
-    def predict(self, x: torch.Tensor) -> torch.Tensor:
-        return 2 * x  # pragma: no cover
-
-    def embed(self, x: torch.Tensor) -> torch.Tensor:
-        return x  # pragma: no cover
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.predict(x)  # pragma: no cover
-
-
-class DummyTaskDict(LightningModule):
-    """Task that returns a mapping from predict()."""
-
-    test_metrics: MetricCollection = MetricCollection(Accuracy(task="binary"))
-
-    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
-        return {"predictions": 3 * x, "extra": x.sum(dim=1)}  # pragma: no cover
 
 
 def test_selective_metric_binary_accuracy_full_vs_selected() -> None:

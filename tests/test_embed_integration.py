@@ -1,108 +1,20 @@
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import pytest
 import torch
-from lightning import LightningDataModule, Trainer
-from torch.utils.data import DataLoader, Dataset
-from torchmetrics import Accuracy, MetricCollection
+from lightning import Trainer
+from torch.utils.data import DataLoader
 
 from seapig.model import SelectiveInferenceTask
-from seapig.scores.embed import EmbeddingScore
+from tests.fixtures import (
+    DictDataset,
+    DummyModel,
+    SimpleDataModule,
+    SimpleL2Score,
+)
 
 _EmbedLoader = DataLoader[torch.Tensor | dict[str, torch.Tensor]]
-
-
-class SmallDictDataset(Dataset):
-    def __init__(
-        self, data: torch.Tensor, labels: torch.Tensor, transform: Any = None
-    ) -> None:
-        self.data = data
-        self.labels = labels
-        self.transform = transform
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    def __getitem__(self, idx: int):  # type: ignore[override, ty:invalid-method-override]
-        x = self.data[idx]
-        if self.transform is not None:
-            x = self.transform(x)
-        return {"image": x, "label": self.labels[idx]}
-
-
-class SimpleDataModule(LightningDataModule):
-    """Tiny datamodule-like helper exposing train/val/test dataloaders."""
-
-    def __init__(
-        self,
-        train_ds: SmallDictDataset,
-        val_ds: SmallDictDataset,
-        test_ds: SmallDictDataset,
-        batch_size: int = 4,
-    ) -> None:
-        super().__init__()
-        self._train = train_ds
-        self._val = val_ds
-        self._test = test_ds
-        self.batch_size = batch_size
-
-    def train_dataloader(self) -> DataLoader[dict[str, torch.Tensor]]:
-        return DataLoader(self._train, batch_size=self.batch_size)
-
-    def val_dataloader(self) -> DataLoader[dict[str, torch.Tensor]]:
-        return DataLoader(self._val, batch_size=self.batch_size)
-
-    def predict_dataloader(self) -> DataLoader[dict[str, torch.Tensor]]:
-        return DataLoader(self._test, batch_size=self.batch_size)
-
-    def test_dataloader(self) -> DataLoader[dict[str, torch.Tensor]]:
-        return DataLoader(self._test, batch_size=self.batch_size)
-
-
-class DummyModel(torch.nn.Module):
-    """Tiny deterministic model providing forward() and embed()."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.lin = torch.nn.Linear(4, 4)
-        torch.manual_seed(0)
-        for p in self.lin.parameters():
-            torch.nn.init.constant_(p, 0.1)
-        # required by SelectiveInferenceTask
-        self.test_metrics = MetricCollection(Accuracy(task="binary"))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x.flatten(start_dim=1).mean(dim=1, keepdim=True)
-
-    def embed(self, x: torch.Tensor) -> torch.Tensor:
-        z = x.flatten(start_dim=1)
-        return cast(torch.Tensor, self.lin(z))
-
-
-class SimpleL2Score(EmbeddingScore):
-    """Test-only EmbeddingScore using pure torch cdist for NN distances."""
-
-    ident = "simple-l2"
-    train_required = False
-    cal_required = False
-
-    def __init__(self) -> None:
-        super().__init__(pca=None)
-
-    def _fit(self, q: float | bool = False) -> None:
-        self.set_trained()
-        self.scores = (
-            torch.cdist(self.cal_embeddings, self.ref_embeddings)
-            .min(dim=1)
-            .values
-        )
-        self.set_calibrated()
-
-    def _score(self, X: torch.Tensor):
-        assert self.ref_embeddings is not None
-        dists = torch.cdist(X, self.ref_embeddings)
-        return dists.min(dim=1).values
 
 
 @pytest.mark.filterwarnings(
@@ -122,9 +34,9 @@ def test_datamodule_transform_applied_consistently(tmp_path: Path) -> None:
     def transform_fn(x: torch.Tensor) -> torch.Tensor:
         return x + 1.0
 
-    train_ds = SmallDictDataset(train_x, train_y, transform=transform_fn)
-    val_ds = SmallDictDataset(val_x, val_y, transform=transform_fn)
-    test_ds = SmallDictDataset(test_x, test_y, transform=transform_fn)
+    train_ds = DictDataset(train_x, train_y, transform=transform_fn)
+    val_ds = DictDataset(val_x, val_y, transform=transform_fn)
+    test_ds = DictDataset(test_x, test_y, transform=transform_fn)
 
     dm = SimpleDataModule(train_ds, val_ds, test_ds, batch_size=2)
 

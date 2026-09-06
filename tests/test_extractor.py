@@ -16,30 +16,12 @@ from seapig.scores.extractor import (
     _resolve_method,
     _to_cpu,
 )
-
-
-# Simple dummy model with an embed method
-class DummyModel(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear = torch.nn.Linear(2, 2)
-        self.training = True  # explicitly set for clarity
-
-    def embed(self, x: torch.Tensor) -> torch.Tensor:
-        # identity for test purposes
-        return x
-
-
-# Model missing the required method
-class BadModelNoMethod(torch.nn.Module):
-    def forward(self, x):
-        return x  # pragma: no cover
-
-
-# Model with wrong signature (no 'x' argument)
-class BadModelWrongSig(torch.nn.Module):
-    def embed(self):  # type: ignore[override]
-        return torch.zeros(1, 2)  # pragma: no cover
+from tests.fixtures import (
+    BadModelNoMethod,
+    BadModelWrongSig,
+    DummyModel,
+    EmptyModel,
+)
 
 
 # Helper to create a deterministic DataLoader yielding tensors
@@ -367,12 +349,6 @@ def test_model_device_returns_parameter_device():
 
     with pytest.raises(TypeError, match=r"`model.embed` must be callable"):
         _resolve_method(BadModelNonCallable(), "embed")
-
-
-# Helper model without parameters or buffers, that would raise if called
-class EmptyModel(torch.nn.Module):
-    def embed(self, x):
-        raise RuntimeError("Should not be called")  # pragma: no cover
 
 
 def test_resolve_cache_path_both_none():

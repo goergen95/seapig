@@ -11,10 +11,6 @@ import pytest
 import seapig
 from seapig.utils.logging import configure_logging, get_logger
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
 
 @pytest.fixture(autouse=True)
 def _restore_logger() -> Generator[None, None, None]:
