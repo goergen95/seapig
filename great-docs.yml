@@ -79,6 +79,14 @@ reference:
           - get_threshold
           - plot
           - plot_embs
+      - name: scores.CosineClassWiseScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
       - name: scores.EuclideanScore
         members:
           - fit
@@ -89,6 +97,14 @@ reference:
           - get_threshold
           - plot
           - plot_embs
+      - name: scores.EuclideanClassWiseScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
       - name: scores.MahalanobisScore
         members:
           - fit
@@ -99,6 +115,14 @@ reference:
           - get_threshold
           - plot
           - plot_embs
+      - name: scores.MahalanobisClassWiseScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
       - name: scores.PCAScore
         members:
           - fit
@@ -130,7 +154,23 @@ reference:
           - set_threshold
           - get_threshold
           - plot
+      - name: scores.EnergyClassWiseScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
       - name: scores.EntropyScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
+      - name: scores.EntropyClassWiseScore
         members:
           - fit
           - score
@@ -146,7 +186,23 @@ reference:
           - set_threshold
           - get_threshold
           - plot
+      - name: scores.MarginClassWiseScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
       - name: scores.SoftmaxScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
+      - name: scores.SoftmaxClassWiseScore
         members:
           - fit
           - score
@@ -162,7 +218,23 @@ reference:
           - set_threshold
           - get_threshold
           - plot
+      - name: scores.MutualInformationClassWiseScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
       - name: scores.PredictiveVarianceScore
+        members:
+          - fit
+          - score
+          - select
+          - set_threshold
+          - get_threshold
+          - plot
+      - name: scores.PredictiveVarianceClassWiseScore
         members:
           - fit
           - score
@@ -187,6 +259,7 @@ reference:
       - scores.EmbeddingScore
       - scores.KNNScore
       - scores.LogitScore
+      - scores.ClassWiseScore
 
   - title: Utilities
     desc: Helpers for progress and logging
