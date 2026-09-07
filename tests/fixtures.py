@@ -43,6 +43,11 @@ class DummyModel(torch.nn.Module):
     def embed(self, x: torch.Tensor) -> torch.Tensor:
         return x.view(x.shape[0], -1)
 
+    def logits(self, x: torch.Tensor) -> torch.Tensor:
+        if x.dim() == 3:
+            return x
+        return x.view(x.shape[0], -1)
+
 
 class MinimalEmbedding(EmbeddingScore):
     def __init__(self, pca: TensorPCA | None = None) -> None:
@@ -192,4 +197,4 @@ class DummyScore(UncertaintyScore):
         *args,
         **kwargs,
     ) -> None:
-        raise NotImplementedError()  # pragma: no cover
+        pass

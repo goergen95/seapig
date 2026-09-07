@@ -61,32 +61,6 @@ class FAISSIndexMixin:
             index = faiss.read_index(str(index_path))  # type: ignore[possibly-missing-attribute]
         self.index = index
 
-    def _build_index_for_class(self, c: int, embs: torch.Tensor) -> None:
-        """Build a per-class index for class `c`.
-
-        Persists the index under `self.index_path / f"class{c}.bin"` when an
-        `index_path` directory is configured.
-        """
-        assert isinstance(embs, torch.Tensor)
-        index = self._make_faiss_index(embs)
-        idx_path: Path | None = None
-        if self.index_path is not None:
-            idx_path = self.index_path / f"class{c}.bin"
-
-        if idx_path is not None and idx_path.exists():
-            warnings.warn(
-                f"Class index {idx_path} already exists. Loading from disk.",
-                UserWarning,
-            )
-            index = faiss.read_index(str(idx_path))  # type: ignore[possibly-missing-attribute]
-        else:
-            embs_np = embs.cpu().numpy().astype(np.float32)
-            index.add(embs_np)
-            if idx_path is not None:
-                faiss.write_index(index, str(idx_path))  # type: ignore[possibly-missing-attribute]
-
-        self.indices_by_class[c] = index
-
     def _query_index(
         self, query: torch.Tensor, offset: int = 0, *, index: Any | None = None
     ) -> tuple[torch.Tensor, torch.Tensor]:

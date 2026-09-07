@@ -99,17 +99,6 @@ def test_build_index_writes_to_disk(tmp_path: pathlib.Path):
     assert isinstance(loaded, type(idx))
 
 
-def test_build_index_for_class_populates_dict(tmp_path: pathlib.Path):
-    embs = make_embeddings(15, 64)
-    knn = DummyKNN(k=4, index_path=tmp_path)
-    class_idx = knn.build_class(0, embs)
-    assert 0 in knn.indices_by_class
-    assert knn.indices_by_class[0] is class_idx
-    # If index_path is set, a file should be written
-    expected_file = tmp_path / "class0.bin"
-    assert expected_file.exists()
-
-
 def test_query_index_returns_correct_shape_and_offset():
     embs = make_embeddings(20, 32)
     knn = DummyKNN(k=5)
@@ -143,23 +132,6 @@ def test_suggest_query_params_consistency():
     assert query_params["efSearch"] <= build_params["efConstruction"]
     # Should be at least k
     assert query_params["efSearch"] >= 5
-
-
-def test_build_index_for_class_existing(tmp_path: pathlib.Path):
-    class SimpleKNN(FAISSIndexMixin):
-        def __init__(self, k, index_path):
-            self.k = k
-            self.index = None
-            self.indices_by_class = {}
-            self.index_path = index_path
-
-    knn = SimpleKNN(k=2, index_path=tmp_path)
-    embs = torch.randn(5, 32)
-    # First build creates the index file
-    knn._build_index_for_class(0, embs)
-    # Second build should load existing index and emit a warning
-    with pytest.warns(UserWarning, match="already exists"):
-        knn._build_index_for_class(0, embs)
 
 
 def test_suggest_build_params_fails_with_wrong_size():

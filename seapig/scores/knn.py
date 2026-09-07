@@ -7,11 +7,19 @@ from typing import Any
 import torch
 from typing_extensions import override
 
-from seapig.scores import EmbeddingScore
+from seapig.scores.classwise import ClassWiseScore
+from seapig.scores.embed import EmbeddingScore
 from seapig.scores.mixins import FAISSIndexMixin
 from seapig.scores.utils import TensorPCA
 
-__all__ = ["CosineScore", "EuclideanScore", "KNNScore", "MahalanobisScore"]
+__all__ = [
+    "CosineClassWiseScore",
+    "CosineScore",
+    "EuclideanClassWiseScore",
+    "EuclideanScore",
+    "MahalanobisClassWiseScore",
+    "MahalanobisScore",
+]
 
 
 class KNNScore(EmbeddingScore, FAISSIndexMixin, ABC):
@@ -254,6 +262,13 @@ class EuclideanScore(KNNScore):
         return (torch.sqrt(squared_distances), indices)
 
 
+class EuclideanClassWiseScore(ClassWiseScore):
+    """Class-wise version of `scores.knn.EuclideanScore`."""
+
+    def __init__(self, **kwargs):
+        super().__init__(base_score_cls=EuclideanScore, **kwargs)
+
+
 class CosineScore(KNNScore):
     """Returns the KNN-distance based on the cosine distance to the nearest samples.
 
@@ -322,6 +337,13 @@ class CosineScore(KNNScore):
         return (cosine_dist, indices)
 
 
+class CosineClassWiseScore(ClassWiseScore):
+    """Class-wise version of `scores.knn.CosineScore`."""
+
+    def __init__(self, **kwargs):
+        super().__init__(base_score_cls=CosineScore, **kwargs)
+
+
 class MahalanobisScore(KNNScore):
     """Returns the Mahalanobis distance to the training samples distribution.
 
@@ -381,6 +403,13 @@ class MahalanobisScore(KNNScore):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Calculate the Mahalanobis distance of a query against a populated index."""
         assert self.index is not None
-        transformed = query.float() @ self.vi_zero.T
+        transformed = query.float() @ self.vi_zero.float().T
         distances, indices = self._query_index(transformed, offset)
         return torch.sqrt(distances), indices
+
+
+class MahalanobisClassWiseScore(ClassWiseScore):
+    """Class-wise version of `.scores.knn.MahalanobisScore`."""
+
+    def __init__(self, **kwargs):
+        super().__init__(base_score_cls=MahalanobisScore, **kwargs)
