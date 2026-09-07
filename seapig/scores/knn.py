@@ -381,6 +381,6 @@ class MahalanobisScore(KNNScore):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Calculate the Mahalanobis distance of a query against a populated index."""
         assert self.index is not None
-        transformed = query.float() @ self.vi_zero.T
+        transformed = query.float() @ self.vi_zero.float().T
         distances, indices = self._query_index(transformed, offset)
         return torch.sqrt(distances), indices
