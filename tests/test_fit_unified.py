@@ -380,6 +380,21 @@ def test_pyod_score_fit_with_model() -> None:
             lambda N, C: torch.randint(0, 2, (N, C)).float(),
             False,
         ),
+        # Ensemble multilabel (multiple members)
+        (
+            MutualInformationScore,
+            "multilabel",
+            (8, 4, 5),
+            lambda N, C: torch.randint(0, 2, (N, C)).float(),
+            True,
+        ),
+        (
+            PredictiveVarianceScore,
+            "multilabel",
+            (8, 4, 5),
+            lambda N, C: torch.randint(0, 2, (N, C)).float(),
+            True,
+        ),
         # Ensemble categorical (multiple members)
         (
             MutualInformationScore,

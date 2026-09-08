@@ -24,10 +24,6 @@ class DummyKNN(FAISSIndexMixin):
         self._build_index(embs)
         return self.index
 
-    def build_class(self, c: int, embs: torch.Tensor):
-        self._build_index_for_class(c, embs)
-        return self.indices_by_class[c]
-
     def query(self, query: torch.Tensor, offset: int = 0, *, index=None):
         return self._query_index(query, offset, index=index)
 

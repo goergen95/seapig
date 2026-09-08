@@ -44,9 +44,7 @@ class DummyModel(torch.nn.Module):
         return x.view(x.shape[0], -1)
 
     def logits(self, x: torch.Tensor) -> torch.Tensor:
-        if x.dim() == 3:
-            return x
-        return x.view(x.shape[0], -1)
+        return x
 
 
 class MinimalEmbedding(EmbeddingScore):
