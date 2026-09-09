@@ -38,10 +38,16 @@ class ClassWiseScore(scores.UncertaintyScore):
     ) -> None:
         super().__init__()
         self.base_score_cls = base_score_cls
-        self._base_kwargs: dict[str, Any] = base_kwargs
         self._class_labels: torch.Tensor | None = None
         self._scorers: dict[int, scores.UncertaintyScore] = {}
         self._thresholds: dict[int, torch.Tensor] = {}
+        if issubclass(base_score_cls, scores.LogitScore):
+            task = base_kwargs.get("task")
+            if task != "multilabel":
+                raise ValueError(
+                    "Class-wise logit scores require a multilabel task."
+                )
+        self._base_kwargs: dict[str, Any] = base_kwargs
 
     def _make_extractor(self, want_labels: bool) -> ModelExtractor:
         """Return a `ModelExtractor` configured for the wrapped scorer.
@@ -333,7 +339,12 @@ class ClassWiseScore(scores.UncertaintyScore):
         _scores = torch.empty((N, C), device=X.device, dtype=X.dtype)
         for col_idx, label in enumerate(self._class_labels):
             scorer = self._scorers[int(label.item())]
-            _scores[:, col_idx] = scorer.score(X)  # type: ignore[arg-type]
+            if isinstance(scorer, scores.LogitScore):
+                # X shape (N, C); extract column for this class
+                col_logits = X[:, int(label.item())].unsqueeze(1)
+                _scores[:, col_idx] = scorer.score(col_logits)  # type: ignore[arg-type]
+            else:
+                _scores[:, col_idx] = scorer.score(X)  # type: ignore[arg-type]
         return _scores
 
     @override

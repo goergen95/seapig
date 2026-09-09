@@ -14,6 +14,7 @@ from seapig.scores import (
     CosineClassWiseScore,
     EnergyClassWiseScore,
     EntropyClassWiseScore,
+    EntropyScore,
     EuclideanClassWiseScore,
     MahalanobisClassWiseScore,
     MarginClassWiseScore,
@@ -121,7 +122,7 @@ def _make_embeddings(num: int, dim: int) -> torch.Tensor:
 
 def _make_logits_multi(num: int, dim: int, members: int = 2) -> torch.Tensor:
     torch.manual_seed(0)
-    return torch.randn(num, members, dim)
+    return torch.randn(num, dim, members)
 
 
 # Parameter definitions
@@ -131,14 +132,13 @@ knn_cases = [
     (MahalanobisClassWiseScore, {"k": 1}, True),
 ]
 logit_cases = [
-    (SoftmaxClassWiseScore, {"per_member": True}, False),
-    (EntropyClassWiseScore, {"per_member": True}, False),
-    (MarginClassWiseScore, {"per_member": True}, False),
-    (EnergyClassWiseScore, {"per_member": True}, False),
-    (MutualInformationClassWiseScore, {}, False),
-    (PredictiveVarianceClassWiseScore, {}, False),
+    (SoftmaxClassWiseScore, {"per_member": True, "task": "multilabel"}, False),
+    (EntropyClassWiseScore, {"per_member": True, "task": "multilabel"}, False),
+    (MarginClassWiseScore, {"per_member": True, "task": "multilabel"}, False),
+    (EnergyClassWiseScore, {"per_member": True, "task": "multilabel"}, False),
+    (MutualInformationClassWiseScore, {"task": "multilabel"}, False),
+    (PredictiveVarianceClassWiseScore, {"task": "multilabel"}, False),
 ]
-all_cases = knn_cases + logit_cases
 
 
 @pytest.mark.parametrize("score_cls, kwargs, is_knn", knn_cases)
@@ -299,7 +299,7 @@ def test_logit_single_label(score_cls, kwargs, is_knn):
     assert scores.shape == (X_test.shape[0], len(torch.unique(y_train)))
     for idx, label in enumerate(sorted(torch.unique(y_train).tolist())):
         class_scorer = cw._scorers[label]
-        expected = class_scorer.score(X_test)
+        expected = class_scorer.score(X_test[:, idx, :].unsqueeze(1))
         torch.testing.assert_close(scores[:, idx], expected)
     result = cw.select(X_test)
     assert "score" in result and "selected" in result
@@ -337,7 +337,7 @@ def test_logit_multi_label(score_cls, kwargs, is_knn):
     assert scores.shape == (X_test.shape[0], 3)
     for idx in range(3):
         class_scorer = cw._scorers[idx]
-        expected = class_scorer.score(X_test)
+        expected = class_scorer.score(X_test[:, idx, :].unsqueeze(1))
         torch.testing.assert_close(scores[:, idx], expected)
     out = cw.select(X_test)
     assert out["selected"].shape == scores.shape
@@ -368,7 +368,7 @@ def test_logit_model_loader_single(score_cls, kwargs, is_knn):
     assert scores.shape == (X_test.shape[0], len(torch.unique(y_train)))
     for lbl in sorted(torch.unique(y_train).tolist()):
         class_scorer = cw._scorers[lbl]
-        expected = class_scorer.score(X_test)
+        expected = class_scorer.score(X_test[:, lbl, :].unsqueeze(1))
         idx = sorted(torch.unique(y_train).tolist()).index(lbl)
         torch.testing.assert_close(scores[:, idx], expected)
     result = cw.select(model=DummyModel(), loader=test_loader)
@@ -414,7 +414,7 @@ def test_logit_model_loader_multi(score_cls, kwargs, is_knn):
     assert scores.shape == (X_test.shape[0], 3)
     for lbl in range(3):
         class_scorer = cw._scorers[lbl]
-        expected = class_scorer.score(X_test)
+        expected = class_scorer.score(X_test[:, lbl, :].unsqueeze(1))
         torch.testing.assert_close(scores[:, lbl], expected)
     result = cw.select(model=DummyModel(), loader=test_loader)
     assert "score" in result and "selected" in result
@@ -422,3 +422,14 @@ def test_logit_model_loader_multi(score_cls, kwargs, is_knn):
     for lbl in range(3):
         thr = cw._thresholds[lbl]
         assert torch.equal(result["selected"][:, lbl], scores[:, lbl] < thr)
+
+
+def test_logit_score_requires_multilabel_task():
+    with pytest.raises(
+        ValueError, match="Class-wise logit scores require a multilabel task."
+    ):
+        ClassWiseScore(base_score_cls=EntropyScore, task="multiclass")
+
+    # Correct task should not raise
+    cw = ClassWiseScore(base_score_cls=EntropyScore, task="multilabel")
+    assert isinstance(cw, ClassWiseScore)
