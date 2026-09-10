@@ -1,5 +1,6 @@
 """KNN-based uncertainty scores."""
 
+import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
@@ -398,7 +399,13 @@ class MahalanobisScore(KNNScore):
         cov_reg = cov_zero + (eps * scale) * torch.eye(
             d, device=cov_zero.device, dtype=cov_zero.dtype
         )
-        self.vi_zero = torch.linalg.inv(torch.linalg.cholesky(cov_reg))
+        try:
+            self.vi_zero = torch.linalg.inv(torch.linalg.cholesky(cov_reg))
+        except RuntimeError:
+            warnings.warn(
+                "Cholesky decomposition failed. Falling back to the pseudo-inverse."
+            )
+            self.vi_zero = torch.linalg.pinv(cov_reg)
         transformed = self.ref_embeddings @ self.vi_zero.T
         self._build_index(transformed)
 
