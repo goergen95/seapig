@@ -392,7 +392,13 @@ class MahalanobisScore(KNNScore):
         """Initialize an index based on reference embeddings."""
         assert isinstance(self.ref_embeddings, torch.Tensor)
         cov_zero = self.ref_embeddings.T.cov()
-        self.vi_zero = torch.linalg.inv(torch.linalg.cholesky(cov_zero))
+        eps = 1e-8  # to obtain a strictly positive‑definite matrix
+        d = cov_zero.shape[0]
+        scale = torch.diagonal(cov_zero).mean()
+        cov_reg = cov_zero + (eps * scale) * torch.eye(
+            d, device=cov_zero.device, dtype=cov_zero.dtype
+        )
+        self.vi_zero = torch.linalg.inv(torch.linalg.cholesky(cov_reg))
         transformed = self.ref_embeddings @ self.vi_zero.T
         self._build_index(transformed)
 
