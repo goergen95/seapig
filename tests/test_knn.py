@@ -113,14 +113,15 @@ def test_mahalanobis_matches_manual_calculation() -> None:
     approx(out, expected_min)
 
 
-def test_mahalanobis_singular_cov_doest_not_raise() -> None:
-    """Ensure setup does not raise for singular covariance matrices."""
+def test_mahalanobis_singular_cov_warns() -> None:
+    """Ensure setup warns for singular covariance matrices."""
     # identical points -> covariance singular -> cholesky should fail, but we add jitter
     refs = torch.tensor([[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]])
     score = MahalanobisScore(k=1)
     score.ref_embeddings = refs
-    score._setup_index()
-    assert score.vi_zero.numel() > 0
+    with pytest.warns(UserWarning, match="decomposition"):
+        score._setup_index()
+    assert score.whiten_t.numel() > 0
 
 
 def test_q_trimming_reduces_reference_set() -> None:

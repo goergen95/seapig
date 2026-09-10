@@ -375,7 +375,7 @@ class MahalanobisScore(KNNScore):
     """
 
     k: int
-    vi_zero: torch.Tensor
+    whiten_t: torch.Tensor
     ident: str = "mahalanobis"
 
     def __init__(
@@ -400,13 +400,15 @@ class MahalanobisScore(KNNScore):
             d, device=cov_zero.device, dtype=cov_zero.dtype
         )
         try:
-            self.vi_zero = torch.linalg.inv(torch.linalg.cholesky(cov_reg))
+            vi_zero = torch.linalg.inv(torch.linalg.cholesky(cov_reg))
         except RuntimeError:
             warnings.warn(
                 "Cholesky decomposition failed. Falling back to the pseudo-inverse."
             )
-            self.vi_zero = torch.linalg.pinv(cov_reg)
-        transformed = self.ref_embeddings @ self.vi_zero.T
+            vi_zero = torch.linalg.pinv(cov_reg)
+
+        self.whiten_t = vi_zero.T.contiguous()
+        transformed = self.ref_embeddings @ self.whiten_t
         self._build_index(transformed)
 
     @override
@@ -416,7 +418,7 @@ class MahalanobisScore(KNNScore):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Calculate the Mahalanobis distance of a query against a populated index."""
         assert self.index is not None
-        transformed = query.float() @ self.vi_zero.float().T
+        transformed = query.to(dtype=self.whiten_t.dtype) @ self.whiten_t
         distances, indices = self._query_index(transformed, offset)
         return torch.sqrt(distances), indices
 
