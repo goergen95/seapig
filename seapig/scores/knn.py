@@ -1,5 +1,6 @@
 """KNN-based uncertainty scores."""
 
+import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
@@ -378,7 +379,7 @@ class MahalanobisScore(KNNScore):
     """
 
     k: int
-    vi_zero: torch.Tensor
+    whiten_t: torch.Tensor
     ident: str = "mahalanobis"
 
     def __init__(
@@ -396,8 +397,22 @@ class MahalanobisScore(KNNScore):
         """Initialize an index based on reference embeddings."""
         assert isinstance(self.ref_embeddings, torch.Tensor)
         cov_zero = self.ref_embeddings.T.cov()
-        self.vi_zero = torch.linalg.inv(torch.linalg.cholesky(cov_zero))
-        transformed = self.ref_embeddings @ self.vi_zero.T
+        eps = 1e-8  # to obtain a strictly positive‑definite matrix
+        d = cov_zero.shape[0]
+        scale = torch.diagonal(cov_zero).mean()
+        cov_reg = cov_zero + (eps * scale) * torch.eye(
+            d, device=cov_zero.device, dtype=cov_zero.dtype
+        )
+        try:
+            vi_zero = torch.linalg.inv(torch.linalg.cholesky(cov_reg))
+        except RuntimeError:
+            warnings.warn(
+                "Cholesky decomposition failed. Falling back to the pseudo-inverse."
+            )
+            vi_zero = torch.linalg.pinv(cov_reg)
+
+        self.whiten_t = vi_zero.T.contiguous()
+        transformed = self.ref_embeddings @ self.whiten_t
         self._build_index(transformed)
 
     @override
@@ -407,7 +422,7 @@ class MahalanobisScore(KNNScore):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Calculate the Mahalanobis distance of a query against a populated index."""
         assert self.index is not None
-        transformed = query.float() @ self.vi_zero.float().T
+        transformed = query.to(dtype=self.whiten_t.dtype) @ self.whiten_t
         distances, indices = self._query_index(transformed, offset)
         return torch.sqrt(distances), indices
 
