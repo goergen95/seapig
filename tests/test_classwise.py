@@ -22,6 +22,7 @@ from seapig.scores import (
     PredictiveVarianceClassWiseScore,
     SoftmaxClassWiseScore,
 )
+from seapig.scores.utils import TensorPCA
 from tests.fixtures import DummyModel, DummyScore
 
 
@@ -262,8 +263,6 @@ def test_knn_model_loader_multi(score_cls, kwargs, is_knn):
 
 @pytest.mark.parametrize("score_cls, kwargs, is_knn", knn_cases)
 def test_knn_pca_per_class(score_cls, kwargs, is_knn):
-    from seapig.scores.utils import TensorPCA
-
     X_train = _make_embeddings(30, 12)
     y_train = torch.tensor([0, 0, 1, 1, 2, 2, 2, 0, 1, 2] * 3)
     X_val = _make_embeddings(4, 12)
@@ -281,6 +280,31 @@ def test_knn_pca_per_class(score_cls, kwargs, is_knn):
         assert scorer.ref_embeddings.shape[1] < orig_dim
     scores = cw.score(X_test)
     assert scores.shape == (X_test.shape[0], len(cw._scorers))
+
+
+def test_global_pca_behavior():
+    X_train = _make_embeddings(30, 12)
+    y_train = torch.tensor([0, 0, 1, 1, 2, 2, 2, 0, 1, 2] * 3)
+    cw = EuclideanClassWiseScore(global_pca=TensorPCA(n_components=2))
+    cw.fit(X=X_train, y=y_train)
+
+    # check the global pca object
+    assert cw.pca is not None
+    assert isinstance(cw.pca, TensorPCA)
+    assert cw.pca.u.numel() > 0
+
+    # check no local pca objects
+    for scorer in cw._scorers.values():
+        assert scorer.pca is None
+
+    # check transform is correct
+    for lbl, scorer in cw._scorers.items():
+        X_c_original = cw._extract_class_data(
+            X_train, y_train, lbl, multi_label=False
+        )
+        X_c_expected = cw.pca.transform(X_c_original)
+        assert scorer.ref_embeddings is not None
+        torch.testing.assert_close(scorer.ref_embeddings, X_c_expected)
 
 
 # Logit scores – reuse similar structure without PCA
