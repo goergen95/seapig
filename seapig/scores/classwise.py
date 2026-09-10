@@ -17,6 +17,7 @@ from typing_extensions import override
 
 from seapig import scores
 from seapig.scores.extractor import ModelExtractor
+from seapig.scores.utils import TensorPCA
 from seapig.utils import get_logger
 
 logger = get_logger(__name__)
@@ -31,13 +32,20 @@ class ClassWiseScore(scores.UncertaintyScore):
         The concrete `UncertaintyScore` subclass to instantiate for each class.
     base_kwargs:
         Keyword arguments passed to each `base_score_cls` instance.
+    global_pca:
+        An optional TensorPCA object to apply global PCA to the inputs before
+        any score is fit.
     """
 
     def __init__(
-        self, base_score_cls: type[scores.UncertaintyScore], **base_kwargs: Any
+        self,
+        base_score_cls: type[scores.UncertaintyScore],
+        global_pca: TensorPCA | None = None,
+        **base_kwargs: Any,
     ) -> None:
         super().__init__()
         self.base_score_cls = base_score_cls
+        self.pca = global_pca
         self._class_labels: torch.Tensor | None = None
         self._scorers: dict[int, scores.UncertaintyScore] = {}
         self._thresholds: dict[int, torch.Tensor] = {}
@@ -175,6 +183,7 @@ class ClassWiseScore(scores.UncertaintyScore):
             )
             X = data.get(out_key)
             y = data.get("label")
+
             if "val" in loaders:
                 data = extractor.extract(
                     model=model,
@@ -190,6 +199,12 @@ class ClassWiseScore(scores.UncertaintyScore):
         assert X.shape[0] == y.shape[0], (
             "X and y must have the same first dimension"
         )
+
+        if self.pca is not None:
+            X = self.pca.fit_transform(X)
+            if X_val is not None:
+                X_val = self.pca.transform(X_val)
+
         multi_label = y.dim() == 2
         if multi_label:
             class_indices = torch.arange(y.shape[1], device=y.device)
@@ -332,6 +347,10 @@ class ClassWiseScore(scores.UncertaintyScore):
             X = data.get(out_key)
 
         assert isinstance(X, torch.Tensor)
+
+        if self.pca is not None:
+            X = self.pca.transform(X)
+
         if self._class_labels is None:
             raise RuntimeError("fit must be called before scoring.")
         N = X.shape[0]
