@@ -265,6 +265,8 @@ class EuclideanScore(KNNScore):
 class EuclideanClassWiseScore(ClassWiseScore):
     """Class-wise version of `scores.knn.EuclideanScore`."""
 
+    ident: str = "euclidean-classwise"
+
     def __init__(self, **kwargs):
         super().__init__(base_score_cls=EuclideanScore, **kwargs)
 
@@ -340,6 +342,8 @@ class CosineScore(KNNScore):
 class CosineClassWiseScore(ClassWiseScore):
     """Class-wise version of `scores.knn.CosineScore`."""
 
+    ident: str = "cosine-classwise"
+
     def __init__(self, **kwargs):
         super().__init__(base_score_cls=CosineScore, **kwargs)
 
@@ -410,6 +414,8 @@ class MahalanobisScore(KNNScore):
 
 class MahalanobisClassWiseScore(ClassWiseScore):
     """Class-wise version of `.scores.knn.MahalanobisScore`."""
+
+    ident: str = "mahalanobis-classwise"
 
     def __init__(self, **kwargs):
         super().__init__(base_score_cls=MahalanobisScore, **kwargs)

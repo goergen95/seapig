@@ -416,6 +416,8 @@ class SoftmaxScore(PointwiseLogitScore):
 class SoftmaxClassWiseScore(ClassWiseScore):
     """Class-wise version of :class:`~seapig.scores.logits.SoftmaxScore`."""
 
+    ident = "softmax-classwise"
+
     def __init__(self, **kwargs):
         super().__init__(base_score_cls=SoftmaxScore, **kwargs)
 
@@ -436,6 +438,8 @@ class EntropyScore(PointwiseLogitScore):
 
 class EntropyClassWiseScore(ClassWiseScore):
     """Class-wise version of :class:`~seapig.scores.logits.EntropyScore`."""
+
+    ident = "entropy-classwise"
 
     def __init__(self, **kwargs):
         super().__init__(base_score_cls=EntropyScore, **kwargs)
@@ -459,6 +463,8 @@ class MarginScore(PointwiseLogitScore):
 class MarginClassWiseScore(ClassWiseScore):
     """Class-wise version of :class:`~seapig.scores.logits.MarginScore`."""
 
+    ident = "margin-classwise"
+
     def __init__(self, **kwargs):
         super().__init__(base_score_cls=MarginScore, **kwargs)
 
@@ -480,6 +486,8 @@ class EnergyScore(PointwiseLogitScore):
 
 class EnergyClassWiseScore(ClassWiseScore):
     """Class-wise version of :class:`~seapig.scores.logits.EnergyScore`."""
+
+    ident = "energy-classwise"
 
     def __init__(self, **kwargs):
         super().__init__(base_score_cls=EnergyScore, **kwargs)
@@ -508,6 +516,8 @@ class MutualInformationScore(EnsembleLogitScore):
 class MutualInformationClassWiseScore(ClassWiseScore):
     """Class-wise version of :class:`~seapig.scores.logits.MutualInformationScore`."""
 
+    ident = "mutual_information-classwise"
+
     def __init__(self, **kwargs):
         super().__init__(base_score_cls=MutualInformationScore, **kwargs)
 
@@ -528,6 +538,8 @@ class PredictiveVarianceScore(EnsembleLogitScore):
 
 class PredictiveVarianceClassWiseScore(ClassWiseScore):
     """Class-wise version of :class:`~seapig.scores.logits.PredictiveVarianceScore`."""
+
+    ident = "predictive_variance-classwise"
 
     def __init__(self, **kwargs):
         super().__init__(base_score_cls=PredictiveVarianceScore, **kwargs)
