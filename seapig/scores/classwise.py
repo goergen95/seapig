@@ -170,7 +170,7 @@ class ClassWiseScore(scores.UncertaintyScore):
                 model=model,
                 loader=loaders["train"],
                 outdir=outdir,
-                prefix=prefix,
+                prefix=None if prefix is None else prefix + "-train",
                 overwrite=False,
             )
             X = data.get(out_key)
@@ -180,7 +180,7 @@ class ClassWiseScore(scores.UncertaintyScore):
                     model=model,
                     loader=loaders["val"],
                     outdir=outdir,
-                    prefix=prefix,
+                    prefix=None if prefix is None else prefix + "-val",
                     overwrite=False,
                 )
                 X_val = data.get(out_key)

@@ -5,6 +5,9 @@ class‑wise scores. Parameterized tests reduce duplication while ensuring
 identical test logic across score types.
 """
 
+import warnings
+from pathlib import Path
+
 import pytest
 import torch
 from torch.utils.data import DataLoader
@@ -22,6 +25,7 @@ from seapig.scores import (
     PredictiveVarianceClassWiseScore,
     SoftmaxClassWiseScore,
 )
+from seapig.scores.knn import EuclideanScore
 from tests.fixtures import DummyModel, DummyScore
 
 
@@ -433,3 +437,47 @@ def test_logit_score_requires_multilabel_task():
     # Correct task should not raise
     cw = ClassWiseScore(base_score_cls=EntropyScore, task="multilabel")
     assert isinstance(cw, ClassWiseScore)
+
+
+def loader_train():
+    data = [
+        {"image": torch.tensor([1.0, 2.0, 3.0]), "label": torch.tensor(0)},
+        {"image": torch.tensor([4.0, 5.0, 6.0]), "label": torch.tensor(1)},
+    ]
+    return DataLoader(data, batch_size=2)  # type: ignore
+
+
+def loader_val():
+    data = [
+        {"image": torch.tensor([10.0, 20.0, 30.0]), "label": torch.tensor(0)},
+        {"image": torch.tensor([40.0, 50.0, 60.0]), "label": torch.tensor(1)},
+    ]
+    return DataLoader(data, batch_size=2)  # type: ignore
+
+
+def test_classwise_fit_model_mode_separate_cache(tmp_path: Path):
+    outdir = tmp_path / "cache"
+    outdir.mkdir()
+    model = DummyModel()
+    train_loader = loader_train()
+    val_loader = loader_val()
+    cw = ClassWiseScore(base_score_cls=EuclideanScore)
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        cw.fit(
+            model=model,
+            loaders={"train": train_loader, "val": val_loader},
+            outdir=outdir,
+            prefix="mytest",
+        )
+    assert not any("Loading pre-existing data" in str(rec.message) for rec in w)
+
+    train_path = outdir / "mytest-train-embedding.pt"
+    val_path = outdir / "mytest-val-embedding.pt"
+    assert train_path.is_file(), "Training cache file missing"
+    assert val_path.is_file(), "Validation cache file missing"
+    assert train_path != val_path, "Cache filenames should differ"
+    train_tensor = torch.load(train_path)
+    val_tensor = torch.load(val_path)
+    assert not torch.equal(train_tensor["embedding"], val_tensor["embedding"])
