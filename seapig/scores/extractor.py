@@ -12,6 +12,8 @@ from typing import Any
 import torch
 from torch.utils.data import DataLoader
 
+from seapig.utils.progress import track
+
 TensorDict = dict[str, torch.Tensor]
 Batch = torch.Tensor | Mapping[str, Any] | Sequence[Any]
 
@@ -211,7 +213,7 @@ class ModelExtractor:
         model.eval()
         collected: dict[str, list[torch.Tensor]] = defaultdict(list)
         try:
-            for batch in loader:
+            for batch in track(loader, desc="Iterating over loader"):
                 has_batch = True
                 inputs = _normalise_inputs(batch, keys)
                 output = _normalise_output(
