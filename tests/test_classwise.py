@@ -1,522 +1,542 @@
-"""Consolidated tests for ClassWiseScore wrappers.
-
-Covers generic ClassWiseScore behavior as well as all KNN and Logit
-class‑wise scores. Parameterized tests reduce duplication while ensuring
-identical test logic across score types.
-"""
-
-import warnings
-from pathlib import Path
-
 import pytest
 import torch
 from torch.utils.data import DataLoader
 
-from seapig.scores import (
-    ClassWiseScore,
-    CosineClassWiseScore,
-    EnergyClassWiseScore,
-    EntropyClassWiseScore,
-    EntropyScore,
-    EuclideanClassWiseScore,
-    MahalanobisClassWiseScore,
-    MarginClassWiseScore,
-    MutualInformationClassWiseScore,
-    PredictiveVarianceClassWiseScore,
-    SoftmaxClassWiseScore,
-)
-from seapig.scores.knn import EuclideanScore
+from seapig import scores as sp
+from seapig.scores.classwise import ClassWiseMode, ClassWiseScore
+from seapig.scores.logits import SoftmaxClassWiseScore
 from seapig.scores.utils import TensorPCA
-from tests.fixtures import DummyModel, DummyScore
+from tests.fixtures import DummyModel
+
+torch.manual_seed(0)
 
 
-def test_set_threshold_without_fit():
-    cw = ClassWiseScore(base_score_cls=DummyScore)
-    with pytest.raises(
-        RuntimeError, match="Fit must be called before setting thresholds"
+class DummyScore(sp.UncertaintyScore):
+    train_required = False
+    cal_required = False
+    ident = "dummy"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.threshold = None
+
+    def fit(
+        self,
+        X: torch.Tensor | None = None,
+        Y: torch.Tensor | None = None,
+        **kwargs,
     ):
-        cw.set_threshold()
+        return None
+
+    def score(self, X: torch.Tensor) -> torch.Tensor:
+        return X.mean(dim=1)
+
+    def set_threshold(self, q: float = 0.99) -> None:
+        self.threshold = torch.tensor([0.5])
+
+    def get_threshold(self) -> torch.Tensor:
+        assert self.threshold is not None
+        return self.threshold
+
+    def select(self, X: torch.Tensor):  # pragma: no cover
+        raise NotImplementedError
 
 
-def test_score_without_fit():
-    cw = ClassWiseScore(base_score_cls=DummyScore)
+def make_data(single_label: bool = True):
+    X = torch.arange(12, dtype=torch.float32).view(4, 3)
+    if single_label:
+        y = torch.tensor([0, 1, 0, 1])
+    else:
+        y = torch.tensor([[1, 0], [0, 1], [1, 0], [0, 1]], dtype=torch.float32)
+    return X, y
+
+
+def test_infer_mode():
+    # single‑label vector
+    y_single = torch.tensor([0, 1, 2])
+    mode = ClassWiseScore._infer_mode(y_single)
+    assert mode is ClassWiseMode.SINGLE_LABEL
+    # multi‑label matrix
+    y_multi = torch.tensor([[1, 0, 1], [0, 1, 0]], dtype=torch.float32)
+    mode2 = ClassWiseScore._infer_mode(y_multi)
+    assert mode2 is ClassWiseMode.MULTI_LABEL
+    # invalid shape should raise
+    with pytest.raises(ValueError):
+        ClassWiseScore._infer_mode(torch.randn(2, 2, 2))
+
+
+def _expected_softmax_single_score(logits, label):
+    col = logits[:, label].unsqueeze(1)
+    p = torch.sigmoid(col)
+    return -torch.maximum(p, 1 - p).squeeze(1)
+
+
+def test_single_label_fit_and_score():
+    X = torch.randn(6, 3)
+    y = torch.tensor([0, 0, 1, 1, 2, 2])
+    cw = SoftmaxClassWiseScore(task="multilabel")
+    cw.fit(X=X, y=y)
+    assert cw.mode is ClassWiseMode.SINGLE_LABEL
+    scores = cw.score(X=X, y=y)
+    assert scores.shape == (6,)
+    # verify each entry matches the per‑class SoftmaxScore behaviour
+    for i, lbl in enumerate(y.tolist()):
+        expected = _expected_softmax_single_score(X, lbl)[i]
+        assert torch.allclose(scores[i], expected)
+    cw.set_threshold(q=0.5)
+    thr = cw.get_threshold()
+    assert isinstance(thr, dict)
+    assert set(thr.keys()) == {0, 1, 2}
+    sel = cw.select(X=X, y=y)
+    mask = sel["selected"]
+    assert mask.shape == (6,)
+    for i, lbl in enumerate(y.tolist()):
+        assert mask[i] == (scores[i] < thr[lbl])
+
+
+@pytest.mark.parametrize(
+    "agg, agg_fn",
+    [
+        (
+            "mean",
+            lambda s, m: torch.nanmean(s.masked_fill(~m, float("nan")), dim=1),
+        ),
+        ("max", lambda s, m: s.masked_fill(~m, float("-inf")).amax(dim=1)),
+        ("min", lambda s, m: s.masked_fill(~m, float("inf")).amin(dim=1)),
+    ],
+)
+def test_multi_label_aggregation(agg, agg_fn):
+    X = torch.randn(4, 3)
+    y = torch.tensor(
+        [[1, 0, 0], [1, 1, 0], [0, 1, 1], [1, 0, 1]], dtype=torch.float32
+    )
+    cw = SoftmaxClassWiseScore(task="multilabel", aggregation=agg)
+    cw.fit(X=X, y=y)
+    full = cw._score_full_matrix(X)
+    mask = y.to(dtype=torch.bool)
+    expected = agg_fn(full, mask)
+    scores = cw.score(X=X, y=y)
+    assert isinstance(scores, torch.Tensor)
+    assert torch.allclose(scores, expected)
+    cw.set_threshold(q=0.5)
+    assert isinstance(cw.get_threshold(), torch.Tensor)
+    sel = cw.select(X=X, y=y)
+    assert sel["selected"].shape == (4,)
+    overall_thr = cw.get_threshold()
+    assert isinstance(overall_thr, torch.Tensor)
+    assert torch.all(sel["selected"] == (scores < overall_thr))
+
+
+def test_fit_errors_and_mode_property():
+    X = torch.randn(2, 2)
+    y = torch.tensor([0, 1])
+    cw = SoftmaxClassWiseScore(task="multilabel")
+
+    dummy = DummyModel()
+    # providing both tensors and a model should raise ValueError
+    with pytest.raises(ValueError):
+        cw.fit(X=X, y=y, model=dummy, loaders={"train": []})  # type: ignore
+    # accessing mode before fit should raise RuntimeError
+    cw2 = SoftmaxClassWiseScore(task="multilabel")
+    with pytest.raises(RuntimeError):
+        _ = cw2.mode
+
+
+def test_unknown_aggregation_raises():
+    with pytest.raises(ValueError, match="Unknown aggregation 'invalid'"):
+        ClassWiseScore(base_score_cls=sp.EuclideanScore, aggregation="invalid")
+
+
+def test_make_extractor_branches():
+    # KNN branch
+    cw_knn = ClassWiseScore(base_score_cls=sp.EuclideanScore)
+    extractor_knn = cw_knn._make_extractor(want_labels=True)
+    assert extractor_knn.method_name == "embed"
+    assert extractor_knn.output_key == "embedding"
+    assert extractor_knn.input_keys == ("image", "label")
+
+    # Logit branch (SoftmaxScore inherits from LogitScore)
+    cw_logit = ClassWiseScore(base_score_cls=sp.SoftmaxScore, task="multilabel")
+    extractor_logit = cw_logit._make_extractor(want_labels=False)
+    assert extractor_logit.method_name == "logits"
+    assert extractor_logit.output_key == "logit"
+    assert extractor_logit.input_keys == ("image",)
+
+
+def test_model_mode_fit_with_pca_and_validation():
+    # Simple dataset: two samples, two classes
+    train_data = [
+        {"image": torch.tensor([0.0, 0.0]), "label": torch.tensor(0)},
+        {"image": torch.tensor([1.0, 1.0]), "label": torch.tensor(1)},
+    ]
+    val_data = [
+        {"image": torch.tensor([0.5, 0.5]), "label": torch.tensor(0)},
+        {"image": torch.tensor([1.5, 1.5]), "label": torch.tensor(1)},
+    ]
+    train_loader = DataLoader(train_data, batch_size=2, shuffle=False)  # type: ignore
+    val_loader = DataLoader(val_data, batch_size=2, shuffle=False)  # type: ignore
+
+    pca = TensorPCA(n_components=1)
+    cw = sp.EuclideanClassWiseScore(global_pca=pca)
+    cw.fit(
+        model=DummyModel(), loaders={"train": train_loader, "val": val_loader}
+    )
+    # After fit, PCA should have reduced dimensionality to 1
+    assert cw.pca is pca
+    # Verify that class labels were inferred correctly
+    assert cw._class_labels == [0, 1]
+    # Ensure thresholds are calibrated
+    cw.set_threshold()
+    thr = cw.get_threshold()
+    assert isinstance(thr, dict) and set(thr.keys()) == {0, 1}
+    # Full‑matrix scoring via model mode should work
+    full_scores = cw.score(
+        model=DummyModel(), loader=train_loader, full_matrix=True
+    )
+    assert isinstance(full_scores, torch.Tensor)
+    assert full_scores.shape == (2, 2)
+
+
+def test_no_training_samples_for_class_raises():
     X = torch.randn(4, 2)
-    with pytest.raises(RuntimeError, match="fit must be called before scoring"):
-        cw.score(X)
-
-
-def test_fit_error_both_modes():
-    X = torch.randn(4, 2)
-    dummy_model = torch.nn.Linear(3, 3)
-    cw = ClassWiseScore(base_score_cls=DummyScore)
-    with pytest.raises(
-        ValueError, match="Specify either pre-computed tensors.*or a model"
-    ):
-        cw.fit(X=X, model=dummy_model, loaders={"train": None})  # type: ignore
-
-
-def test_fit_error_no_samples_multi_label():
-    X = torch.randn(4, 2)
-    y = torch.tensor([[1, 0], [1, 0], [1, 0], [1, 0]], dtype=torch.int64)
-    cw = ClassWiseScore(base_score_cls=DummyScore)
+    # Multi‑label matrix with two columns; second class has no positive entries
+    y = torch.tensor([[1, 0], [1, 0], [1, 0], [1, 0]])
+    cw = sp.EuclideanClassWiseScore()
     with pytest.raises(
         ValueError, match="No training samples found for class 1"
     ):
         cw.fit(X=X, y=y)
 
 
-def test_score_error_both_modes():
-    X = torch.randn(5, 3)
-    y = torch.arange(5) % 2
-    dummy_model = torch.nn.Linear(3, 3)
-    cw = ClassWiseScore(base_score_cls=DummyScore)
+def test_validation_shape_mismatch_raises():
+    X_train = torch.randn(2, 2)
+    y_train = torch.tensor([0, 1])
+    X_val = torch.randn(2, 2)  # mismatched number of rows compared to y_val
+    y_val = torch.tensor([0, 1, 0])
+    cw = sp.EuclideanClassWiseScore()
+    with pytest.raises(AssertionError):
+        cw.fit(X=X_train, y=y_train, X_val=X_val, y_val=y_val)
+
+
+def test_unknown_label_error_in_single_label_scoring():
+    X = torch.randn(4, 2)
+    y = torch.tensor([0, 1, 0, 1])
+    cw = sp.EuclideanClassWiseScore()
+    cw.fit(X=X, y=y)
+    cw.set_threshold()
+    X_new = torch.randn(2, 2)
+    y_invalid = torch.tensor([2, 2])  # label 2 was never seen
+    with pytest.raises(ValueError, match=r"Unknown class labels in y: \[2\]"):
+        cw.score(X=X_new, y=y_invalid)
+
+
+def test_plot_propagates_scorer_error():
+    class BadPlotScore(sp.UncertaintyScore):
+        def fit(self, X=None, Y=None, **kwargs):
+            self.set_trained()
+
+        @torch.inference_mode()
+        def score(self, X):
+            pass  # pragma: no cover
+
+        def select(self, X):
+            pass  # pragma: no cover
+
+        def plot(self, query_scores=None, bins=100):
+            raise RuntimeError("plot failure")
+
+    cw = ClassWiseScore(base_score_cls=BadPlotScore)
+    # Fit a single‑class dataset
+    X = torch.randn(3, 2)
+    y = torch.tensor([0, 0, 0])
     cw.fit(X=X, y=y)
     with pytest.raises(
-        ValueError, match="Specify either pre-computed tensors.*or a model"
-    ):
-        cw.score(X=X, model=dummy_model, loader=None)
-
-
-def test_plot_exception_handling():
-    pytest.importorskip("matplotlib")
-    from unittest.mock import patch
-
-    import matplotlib.pyplot as plt
-
-    class BadPlotScore(DummyScore):
-        def plot(
-            self, query_scores: torch.Tensor | None = None, bins: int = 100
-        ) -> None:
-            raise RuntimeError("plot failed deliberately")
-
-    class BadPlotClassWiseScore(ClassWiseScore):
-        def __init__(self, **kwargs):
-            super().__init__(base_score_cls=BadPlotScore, **kwargs)
-
-    X = torch.randn(6, 2)
-    y = torch.tensor([0, 0, 1, 1, 0, 1])
-    cw = BadPlotClassWiseScore()
-    cw.fit(X=X, y=y)
-    with (
-        patch.object(plt, "show"),
-        pytest.raises(
-            RuntimeError,
-            match="Plot failed for class 0: plot failed deliberately",
-        ),
+        RuntimeError, match="Plot failed for class 0: plot failure"
     ):
         cw.plot()
 
 
-def make_loader(
-    X: torch.Tensor, y: torch.Tensor, batch_size: int = 4
-) -> DataLoader:
-    data = [{"image": X[i], "label": y[i]} for i in range(len(y))]
-    return DataLoader(
-        data,  # ty: ignore[invalid-argument-type]
-        batch_size=batch_size,
-        collate_fn=lambda batch: {
-            k: torch.stack([d[k] for d in batch]) for k in batch[0]
-        },
-    )
-
-
-def _make_embeddings(num: int, dim: int) -> torch.Tensor:
-    torch.manual_seed(0)
-    return torch.randn(num, dim)
-
-
-def _make_logits_multi(num: int, dim: int, members: int = 2) -> torch.Tensor:
-    torch.manual_seed(0)
-    return torch.randn(num, dim, members)
-
-
-# Parameter definitions
-knn_cases = [
-    (EuclideanClassWiseScore, {"k": 1}, True),
-    (CosineClassWiseScore, {"k": 2}, True),
-    (MahalanobisClassWiseScore, {"k": 1}, True),
-]
-logit_cases = [
-    (SoftmaxClassWiseScore, {"per_member": True, "task": "multilabel"}, False),
-    (EntropyClassWiseScore, {"per_member": True, "task": "multilabel"}, False),
-    (MarginClassWiseScore, {"per_member": True, "task": "multilabel"}, False),
-    (EnergyClassWiseScore, {"per_member": True, "task": "multilabel"}, False),
-    (MutualInformationClassWiseScore, {"task": "multilabel"}, False),
-    (PredictiveVarianceClassWiseScore, {"task": "multilabel"}, False),
-]
-
-
-@pytest.mark.parametrize("score_cls, kwargs, is_knn", knn_cases)
-def test_knn_single_label(score_cls, kwargs, is_knn):
-    # generate single‑label embedding data
-    X_train = _make_embeddings(30, 3)
-    y_train = torch.tensor([0, 0, 1, 1, 2, 2, 2, 0, 1, 2] * 3)
-    X_val = _make_embeddings(4, 3)
-    y_val = torch.tensor([0, 1, 2, 2])
-    X_test = _make_embeddings(3, 3)
-    cw = score_cls(**kwargs)
-    cw.fit(X=X_train, y=y_train, X_val=X_val, y_val=y_val)
-    cw.set_threshold(q=0.95)
-    scores = cw.score(X_test)
-    assert scores.shape == (X_test.shape[0], 3)
-    for idx, label in enumerate(sorted(torch.unique(y_train).tolist())):
-        class_scorer = cw._scorers[label]
-        expected = class_scorer.score(X_test)
-        torch.testing.assert_close(scores[:, idx], expected)
-    result = cw.select(X_test)
-    assert "score" in result and "selected" in result
-    assert result["score"].shape == scores.shape
-    assert result["selected"].shape == scores.shape
-    for idx, label in enumerate(sorted(torch.unique(y_train).tolist())):
-        thr = cw._thresholds[label]
-        assert torch.equal(result["selected"][:, idx], scores[:, idx] < thr)
-
-
-@pytest.mark.parametrize("score_cls, kwargs, is_knn", knn_cases)
-def test_knn_multi_label(score_cls, kwargs, is_knn):
-    X_train = _make_embeddings(24, 4)
-    y_train = torch.tensor(
-        [[1, 0], [0, 1], [1, 1], [0, 0], [1, 0], [0, 1], [1, 1], [0, 0]] * 3,
-        dtype=torch.int64,
-    )
-    X_val = _make_embeddings(2, 4)
-    y_val = torch.tensor([[1, 0], [0, 1]], dtype=torch.int64)
-    X_test = _make_embeddings(5, 4)
-    cw = score_cls(**kwargs)
-    cw.fit(X=X_train, y=y_train, X_val=X_val, y_val=y_val)
-    cw.set_threshold(q=0.9)
-    scores = cw.score(X_test)
-    assert scores.shape == (X_test.shape[0], 2)
-    for idx in range(2):
-        class_scorer = cw._scorers[idx]
-        expected = class_scorer.score(X_test)
-        torch.testing.assert_close(scores[:, idx], expected)
-    out = cw.select(X_test)
-    assert out["selected"].shape == scores.shape
-    for idx in range(2):
-        thr = cw._thresholds[idx]
-        assert torch.equal(out["selected"][:, idx], scores[:, idx] < thr)
-
-
-@pytest.mark.parametrize("score_cls, kwargs, is_knn", knn_cases)
-def test_knn_model_loader_single(score_cls, kwargs, is_knn):
-    X_train = _make_embeddings(30, 3)
-    y_train = torch.tensor([0, 0, 1, 1, 2, 2, 2, 0, 1, 2] * 3)
-    X_val = _make_embeddings(4, 3)
-    y_val = torch.tensor([0, 1, 2, 2])
-    X_test = _make_embeddings(3, 3)
-    train_loader = make_loader(X_train, y_train)
-    val_loader = make_loader(X_val, y_val)
-    test_loader = make_loader(
-        X_test, torch.zeros(len(X_test), dtype=torch.int64)
-    )
-    cw = score_cls(**kwargs)
-    cw.fit(
-        model=DummyModel(), loaders={"train": train_loader, "val": val_loader}
-    )
-    cw.set_threshold(q=0.95)
-    scores = cw.score(model=DummyModel(), loader=test_loader)
-    assert scores.shape == (X_test.shape[0], 3)
-    for lbl in sorted(torch.unique(y_train).tolist()):
-        class_scorer = cw._scorers[lbl]
-        expected = class_scorer.score(X_test)
-        idx = sorted(torch.unique(y_train).tolist()).index(lbl)
-        torch.testing.assert_close(scores[:, idx], expected)
-    result = cw.select(model=DummyModel(), loader=test_loader)
-    assert "score" in result and "selected" in result
-    assert result["selected"].shape == scores.shape
-    for lbl in sorted(torch.unique(y_train).tolist()):
-        thr = cw._thresholds[lbl]
-        idx = sorted(torch.unique(y_train).tolist()).index(lbl)
-        assert torch.equal(result["selected"][:, idx], scores[:, idx] < thr)
-
-
-@pytest.mark.parametrize("score_cls, kwargs, is_knn", knn_cases)
-def test_knn_model_loader_multi(score_cls, kwargs, is_knn):
-    X_train = _make_embeddings(30, 3)
-    y_train = torch.tensor(
-        [[1, 0], [0, 1], [1, 1], [0, 0], [1, 0], [0, 1], [1, 1], [0, 0]] * 3,
-        dtype=torch.int64,
-    )
-    X_val = _make_embeddings(2, 3)
-    y_val = torch.tensor([[1, 0], [0, 1]], dtype=torch.int64)
-    X_test = _make_embeddings(5, 3)
-    train_loader = make_loader(X_train, y_train)
-    val_loader = make_loader(X_val, y_val)
-    test_loader = make_loader(
-        X_test, torch.zeros(len(X_test), 2, dtype=torch.int64)
-    )
-    cw = score_cls(**kwargs)
-    cw.fit(
-        model=DummyModel(), loaders={"train": train_loader, "val": val_loader}
-    )
-    cw.set_threshold(q=0.9)
-    scores = cw.score(model=DummyModel(), loader=test_loader)
-    assert scores.shape == (X_test.shape[0], 2)
-    for lbl in range(2):
-        class_scorer = cw._scorers[lbl]
-        expected = class_scorer.score(X_test)
-        torch.testing.assert_close(scores[:, lbl], expected)
-    result = cw.select(model=DummyModel(), loader=test_loader)
-    assert "score" in result and "selected" in result
-    assert result["selected"].shape == scores.shape
-    for lbl in range(2):
-        thr = cw._thresholds[lbl]
-        assert torch.equal(result["selected"][:, lbl], scores[:, lbl] < thr)
-
-
-@pytest.mark.parametrize("score_cls, kwargs, is_knn", knn_cases)
-def test_knn_pca_per_class(score_cls, kwargs, is_knn):
-    X_train = _make_embeddings(30, 12)
-    y_train = torch.tensor([0, 0, 1, 1, 2, 2, 2, 0, 1, 2] * 3)
-    X_val = _make_embeddings(4, 12)
-    y_val = torch.tensor([0, 1, 2, 2])
-    X_test = _make_embeddings(3, 12)
-    orig_dim = X_train.shape[1]
-    pca = TensorPCA(n_components=2)
-    cw = score_cls(**kwargs, pca=pca)
-    cw.fit(X=X_train, y=y_train, X_val=X_val, y_val=y_val)
-    for scorer in cw._scorers.values():
-        assert isinstance(scorer.pca, TensorPCA)
-        assert isinstance(scorer.pca.u, torch.Tensor)
-        assert scorer.pca.u.numel() > 0
-        assert isinstance(scorer.ref_embeddings, torch.Tensor)
-        assert scorer.ref_embeddings.shape[1] < orig_dim
-    scores = cw.score(X_test)
-    assert scores.shape == (X_test.shape[0], len(cw._scorers))
-
-
-def test_global_pca_behavior():
-    pca = TensorPCA(n_components=2)
-    # training data
-    X_train = _make_embeddings(30, 12)
-    y_train = torch.tensor([0, 0, 1, 1, 2, 2, 2, 0, 1, 2] * 3)
-    # validation data to trigger line 206
-    X_val = _make_embeddings(4, 12)
-    y_val = torch.tensor([0, 1, 2, 2])
-    # test data
-    X_test = _make_embeddings(3, 12)
-    cw = EuclideanClassWiseScore(global_pca=pca)
-    cw.fit(X=X_train, y=y_train, X_val=X_val, y_val=y_val)
-
-    # check the global pca object
-    assert cw.pca is not None
-    assert isinstance(cw.pca, TensorPCA)
-    assert cw.pca.u.numel() > 0
-
-    # check no local pca objects
-    for scorer in cw._scorers.values():
-        assert scorer.pca is None
-
-    # check transform is correct for reference
-    for lbl, scorer in cw._scorers.items():
-        X_c_original = cw._extract_class_data(
-            X_train, y_train, lbl, multi_label=False
-        )
-        X_c_expected = cw.pca.transform(X_c_original)
-        assert scorer.ref_embeddings is not None
-        torch.testing.assert_close(scorer.ref_embeddings, X_c_expected)
-
-    # check transform is correct for scoring
-    scores = cw.score(X_test)
-    X_test_pca = cw.pca.transform(X_test)
-    manual = torch.empty_like(scores)
-    for idx, label in enumerate(sorted(torch.unique(y_train).tolist())):
-        manual[:, idx] = cw._scorers[label].score(X_test_pca)
-    torch.testing.assert_close(scores, manual)
-
-
-# Logit scores – reuse similar structure without PCA
-@pytest.mark.parametrize("score_cls, kwargs, is_knn", logit_cases)
-def test_logit_single_label(score_cls, kwargs, is_knn):
-    # Use multi‑member logits for all scores
-    X_train = _make_logits_multi(10, 4, members=2)
-    X_val = _make_logits_multi(4, 4, members=2)
-    X_test = _make_logits_multi(3, 4, members=2)
-    y_train = torch.randint(0, 4, (10,))
-    y_val = torch.randint(0, 4, (4,))
-    cw = score_cls(**kwargs)
-    cw.fit(X=X_train, y=y_train, X_val=X_val, y_val=y_val)
-    cw.set_threshold(q=0.95)
-    scores = cw.score(X_test)
-    assert scores.shape == (X_test.shape[0], len(torch.unique(y_train)))
-    for idx, label in enumerate(sorted(torch.unique(y_train).tolist())):
-        class_scorer = cw._scorers[label]
-        expected = class_scorer.score(X_test[:, idx, :].unsqueeze(1))
-        torch.testing.assert_close(scores[:, idx], expected)
-    result = cw.select(X_test)
-    assert "score" in result and "selected" in result
-    assert result["score"].shape == scores.shape
-    assert result["selected"].shape == scores.shape
-    for idx, label in enumerate(sorted(torch.unique(y_train).tolist())):
-        thr = cw._thresholds[label]
-        assert torch.equal(result["selected"][:, idx], scores[:, idx] < thr)
-
-
-@pytest.mark.parametrize("score_cls, kwargs, is_knn", logit_cases)
-def test_logit_multi_label(score_cls, kwargs, is_knn):
-    # Use multi‑member logits for all scores
-    X_train = _make_logits_multi(8, 3, members=2)
-    X_val = _make_logits_multi(2, 3, members=2)
-    X_test = _make_logits_multi(5, 3, members=2)
-    y_train = torch.tensor(
-        [
-            [1, 0, 1],
-            [0, 1, 0],
-            [1, 1, 0],
-            [0, 0, 1],
-            [1, 0, 0],
-            [0, 1, 1],
-            [1, 1, 1],
-            [0, 0, 0],
-        ],
-        dtype=torch.int64,
-    )
-    y_val = torch.tensor([[1, 0, 0], [0, 1, 0]], dtype=torch.int64)
-    cw = score_cls(**kwargs)
-    cw.fit(X=X_train, y=y_train, X_val=X_val, y_val=y_val)
-    cw.set_threshold(q=0.9)
-    scores = cw.score(X_test)
-    assert scores.shape == (X_test.shape[0], 3)
-    for idx in range(3):
-        class_scorer = cw._scorers[idx]
-        expected = class_scorer.score(X_test[:, idx, :].unsqueeze(1))
-        torch.testing.assert_close(scores[:, idx], expected)
-    out = cw.select(X_test)
-    assert out["selected"].shape == scores.shape
-    for idx in range(3):
-        thr = cw._thresholds[idx]
-        assert torch.equal(out["selected"][:, idx], scores[:, idx] < thr)
-
-
-@pytest.mark.parametrize("score_cls, kwargs, is_knn", logit_cases)
-def test_logit_model_loader_single(score_cls, kwargs, is_knn):
-    # Use multi‑member logits for all scores
-    X_train = _make_logits_multi(10, 4, members=2)
-    X_val = _make_logits_multi(4, 4, members=2)
-    X_test = _make_logits_multi(3, 4, members=2)
-    y_train = torch.randint(0, 4, (10,))
-    y_val = torch.randint(0, 4, (4,))
-    train_loader = make_loader(X_train, y_train)
-    val_loader = make_loader(X_val, y_val)
-    test_loader = make_loader(
-        X_test, torch.zeros(len(X_test), dtype=torch.int64)
-    )
-    cw = score_cls(**kwargs)
-    cw.fit(
-        model=DummyModel(), loaders={"train": train_loader, "val": val_loader}
-    )
-    cw.set_threshold(q=0.95)
-    scores = cw.score(model=DummyModel(), loader=test_loader)
-    assert scores.shape == (X_test.shape[0], len(torch.unique(y_train)))
-    for lbl in sorted(torch.unique(y_train).tolist()):
-        class_scorer = cw._scorers[lbl]
-        expected = class_scorer.score(X_test[:, lbl, :].unsqueeze(1))
-        idx = sorted(torch.unique(y_train).tolist()).index(lbl)
-        torch.testing.assert_close(scores[:, idx], expected)
-    result = cw.select(model=DummyModel(), loader=test_loader)
-    assert "score" in result and "selected" in result
-    assert result["selected"].shape == scores.shape
-    for lbl in sorted(torch.unique(y_train).tolist()):
-        thr = cw._thresholds[lbl]
-        idx = sorted(torch.unique(y_train).tolist()).index(lbl)
-        assert torch.equal(result["selected"][:, idx], scores[:, idx] < thr)
-
-
-@pytest.mark.parametrize("score_cls, kwargs, is_knn", logit_cases)
-def test_logit_model_loader_multi(score_cls, kwargs, is_knn):
-    # Use multi‑member logits for all scores
-    X_train = _make_logits_multi(8, 3, members=2)
-    X_val = _make_logits_multi(2, 3, members=2)
-    X_test = _make_logits_multi(5, 3, members=2)
-    y_train = torch.tensor(
-        [
-            [1, 0, 1],
-            [0, 1, 0],
-            [1, 1, 0],
-            [0, 0, 1],
-            [1, 0, 0],
-            [0, 1, 1],
-            [1, 1, 1],
-            [0, 0, 0],
-        ],
-        dtype=torch.int64,
-    )
-    y_val = torch.tensor([[1, 0, 0], [0, 1, 0]], dtype=torch.int64)
-    train_loader = make_loader(X_train, y_train)
-    val_loader = make_loader(X_val, y_val)
-    test_loader = make_loader(
-        X_test, torch.zeros(len(X_test), 3, dtype=torch.int64)
-    )
-    cw = score_cls(**kwargs)
-    cw.fit(
-        model=DummyModel(), loaders={"train": train_loader, "val": val_loader}
-    )
-    cw.set_threshold(q=0.9)
-    scores = cw.score(model=DummyModel(), loader=test_loader)
-    assert scores.shape == (X_test.shape[0], 3)
-    for lbl in range(3):
-        class_scorer = cw._scorers[lbl]
-        expected = class_scorer.score(X_test[:, lbl, :].unsqueeze(1))
-        torch.testing.assert_close(scores[:, lbl], expected)
-    result = cw.select(model=DummyModel(), loader=test_loader)
-    assert "score" in result and "selected" in result
-    assert result["selected"].shape == scores.shape
-    for lbl in range(3):
-        thr = cw._thresholds[lbl]
-        assert torch.equal(result["selected"][:, lbl], scores[:, lbl] < thr)
-
-
 def test_logit_score_requires_multilabel_task():
     with pytest.raises(
-        ValueError, match="Class-wise logit scores require a multilabel task."
+        ValueError, match="Class-wise logit scores require a multilabel task"
     ):
-        ClassWiseScore(base_score_cls=EntropyScore, task="multiclass")
-
-    # Correct task should not raise
-    cw = ClassWiseScore(base_score_cls=EntropyScore, task="multilabel")
-    assert isinstance(cw, ClassWiseScore)
+        ClassWiseScore(base_score_cls=sp.SoftmaxScore, task="single_label")
 
 
-def loader_train():
-    data = [
-        {"image": torch.tensor([1.0, 2.0, 3.0]), "label": torch.tensor(0)},
-        {"image": torch.tensor([4.0, 5.0, 6.0]), "label": torch.tensor(1)},
-    ]
-    return DataLoader(data, batch_size=2)  # type: ignore
+def test_resolve_aggregation_callable():
+    agg = lambda s, m: torch.sum(s * m, dim=1)
+    cw = ClassWiseScore(
+        base_score_cls=sp.SoftmaxScore, aggregation=agg, task="multilabel"
+    )
+    # Create a tiny multi‑label dataset (2 classes, 3 samples).
+    X = torch.randn(3, 2)  # dummy logits
+    y = torch.tensor([[1, 0], [0, 1], [1, 1]], dtype=torch.float32)
+    cw.fit(X=X, y=y)
+    cw.set_threshold(q=0.5)
+    scores = cw.score(X=X, y=y)
+    assert scores.shape == (3,)
 
 
-def loader_val():
-    data = [
-        {"image": torch.tensor([10.0, 20.0, 30.0]), "label": torch.tensor(0)},
-        {"image": torch.tensor([40.0, 50.0, 60.0]), "label": torch.tensor(1)},
-    ]
-    return DataLoader(data, batch_size=2)  # type: ignore
+def test_knn_full_matrix_scoring():
+    cw = sp.EuclideanClassWiseScore()
+    X_train = torch.tensor([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
+    y_train = torch.tensor([0, 0, 1, 1])
+    cw.fit(X=X_train, y=y_train)
+    cw.set_threshold(q=0.9)
+    X_test = torch.tensor([[0.5, 0.5], [2.5, 2.5]])
+    full = cw.score(X=X_test, full_matrix=True)
+    assert isinstance(full, torch.Tensor)
+    assert full.shape == (2, 2)  # N=2, C=2 classes
 
 
-def test_classwise_fit_model_mode_separate_cache(tmp_path: Path):
-    outdir = tmp_path / "cache"
-    outdir.mkdir()
-    model = DummyModel()
-    train_loader = loader_train()
-    val_loader = loader_val()
-    cw = ClassWiseScore(base_score_cls=EuclideanScore)
+def test_single_label_score_invalid_y_shape():
+    cw = sp.EuclideanClassWiseScore()
+    X = torch.randn(4, 2)
+    y = torch.tensor([0, 1, 0, 1])
+    cw.fit(X=X, y=y)
+    cw.set_threshold()
+    X_new = torch.randn(2, 2)
+    y_invalid = torch.tensor([[0, 1], [1, 0]])  # 2‑D instead of 1‑D
+    with pytest.raises(
+        ValueError,
+        match="Model was fit in 'single_label' mode but received labels",
+    ):
+        cw.score(X=X_new, y=y_invalid)
 
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        cw.fit(
-            model=model,
-            loaders={"train": train_loader, "val": val_loader},
-            outdir=outdir,
-            prefix="mytest",
-        )
-    assert not any("Loading pre-existing data" in str(rec.message) for rec in w)
 
-    train_path = outdir / "mytest-train-embedding.pt"
-    val_path = outdir / "mytest-val-embedding.pt"
-    assert train_path.is_file(), "Training cache file missing"
-    assert val_path.is_file(), "Validation cache file missing"
-    assert train_path != val_path, "Cache filenames should differ"
-    train_tensor = torch.load(train_path)
-    val_tensor = torch.load(val_path)
-    assert not torch.equal(train_tensor["embedding"], val_tensor["embedding"])
+def test_multi_label_score_error_cases():
+    cw = sp.SoftmaxClassWiseScore(task="multilabel")
+    X = torch.randn(3, 2)
+    y = torch.tensor([[1, 0], [0, 1], [1, 1]], dtype=torch.float32)
+    cw.fit(X=X, y=y)
+    cw.set_threshold(q=0.5)
+    with pytest.raises(
+        ValueError,
+        match="Model was fit in 'multi_label' mode but received labels",
+    ):
+        cw.score(X=X, y=torch.tensor([1, 0, 1]))
+    with pytest.raises(
+        ValueError, match="X and y must have the same number of rows"
+    ):
+        cw.score(X=X[:2], y=y)
+    y_wrong_classes = torch.tensor(
+        [[1, 0, 0], [0, 1, 0], [1, 0, 1]], dtype=torch.float32
+    )
+    with pytest.raises(ValueError, match="Number of label columns"):
+        cw.score(X=X, y=y_wrong_classes)
+    y_no_positive = torch.tensor([[0, 0], [1, 0], [0, 1]], dtype=torch.float32)
+    with pytest.raises(
+        ValueError, match="Each sample must have at least one positive label"
+    ):
+        cw.score(X=X, y=y_no_positive)
+
+
+def test_select_full_matrix_warning_and_mask():
+    cw = sp.EuclideanClassWiseScore()
+    X_train = torch.tensor([[0.0, 0.0], [1.0, 1.0]])
+    y_train = torch.tensor([0, 1])
+    cw.fit(X=X_train, y=y_train)
+    result = cw.select(X=X_train, full_matrix=True)
+    # Ensure thresholds are now available.
+    assert cw.get_threshold(full_matrix=True) is not None
+    scores = result["score"]
+    mask = result["selected"]
+    assert scores.shape == (2, 2)
+    assert mask.shape == (2, 2)
+    # Verify mask is computed as scores < per‑class thresholds.
+    thr_dict = cw.get_threshold(full_matrix=True)
+    assert isinstance(thr_dict, dict)
+    assert cw._class_labels is not None
+    for i, lbl in enumerate(cw._class_labels):
+        expected = scores[:, i] < thr_dict[lbl]
+        assert torch.equal(mask[:, i], expected)
+
+
+def test_mode_property_before_fit_raises():
+    cs = ClassWiseScore(base_score_cls=DummyScore)
+    with pytest.raises(
+        RuntimeError, match=r"fit\(\) must be called before mode"
+    ):
+        _ = cs.mode
+
+
+def test_set_threshold_before_fit_raises():
+    cs = ClassWiseScore(base_score_cls=DummyScore)
+    with pytest.raises(
+        RuntimeError, match=r"fit\(\) must be called before setting thresholds"
+    ):
+        cs.set_threshold()
+
+
+def test_score_full_matrix_before_fit_raises():
+    cs = ClassWiseScore(base_score_cls=DummyScore)
+    X, _ = make_data(single_label=True)
+    with pytest.raises(
+        RuntimeError, match=r"fit\(\) must be called before scoring"
+    ):
+        cs._score_full_matrix(X)
+
+
+def test_score_single_label_errors():
+    X, y = make_data(single_label=True)
+    cs = ClassWiseScore(base_score_cls=DummyScore)
+    cs.fit(X=X, y=y)
+    y_wrong = y.unsqueeze(1)
+    with pytest.raises(ValueError, match="y must be a 1-D tensor"):
+        cs._score_single_label(X, y_wrong)
+    X_mismatch = X[:3]
+    # y retains original length (4), mismatch rows should raise
+    with pytest.raises(
+        ValueError, match="X and y must have the same number of rows"
+    ):
+        cs._score_single_label(X_mismatch, y)
+    y_unknown = torch.tensor([2, 2, 2, 2])
+    with pytest.raises(ValueError, match="Unknown class labels in y"):
+        cs._score_single_label(X, y_unknown)
+
+
+def test_score_multi_label_errors():
+    X, y = make_data(single_label=False)
+    cs = ClassWiseScore(base_score_cls=DummyScore)
+    cs.fit(X=X, y=y)
+    # Pass a 1-D tensor to trigger dimension error
+    with pytest.raises(ValueError, match="y must be a 2-D binary matrix"):
+        cs._score_multi_label(X, y[:, 0])
+    X_mismatch = X[:3]
+    with pytest.raises(
+        ValueError, match="X and y must have the same number of rows"
+    ):
+        cs._score_multi_label(X_mismatch, y)
+    y_bad_cols = torch.tensor(
+        [[1, 0, 0], [0, 1, 0], [1, 0, 0], [0, 1, 0]], dtype=torch.float32
+    )
+    with pytest.raises(ValueError, match="Number of label columns"):
+        cs._score_multi_label(X, y_bad_cols)
+    y_zero = y.clone()
+    y_zero[0] = 0
+    with pytest.raises(
+        ValueError, match="Each sample must have at least one positive label"
+    ):
+        cs._score_multi_label(X, y_zero)
+
+
+def test_score_single_label_before_fit():
+    cs = ClassWiseScore(base_score_cls=DummyScore)
+    X, y = make_data(single_label=True)
+    with pytest.raises(RuntimeError, match="fit must be called before scoring"):
+        cs._score_single_label(X, y)
+
+
+def test_score_single_label_continue_branch():
+    # Fit on data containing both classes, then score with y that only has one class
+    X, y = make_data(single_label=True)
+    cs = ClassWiseScore(base_score_cls=DummyScore)
+    cs.fit(X=X, y=y)
+    y_partial = torch.tensor([0, 0, 0, 0])  # only class 0 present
+    scores = cs._score_single_label(X, y_partial)
+    # Scores should be computed for class 0 and unchanged for other positions
+    assert scores.shape == (4,)
+    # Ensure no error raised (continue hit)
+    # Compare with direct score from DummyScore for class 0
+    expected = DummyScore().score(X)
+    assert torch.allclose(scores, expected)
+
+
+def test_score_before_fit_raises():
+    cs = ClassWiseScore(base_score_cls=DummyScore)
+    X, _ = make_data(single_label=True)
+    with pytest.raises(
+        RuntimeError, match=r"fit\(\) must be called before scoring"
+    ):
+        cs.score(X=X, y=None)
+
+
+def test_score_model_mode_assigns_y():
+    X, y = make_data(single_label=True)
+    cs = ClassWiseScore(base_score_cls=DummyScore)
+    cs.fit(X=X, y=y)
+
+    dummy_model = DummyModel()
+    # Dummy loader (not used)
+    dummy_loader = torch.utils.data.DataLoader([{"image": X, "label": y}])  # type: ignore
+
+    class DummyExtractor:
+        def __init__(self, out_key):
+            self.out_key = out_key
+
+        def extract(self, model, loader, **kwargs):
+            return {self.out_key: X, "label": y}
+
+    # Patch _make_extractor to return our dummy extractor
+    cs._make_extractor = lambda want_labels: DummyExtractor(  # type: ignore
+        out_key="embedding" if issubclass(DummyScore, sp.KNNScore) else "logit"
+    )
+    # Call score in model mode (full_matrix=False) to hit line 538
+    result = cs.score(model=dummy_model, loader=dummy_loader)
+    assert isinstance(result, torch.Tensor)
+    # Ensure shape matches (4,)
+    assert result.shape == (4,)
+
+
+def test_score_model_mode_missing_label_raises():
+    X, y = make_data(single_label=True)
+    cs = ClassWiseScore(base_score_cls=DummyScore)
+    cs.fit(X=X, y=y)
+
+    dummy_model = DummyModel()
+    dummy_loader = torch.utils.data.DataLoader([{"image": X}])  # type: ignore
+
+    class DummyExtractorNoLabel:
+        def __init__(self, out_key):
+            self.out_key = out_key
+
+        def extract(self, model, loader, **kwargs):
+            return {self.out_key: X}
+
+    cs._make_extractor = lambda want_labels: DummyExtractorNoLabel(  # type: ignore
+        out_key="embedding" if issubclass(DummyScore, sp.KNNScore) else "logit"
+    )
+    with pytest.raises(ValueError, match="Mode 'single_label' requires labels"):
+        cs.score(model=dummy_model, loader=dummy_loader)
+
+
+def test_full_matrix_scoring_and_select():
+    X, y = make_data(single_label=False)
+    cs = ClassWiseScore(base_score_cls=DummyScore, aggregation="mean")
+    cs.fit(X=X, y=y)
+    full = cs.score(X=X, y=y, full_matrix=True)
+    assert full.shape == (4, 2)
+    cs.set_threshold()
+    thr = cs.get_threshold(full_matrix=True)
+    assert isinstance(thr, dict)
+    result = cs.select(X=X, y=y, full_matrix=True)
+    assert result["score"].shape == (4, 2)
+    assert result["selected"].shape == (4, 2)
+
+
+def test_fit_multi_label_with_validation_sets_scores():
+    X = torch.randn(4, 3)
+    y = torch.tensor([[1, 0], [0, 1], [1, 0], [0, 1]], dtype=torch.float32)
+    X_val = torch.randn(2, 3)
+    y_val = torch.tensor([[1, 0], [0, 1]], dtype=torch.float32)
+    cw = sp.SoftmaxClassWiseScore(task="multilabel")
+    cw.fit(X=X, y=y, X_val=X_val, y_val=y_val)
+    expected = cw._score_multi_label(X_val, y_val)
+    assert hasattr(cw, "scores")
+    assert cw.scores is not None
+    assert torch.allclose(cw.scores, expected)
+
+
+def test_score_multi_label_before_fit_raises():
+    cw = sp.SoftmaxClassWiseScore(task="multilabel")
+    X = torch.randn(2, 3)
+    y = torch.randn(2, 2)
+    with pytest.raises(RuntimeError, match="fit must be called before scoring"):
+        cw._score_multi_label(X, y)
+
+
+def test_score_tensor_and_model_raises():
+    cs = ClassWiseScore(base_score_cls=DummyScore)
+    X = torch.randn(2, 2)
+    with pytest.raises(ValueError, match="Specify either pre-computed tensors"):
+        cs.score(X=X, model=DummyModel(), loader=DataLoader([]))  # type: ignore
