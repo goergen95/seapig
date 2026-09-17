@@ -44,7 +44,7 @@ class DummyModel(torch.nn.Module):
         return x.view(x.shape[0], -1)
 
     def logits(self, x: torch.Tensor) -> torch.Tensor:
-        return x
+        return x  # pragma: no cover
 
 
 class MinimalEmbedding(EmbeddingScore):
@@ -195,4 +195,4 @@ class DummyScore(UncertaintyScore):
         *args,
         **kwargs,
     ) -> None:
-        pass
+        pass  # pragma: no cover

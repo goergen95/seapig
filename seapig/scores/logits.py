@@ -442,7 +442,9 @@ class EntropyClassWiseScore(ClassWiseScore):
     ident = "entropy-classwise"
 
     def __init__(self, **kwargs):
-        super().__init__(base_score_cls=EntropyScore, **kwargs)
+        super().__init__(
+            base_score_cls=EntropyScore, **kwargs
+        )  # pragma: no cover
 
 
 class MarginScore(PointwiseLogitScore):
@@ -466,7 +468,9 @@ class MarginClassWiseScore(ClassWiseScore):
     ident = "margin-classwise"
 
     def __init__(self, **kwargs):
-        super().__init__(base_score_cls=MarginScore, **kwargs)
+        super().__init__(
+            base_score_cls=MarginScore, **kwargs
+        )  # pragma: no cover
 
 
 class EnergyScore(PointwiseLogitScore):
@@ -490,7 +494,9 @@ class EnergyClassWiseScore(ClassWiseScore):
     ident = "energy-classwise"
 
     def __init__(self, **kwargs):
-        super().__init__(base_score_cls=EnergyScore, **kwargs)
+        super().__init__(
+            base_score_cls=EnergyScore, **kwargs
+        )  # pragma: no cover
 
 
 class MutualInformationScore(EnsembleLogitScore):
@@ -519,7 +525,9 @@ class MutualInformationClassWiseScore(ClassWiseScore):
     ident = "mutual_information-classwise"
 
     def __init__(self, **kwargs):
-        super().__init__(base_score_cls=MutualInformationScore, **kwargs)
+        super().__init__(
+            base_score_cls=MutualInformationScore, **kwargs
+        )  # pragma: no cover
 
 
 class PredictiveVarianceScore(EnsembleLogitScore):
@@ -542,4 +550,6 @@ class PredictiveVarianceClassWiseScore(ClassWiseScore):
     ident = "predictive_variance-classwise"
 
     def __init__(self, **kwargs):
-        super().__init__(base_score_cls=PredictiveVarianceScore, **kwargs)
+        super().__init__(
+            base_score_cls=PredictiveVarianceScore, **kwargs
+        )  # pragma: no cover

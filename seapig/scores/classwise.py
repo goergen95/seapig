@@ -8,6 +8,8 @@ number of discovered classes.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -15,16 +17,34 @@ import torch
 from torch.utils.data import DataLoader
 from typing_extensions import override
 
-from seapig import scores
+from seapig import scores as sp
 from seapig.scores.extractor import ModelExtractor
 from seapig.scores.utils import TensorPCA
 from seapig.utils import get_logger
 
+
+class ClassWiseMode(Enum):
+    """Mode of class-wise scoring."""
+
+    SINGLE_LABEL = "single_label"
+    MULTI_LABEL = "multi_label"
+
+
 logger = get_logger(__name__)
 
 
-class ClassWiseScore(scores.UncertaintyScore):
-    """Base class-wise wrapper.
+class ClassWiseScore(sp.UncertaintyScore):
+    """Base class-wise wrapper for per-class uncertainty scoring.
+
+    The wrapper supports three usage modes:
+
+    * **Tensor mode** - Directly provide pre-computed feature tensors `X` and label
+      tensor `y` to :meth:`fit` and optionally to :meth:`score`.
+    * **Model mode** - Supply a `torch.nn.Module` and a `DataLoader`; the
+      :class:`ModelExtractor` extracts the required embeddings or logits.
+    * **Full-matrix mode** - When calling :meth:`score`, setting `full_matrix=True`
+      returns the raw `(N, C)` score matrix without aggregating over classes.
+      This mode is useful when downstream code needs per-class scores.
 
     Parameters
     ----------
@@ -33,29 +53,78 @@ class ClassWiseScore(scores.UncertaintyScore):
     base_kwargs:
         Keyword arguments passed to each `base_score_cls` instance.
     global_pca:
-        An optional TensorPCA object to apply global PCA to the inputs before
-        any score is fit.
+        Optional :class:`TensorPCA` applied globally to inputs before scoring.
+    aggregation:
+        Aggregation function or name (`"mean"`, `"max"`, `"min"`) used to
+        reduce per-class scores to a single scalar per sample in multi-label
+        scenarios. Ignored in single-label mode.
     """
 
     def __init__(
         self,
-        base_score_cls: type[scores.UncertaintyScore],
+        base_score_cls: type[sp.UncertaintyScore],
         global_pca: TensorPCA | None = None,
+        aggregation: str
+        | Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = "mean",
         **base_kwargs: Any,
     ) -> None:
         super().__init__()
         self.base_score_cls = base_score_cls
         self.pca = global_pca
-        self._class_labels: torch.Tensor | None = None
-        self._scorers: dict[int, scores.UncertaintyScore] = {}
+        self.aggregation = self._resolve_aggregation(aggregation)
+        self._class_labels: list[int] | None = None
+        self._scorers: dict[int, sp.UncertaintyScore] = {}
         self._thresholds: dict[int, torch.Tensor] = {}
-        if issubclass(base_score_cls, scores.LogitScore):
+        self._threshold: torch.Tensor | None = None
+        self._mode: ClassWiseMode | None = None
+        if issubclass(self.base_score_cls, sp.LogitScore):
             task = base_kwargs.get("task")
             if task != "multilabel":
                 raise ValueError(
                     "Class-wise logit scores require a multilabel task."
                 )
         self._base_kwargs: dict[str, Any] = base_kwargs
+
+    @property
+    def mode(self) -> ClassWiseMode:
+        """Return the mode inferred during fitting.
+
+        Raises
+        ------
+        RuntimeError
+            If `fit` has not been called yet.
+        """
+        if self._mode is None:
+            raise RuntimeError("fit() must be called before mode is available.")
+        return self._mode
+
+    @staticmethod
+    def _infer_mode(y: torch.Tensor) -> ClassWiseMode:
+        """Infer the scoring mode from the shape of `y`."""
+        if y.dim() == 1:
+            return ClassWiseMode.SINGLE_LABEL
+        if y.dim() == 2:
+            return ClassWiseMode.MULTI_LABEL
+        raise ValueError(
+            f"Expected y to either be of size (N,) or (N,C) but found {y.shape}"
+        )
+
+    def _resolve_aggregation(
+        self, agg: str | Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+    ) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
+        """Resolve aggregation specification to a callable."""
+        if callable(agg):
+            assert not isinstance(agg, str)
+            return agg
+        if agg == "mean":
+            return lambda s, m: torch.nanmean(
+                s.masked_fill(~m, float("nan")), dim=1
+            )
+        if agg == "max":
+            return lambda s, m: s.masked_fill(~m, float("-inf")).amax(dim=1)
+        if agg == "min":
+            return lambda s, m: s.masked_fill(~m, float("inf")).amin(dim=1)
+        raise ValueError(f"Unknown aggregation '{agg}'")
 
     def _make_extractor(self, want_labels: bool) -> ModelExtractor:
         """Return a `ModelExtractor` configured for the wrapped scorer.
@@ -66,11 +135,11 @@ class ClassWiseScore(scores.UncertaintyScore):
         `input_keys` (required during calibration / training but not during
         scoring).
         """
-        if issubclass(self.base_score_cls, scores.KNNScore):
+        if issubclass(self.base_score_cls, sp.KNNScore):
             method = "embed"
             out_key = "embedding"
             keys = ("image", "label")
-        elif issubclass(self.base_score_cls, scores.LogitScore):
+        elif issubclass(self.base_score_cls, sp.LogitScore):
             method = "logits"
             out_key = "logit"
             keys = ("image", "label") if want_labels else ("image",)
@@ -170,7 +239,7 @@ class ClassWiseScore(scores.UncertaintyScore):
             # Choose the correct output key based on the underlying scorer type
             out_key = (
                 "embedding"
-                if issubclass(self.base_score_cls, scores.KNNScore)
+                if issubclass(self.base_score_cls, sp.KNNScore)
                 else "logit"
             )
             extractor = self._make_extractor(want_labels=True)
@@ -196,6 +265,8 @@ class ClassWiseScore(scores.UncertaintyScore):
                 y_val = data.get("label")
 
         assert X is not None and y is not None, "Training data must be provided"
+        # Infer and store the scoring mode based on label tensor shape
+        self._mode = self._infer_mode(y)
         assert X.shape[0] == y.shape[0], (
             "X and y must have the same first dimension"
         )
@@ -210,10 +281,9 @@ class ClassWiseScore(scores.UncertaintyScore):
             class_indices = torch.arange(y.shape[1], device=y.device)
         else:
             class_indices = torch.unique(y, sorted=True)
-        self._class_labels = class_indices
+        self._class_labels = class_indices.tolist()
 
-        for label in class_indices:
-            lbl = int(label.item())
+        for lbl in self._class_labels:
             X_c = self._extract_class_data(X, y, lbl, multi_label)
             if X_c.shape[0] == 0:
                 raise ValueError(f"No training samples found for class {lbl}")
@@ -225,74 +295,186 @@ class ClassWiseScore(scores.UncertaintyScore):
             scorer.fit(X=X_c, Y=Y_c, **kwargs)  # type: ignore[arg-type]
             self._scorers[lbl] = scorer
 
+        if self._mode is ClassWiseMode.MULTI_LABEL:
+            if X_val is not None and y_val is not None:
+                self.scores = self._score_multi_label(X_val, y_val)
+            else:
+                self.scores = self._score_multi_label(X, y)
+
+        # Ensure mode was inferred
+        assert self._mode is not None, "Mode inference failed during fit"
         self.set_trained()
 
     @override
     def set_threshold(self, q: float = 0.99) -> None:
-        """Set per-class thresholds based on the calibrated scores.
+        if not self.is_trained():
+            raise RuntimeError(
+                "fit() must be called before setting thresholds."
+            )
 
-        The underlying scorer for each class provides its own `set_threshold`
-        implementation (typically based on a quantile of the validation scores).
-        This wrapper forwards the requested quantile `q` to each scorer, stores
-        the resulting scalar threshold in `self._thresholds` and marks the
-        wrapper as calibrated.
+        # Always populate per-class thresholds (used directly in single-label
+        # mode, and available for full_matrix consumers in any mode).
+        for lbl, scorer in self._scorers.items():
+            scorer.set_threshold(q)
+            thr = scorer.get_threshold()
+            assert isinstance(thr, torch.Tensor)
+            self._thresholds[lbl] = thr
+
+        if self._mode is ClassWiseMode.MULTI_LABEL:
+            assert isinstance(self.scores, torch.Tensor)
+            self._threshold = torch.quantile(self.scores, q=q)
+
+        self.set_calibrated()
+
+    @override
+    def get_threshold(
+        self, full_matrix: bool = False
+    ) -> dict[int, torch.Tensor] | torch.Tensor | None:
+        """Return the threshold for a specific class.
+
+        After calibration `self._thresholds` maps each class label to its scalar
+        threshold tensor. If the wrapper has not been calibrated, `None` is returned;
+        otherwise the threshold dictionary with keys identifying the class label is
+        returned.
+        """
+        if not self.is_calibrated():
+            return None
+        if full_matrix or self._mode is ClassWiseMode.SINGLE_LABEL:
+            return self._thresholds
+        return self._threshold
+
+    def _score_full_matrix(self, X: torch.Tensor) -> torch.Tensor:
+        """Score all classes and return the full `(N, C)` matrix.
 
         Parameters
         ----------
-        q:
-            Quantile to use for threshold determination. `0.99` (default)
-            selects the 99th percentile of the validation score distribution.
+        X : torch.Tensor
+            Input tensor (features or logits) with shape `(N, D)`.
+
+        Returns
+        -------
+        torch.Tensor
+            Matrix of shape `(N,C)` where each entry is the score produced by
+            the specific scorer for class c.
+        """
+        if self._class_labels is None:
+            raise RuntimeError("fit() must be called before scoring.")
+        N = X.shape[0]
+        C = len(self._class_labels)
+        scores = torch.empty((N, C), device=X.device, dtype=X.dtype)
+        for col_idx, lbl in enumerate(self._class_labels):
+            scorer = self._scorers[lbl]
+            if issubclass(self.base_score_cls, sp.LogitScore):
+                col_logits = X[:, lbl].unsqueeze(1)
+                scores[:, col_idx] = scorer.score(col_logits)  # type: ignore[arg-type]
+            else:
+                scores[:, col_idx] = scorer.score(X)  # type: ignore[arg-type]
+        return scores
+
+    def _score_single_label(
+        self, X: torch.Tensor, y: torch.Tensor
+    ) -> torch.Tensor:
+        """Score samples according to their single-label class.
+
+        Parameters
+        ----------
+        X : torch.Tensor
+            Input tensor (features or logits) with shape `(N, D)`.
+        y : torch.Tensor
+            1-D tensor of class labels with length `N`.
+
+        Returns
+        -------
+        torch.Tensor
+            Vector of shape `(N,)` where each entry is the score produced by
+            the scorer corresponding to the sample's class.
+        """
+        if self._class_labels is None:
+            raise RuntimeError("fit must be called before scoring.")
+        if y.dim() != 1:
+            raise ValueError("y must be a 1-D tensor for single-label scoring.")
+        if X.shape[0] != y.shape[0]:
+            raise ValueError("X and y must have the same number of rows.")
+        # Validate that all labels are known
+        unknown = set(y.tolist()) - set(self._class_labels)
+        if unknown:
+            raise ValueError(f"Unknown class labels in y: {sorted(unknown)}")
+        N = X.shape[0]
+        scores = torch.empty(N, device=X.device, dtype=X.dtype)
+        for lbl in self._class_labels:
+            mask = y == lbl
+            if not mask.any():
+                continue
+            scorer = self._scorers[lbl]
+            if issubclass(self.base_score_cls, sp.LogitScore):
+                col_logits = X[:, lbl].unsqueeze(1)
+                col_scores = scorer.score(col_logits)  # type: ignore[arg-type]
+            else:
+                col_scores = scorer.score(X)  # type: ignore[arg-type]
+            scores[mask] = col_scores[mask]
+        return scores
+
+    def _score_multi_label(
+        self, X: torch.Tensor, y: torch.Tensor
+    ) -> torch.Tensor:
+        """Score multi-label samples by aggregating per-class scores.
+
+        Parameters
+        ----------
+        X : torch.Tensor
+            Input tensor of shape `(N, D)` (features or logits).
+        y : torch.Tensor
+            Binary label matrix of shape `(N, C)` where `C` matches the
+            number of classes available during `fit()`. Each row must contain at
+            least one positive entry.
+
+        Returns
+        -------
+        torch.Tensor
+            Aggregated per-sample scores of shape `(N,)`.
 
         Raises
         ------
         RuntimeError
-            If `fit` has not been called yet.
-        AssertionError
-            If a scorer fails to provide a threshold.
+            If `fit` has not been called before scoring.
+        ValueError
+            If `y` does not have the expected shape, contains an unexpected
+            number of classes, or any sample has no positive label.
         """
-        if not self.is_trained():
-            raise RuntimeError("Fit must be called before setting thresholds.")
-        for lbl, scorer in self._scorers.items():
-            scorer.set_threshold(q)
-            thres = scorer.get_threshold()
-            assert thres is not None
-            self._thresholds[lbl] = thres
-        self.set_calibrated()
-
-    @override
-    def get_threshold(self, id: int | None = None) -> torch.Tensor | None:
-        """Return the threshold for a specific class.
-
-        After calibration `self._thresholds` maps each class label to its scalar
-        threshold tensor. If the wrapper has not been calibrated or `id` is
-        `None`, `None` is returned; otherwise the threshold tensor for the
-        requested class identifier is returned.
-        """
-        assert isinstance(self._class_labels, torch.Tensor)
-        if (
-            not self.is_calibrated()
-            or id is None
-            or id > len(self._class_labels)
-        ):
-            return None
-
-        return self._thresholds[id]
-
-    def _score(self, X: torch.Tensor) -> torch.Tensor:  # pragma: no cover
-        raise NotImplementedError(
-            "Direct _score is not used; call .score() instead."
-        )
+        if self._class_labels is None:
+            raise RuntimeError("fit must be called before scoring.")
+        if y.dim() != 2:
+            raise ValueError(
+                "y must be a 2-D binary matrix for multi-label scoring."
+            )
+        if X.shape[0] != y.shape[0]:
+            raise ValueError("X and y must have the same number of rows.")
+        if y.shape[1] != len(self._class_labels):
+            raise ValueError(
+                f"Number of label columns ({y.shape[1]}) does not match number of classes ({len(self._class_labels)})."
+            )
+        if (y.sum(dim=1) == 0).any():
+            raise ValueError(
+                "Each sample must have at least one positive label for multi-label scoring."
+            )
+        _scores = self._score_full_matrix(X)
+        mask = y.to(dtype=torch.bool)
+        aggregated = self.aggregation(_scores, mask)
+        return aggregated
 
     @override
     def score(
         self,
         X: torch.Tensor | None = None,
+        y: torch.Tensor | None = None,
         model: torch.nn.Module | None = None,
         loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]]
         | None = None,
         outdir: Path | None = None,
         prefix: str | None = None,
-    ) -> torch.Tensor:
+        full_matrix: bool = False,
+        return_label: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Compute per-class uncertainty scores.
 
         Mirrors the `fit` method in accepting either pre-computed tensors or a
@@ -308,10 +490,16 @@ class ClassWiseScore(scores.UncertaintyScore):
         model:
             `torch.nn.Module` that produces the necessary representation.
         loader:
-            DataLoader yielding the input data for `model`when `model` is
+            DataLoader yielding the input data for `model` when `model` is
             provided.
         outdir, prefix:
             Forwarded to the extractor for any intermediate files.
+        full_matrix:
+            If `True`, returns the full `(N, C)` score matrix without
+            requiring label information. `False` by default.
+        return_label:
+            Boolean. Besides the scores also returns the labels. Useful
+            for the `select()` method. `False` by default.
 
         Returns
         -------
@@ -335,46 +523,65 @@ class ClassWiseScore(scores.UncertaintyScore):
 
         if model_mode:
             assert loader is not None
-            extractor = self._make_extractor(want_labels=False)
+            # If full_matrix we don't need labels, otherwise we do.
+            extractor = self._make_extractor(want_labels=not full_matrix)
             data = extractor.extract(
                 model=model, loader=loader, outdir=outdir, prefix=prefix
             )
             out_key = (
                 "embedding"
-                if issubclass(self.base_score_cls, scores.KNNScore)
+                if issubclass(self.base_score_cls, sp.KNNScore)
                 else "logit"
             )
             X = data.get(out_key)
+            if not full_matrix:
+                y = data.get("label")
 
         assert isinstance(X, torch.Tensor)
 
         if self.pca is not None:
             X = self.pca.transform(X)
 
-        if self._class_labels is None:
-            raise RuntimeError("fit must be called before scoring.")
-        N = X.shape[0]
-        C = len(self._class_labels)
-        _scores = torch.empty((N, C), device=X.device, dtype=X.dtype)
-        for col_idx, label in enumerate(self._class_labels):
-            scorer = self._scorers[int(label.item())]
-            if isinstance(scorer, scores.LogitScore):
-                # X shape (N, C); extract column for this class
-                col_logits = X[:, int(label.item())].unsqueeze(1)
-                _scores[:, col_idx] = scorer.score(col_logits)  # type: ignore[arg-type]
-            else:
-                _scores[:, col_idx] = scorer.score(X)  # type: ignore[arg-type]
+        if self._mode is None:
+            raise RuntimeError("fit() must be called before scoring.")
+
+        if full_matrix:
+            return self._score_full_matrix(X)
+
+        if y is None:
+            raise ValueError(
+                f"Mode '{self._mode.value}' requires labels; pass `y=` or use "
+                "`full_matrix=True` for the label‑free matrix mode."
+            )
+
+        inferred = self._infer_mode(y)
+        if inferred is not self._mode:
+            raise ValueError(
+                f"Model was fit in '{self._mode.value}' mode but received labels "
+                f"of shape {tuple(y.shape)} (inferred '{inferred.value}')."
+            )
+
+        if self._mode is ClassWiseMode.SINGLE_LABEL:
+            _scores = self._score_single_label(X, y)
+        else:
+            _scores = self._score_multi_label(X, y)
+
+        if return_label:
+            return _scores, y
+
         return _scores
 
     @override
     def select(
         self,
         X: torch.Tensor | None = None,
+        y: torch.Tensor | None = None,
         model: torch.nn.Module | None = None,
         loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]]
         | None = None,
         outdir: Path | None = None,
         prefix: str | None = None,
+        full_matrix: bool = False,
     ) -> dict[str, torch.Tensor]:
         """Select samples below per-class thresholds.
 
@@ -397,21 +604,49 @@ class ClassWiseScore(scores.UncertaintyScore):
             `(N, C)` tensor of raw scores and `mask` is the boolean selection
             mask.
         """
-        if self.get_threshold() is None:
+        if self.get_threshold(full_matrix=full_matrix) is None:
             logger.warning(
-                "Threshold has not been set. Trying to set it via `set_threshold()`."
+                "Threshold has not been set; calling set_threshold() with defaults."
             )
             self.set_threshold()
-        scores = self.score(
-            X=X, model=model, loader=loader, outdir=outdir, prefix=prefix
+
+        _scores = self.score(
+            X=X,
+            y=y,
+            model=model,
+            loader=loader,
+            outdir=outdir,
+            prefix=prefix,
+            full_matrix=full_matrix,
+            return_label=self._mode == ClassWiseMode.SINGLE_LABEL,
         )
-        mask = torch.empty_like(scores, dtype=torch.bool)
-        assert self._class_labels is not None
-        for col_idx, label in enumerate(self._class_labels):
-            thr = self.get_threshold(id=int(label.item()))
-            assert thr is not None
-            mask[:, col_idx] = scores[:, col_idx] < thr
-        return {"score": scores, "selected": mask}
+
+        if full_matrix:
+            thr = self.get_threshold(full_matrix=True)
+            assert isinstance(_scores, torch.Tensor)
+            assert isinstance(self._class_labels, list)
+            assert isinstance(thr, dict)
+            mask = torch.stack(
+                [
+                    _scores[:, i] < thr[lbl]
+                    for i, lbl in enumerate(self._class_labels)
+                ],
+                dim=1,
+            )
+        elif self._mode is ClassWiseMode.SINGLE_LABEL:
+            _scores, labels = _scores
+            thr = self.get_threshold()
+            assert labels is not None
+            assert isinstance(thr, dict)
+            thr_vec = torch.stack([thr[int(lbl)] for lbl in labels.tolist()])
+            mask = _scores < thr_vec
+        else:  # multi-label
+            thres = self.get_threshold()
+            assert isinstance(_scores, torch.Tensor)
+            assert isinstance(thres, torch.Tensor)
+            mask = _scores < thres
+
+        return {"score": _scores, "selected": mask}
 
     def plot(
         self, query_scores: torch.Tensor | None = None, bins: int = 100

@@ -346,7 +346,9 @@ class CosineClassWiseScore(ClassWiseScore):
     ident: str = "cosine-classwise"
 
     def __init__(self, **kwargs):
-        super().__init__(base_score_cls=CosineScore, **kwargs)
+        super().__init__(
+            base_score_cls=CosineScore, **kwargs
+        )  # pragma: no cover
 
 
 class MahalanobisScore(KNNScore):
@@ -433,4 +435,6 @@ class MahalanobisClassWiseScore(ClassWiseScore):
     ident: str = "mahalanobis-classwise"
 
     def __init__(self, **kwargs):
-        super().__init__(base_score_cls=MahalanobisScore, **kwargs)
+        super().__init__(
+            base_score_cls=MahalanobisScore, **kwargs
+        )  # pragma: no cover
