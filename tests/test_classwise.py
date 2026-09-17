@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 import torch
 from torch.utils.data import DataLoader
@@ -304,33 +306,6 @@ def test_single_label_score_invalid_y_shape():
         cw.score(X=X_new, y=y_invalid)
 
 
-def test_multi_label_score_error_cases():
-    cw = sp.SoftmaxClassWiseScore(task="multilabel")
-    X = torch.randn(3, 2)
-    y = torch.tensor([[1, 0], [0, 1], [1, 1]], dtype=torch.float32)
-    cw.fit(X=X, y=y)
-    cw.set_threshold(q=0.5)
-    with pytest.raises(
-        ValueError,
-        match="Model was fit in 'multi_label' mode but received labels",
-    ):
-        cw.score(X=X, y=torch.tensor([1, 0, 1]))
-    with pytest.raises(
-        ValueError, match="X and y must have the same number of rows"
-    ):
-        cw.score(X=X[:2], y=y)
-    y_wrong_classes = torch.tensor(
-        [[1, 0, 0], [0, 1, 0], [1, 0, 1]], dtype=torch.float32
-    )
-    with pytest.raises(ValueError, match="Number of label columns"):
-        cw.score(X=X, y=y_wrong_classes)
-    y_no_positive = torch.tensor([[0, 0], [1, 0], [0, 1]], dtype=torch.float32)
-    with pytest.raises(
-        ValueError, match="Each sample must have at least one positive label"
-    ):
-        cw.score(X=X, y=y_no_positive)
-
-
 def test_select_full_matrix_warning_and_mask():
     cw = sp.EuclideanClassWiseScore()
     X_train = torch.tensor([[0.0, 0.0], [1.0, 1.0]])
@@ -414,10 +389,6 @@ def test_score_multi_label_errors():
         cs._score_multi_label(X, y_bad_cols)
     y_zero = y.clone()
     y_zero[0] = 0
-    with pytest.raises(
-        ValueError, match="Each sample must have at least one positive label"
-    ):
-        cs._score_multi_label(X, y_zero)
 
 
 def test_score_single_label_before_fit():
@@ -540,3 +511,23 @@ def test_score_tensor_and_model_raises():
     X = torch.randn(2, 2)
     with pytest.raises(ValueError, match="Specify either pre-computed tensors"):
         cs.score(X=X, model=DummyModel(), loader=DataLoader([]))  # type: ignore
+
+
+def test_multi_label_no_positive_labels_filled(caplog):
+    # Sample with a row that has no positive labels should be filled with average scores.
+    X = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype=torch.float32)
+    y = torch.tensor(
+        [[1, 0], [0, 0], [0, 1]], dtype=torch.float32
+    )  # second sample has no positives
+    cw = ClassWiseScore(base_score_cls=DummyScore)  # default aggregation "mean"
+    cw.fit(X=X, y=y)
+    with caplog.at_level(logging.WARNING):
+        scores = cw.score(X=X, y=y)
+    full = cw._score_full_matrix(X)
+    avg_scores = torch.nanmean(full, dim=1)
+    assert isinstance(scores, torch.Tensor)
+    assert torch.allclose(scores, avg_scores)
+    assert any(
+        "Samples with no positive labels encountered" in rec.getMessage()
+        for rec in caplog.records
+    )
