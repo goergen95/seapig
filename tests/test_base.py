@@ -98,7 +98,7 @@ def test_set_threshold_computes_quantile_and_calibrates() -> None:
     # Expected quantile using torch.nanquantile
     expected = torch.nanquantile(scores, q=0.5)
     thres = s.get_threshold()
-    assert thres is not None
+    assert isinstance(thres, torch.Tensor)
     assert torch.isclose(thres, expected)
     # calibrated flag should be True after set_threshold
     assert s.is_calibrated()
