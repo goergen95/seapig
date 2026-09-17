@@ -454,12 +454,20 @@ class ClassWiseScore(sp.UncertaintyScore):
                 f"Number of label columns ({y.shape[1]}) does not match number of classes ({len(self._class_labels)})."
             )
         if (y.sum(dim=1) == 0).any():
-            raise ValueError(
-                "Each sample must have at least one positive label for multi-label scoring."
+            logger.warning(
+                "Samples with no positive labels encountered; they will be filled with average scores."
             )
         _scores = self._score_full_matrix(X)
         mask = y.to(dtype=torch.bool)
         aggregated = self.aggregation(_scores, mask)
+        # fill in scores for rows with no positive label and emit a warnings
+        nan_mask = torch.isnan(aggregated)
+        if nan_mask.any():
+            logger.warning(
+                "Encountered missing values after aggregation; using average score for these rows."
+            )
+            avg_scores = torch.nanmean(_scores, dim=1)
+            aggregated[nan_mask] = avg_scores[nan_mask]
         return aggregated
 
     @override
