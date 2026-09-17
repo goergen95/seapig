@@ -99,7 +99,7 @@ def test_datamodule_transform_applied_consistently(tmp_path: Path) -> None:
         prefix=None,
     )
     threshold = score.get_threshold()
-    assert threshold is not None
+    assert isinstance(threshold, torch.Tensor)
     manual_selected = manual_scores < threshold
 
     # assertions: same shape and identical numeric results

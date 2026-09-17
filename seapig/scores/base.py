@@ -85,7 +85,7 @@ class UncertaintyScore(torch.nn.Module, ABC):
         """Set a boolean that the score is already calibrated."""
         self.calibrated = True
 
-    def get_threshold(self) -> torch.Tensor | None:
+    def get_threshold(self) -> torch.Tensor | dict[int, torch.Tensor] | None:
         """Get the current threshold value."""
         return self.threshold
 
@@ -128,7 +128,7 @@ class UncertaintyScore(torch.nn.Module, ABC):
         """
 
     @abstractmethod
-    def score(self, *args: Any, **kwargs: Any) -> torch.Tensor:
+    def score(self, *args: Any, **kwargs: Any) -> Any:
         """Calculate the uncertainty score for a tensor of samples.
 
         Returns scores where low values indicate likely inliers and high values
@@ -136,7 +136,7 @@ class UncertaintyScore(torch.nn.Module, ABC):
         """
 
     @abstractmethod
-    def select(self, *args: Any, **kwargs: Any) -> dict[str, torch.Tensor]:
+    def select(self, *args: Any, **kwargs: Any) -> Any:
         """Select samples for prediction based on their uncertainty score.
 
         Samples with scores lower than the threshold are selected for prediction,
