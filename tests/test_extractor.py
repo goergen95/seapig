@@ -18,6 +18,7 @@ from seapig.scores.extractor import (
 )
 from tests.fixtures import (
     BadForwardTask,
+    BadModel,
     BadModelWrongSig,
     DummyModel,
     EmptyModel,
@@ -61,7 +62,7 @@ def test_check_model_valid_and_invalid():
     with pytest.raises(
         AttributeError,
         match=re.escape(
-            "`model.forward()` is required to accept `x` as argument."
+            "`model.predict()` is required to accept `x` as argument."
         ),
     ):
         _resolve_method(BadModelWrongSig())
@@ -136,12 +137,8 @@ def test_normalise_input_variants(raw, key):
 
 
 def test_extract_with_extra_keys(tmp_path: pathlib.Path):
-    # Model returns extra key from batch
-    class ModelWithMeta(torch.nn.Module):
-        def forward(self, x):
-            return {"embedding": x}
 
-    model = ModelWithMeta()
+    model = DummyModel()
 
     # Custom DataLoader yielding dict batches
     class DictDataset(torch.utils.data.IterableDataset):
@@ -225,10 +222,6 @@ def test_load_or_extract_caching(tmp_path: pathlib.Path):
 
 
 def test_extract_missing_output_key_raises():
-    class BadModel(torch.nn.Module):
-        def forward(self, x):
-            return {"wrong": torch.tensor([1])}
-
     model = BadModel()
     loader = make_loader(torch.randn(2, 2))
     extractor = ModelExtractor(

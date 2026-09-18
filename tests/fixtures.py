@@ -18,20 +18,25 @@ class EmptyModel(torch.nn.Module):
     pass
 
 
+class BadModel(torch.nn.Module):
+    def predict(self, x):
+        return {"wrong": torch.tensor([1])}
+
+
 class BadModelWrongSig(torch.nn.Module):
-    def forward(self, y):  # type: ignore[override]
+    def predict(self, y):  # type: ignore[override]
         return torch.zeros(1, 2)  # pragma: no cover
 
 
 class BadForwardTask(torch.nn.Module):
-    def forward(self, x: torch.Tensor):
+    def predict(self, x: torch.Tensor):
         return [x]
 
 
 class BadPredictStepTask(LightningModule):
     """Task with a predict_step that returns a list instead of dict/tensor."""
 
-    def forward(self, x: torch.Tensor):
+    def predict(self, x: torch.Tensor):
         pass  # pragma: no cover
 
     def predict_step(self, batch, batch_idx: int, dataloader_idx: int = 0):
@@ -44,7 +49,7 @@ class DummyModel(torch.nn.Module):
         self.lin = torch.nn.Linear(1, 1)
         self.test_metrics = MetricCollection(Accuracy(task="binary"))
 
-    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
+    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         return {
             "embedding": x.view(x.shape[0], -1),
             "logit": x,
@@ -65,26 +70,41 @@ class MinimalEmbedding(EmbeddingScore):
         pass  # pragma: no cover
 
 
+class DummyTask(LightningModule):
+    """Forward returns predictions; embed returns the input so selection can be driven by input."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        # base metric required by SelectiveInferenceTask (will be wrapped by SelectiveMetric)
+        self.test_metrics = Accuracy(task="binary")
+
+    def predict(self, x: torch.Tensor) -> torch.Tensor:
+        # predictions encoded in second column (0/1)
+        return x[:, 1].long()
+
+
 class DummyTaskTensor(LightningModule):
     """Task returning a tensor from ``predict``."""
 
     test_metrics: MetricCollection = MetricCollection(Accuracy(task="binary"))
 
-    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
-        return {"prediction": self.predict(x), "embedding": x}
-
-    def predict(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor):
         if isinstance(x, list):
             x = x[0]
         if isinstance(x, dict):
             x = next(iter(x.values()))
-        return 2 * x
+        x = 2 * x
+        return x
+
+    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
+        x = self.forward(x)
+        return {"prediction": x, "embedding": x}
 
 
 class DummyTaskDict(DummyTaskTensor):
     """Task returning a dict from ``predict``."""
 
-    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:  # ty: ignore[invalid-method-override]
+    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         return {"prediction": 3 * x, "extra": x.sum(dim=1)}
 
 
