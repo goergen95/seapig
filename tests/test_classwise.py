@@ -151,16 +151,38 @@ def test_unknown_aggregation_raises():
 
 def test_make_extractor_branches():
     # KNN branch
-    cw_knn = ClassWiseScore(base_score_cls=sp.EuclideanScore)
-    extractor_knn = cw_knn._make_extractor(want_labels=True)
-    assert extractor_knn.output_keys == ("embedding",)
-    assert extractor_knn.input_keys == ("image", "label")
+    cw = ClassWiseScore(base_score_cls=sp.EuclideanScore)
+    # Input
+    extractor = cw._make_extractor(labels_from="input")
+    assert extractor.output_keys == ("embedding",)
+    assert extractor.input_keys == ("image", "label")
 
-    # Logit branch (SoftmaxScore inherits from LogitScore)
-    cw_logit = ClassWiseScore(base_score_cls=sp.SoftmaxScore, task="multilabel")
-    extractor_logit = cw_logit._make_extractor(want_labels=False)
-    assert extractor_logit.output_keys == ("logit",)
-    assert extractor_logit.input_keys == ("image",)
+    # Output
+    extractor = cw._make_extractor(labels_from="output")
+    assert extractor.output_keys == ("embedding", "prediction")
+    assert extractor.input_keys == ("image",)
+
+    # None
+    extractor = cw._make_extractor(labels_from=None)
+    assert extractor.output_keys == ("embedding",)
+    assert extractor.input_keys == ("image",)
+
+    # Logit branch
+    cw = ClassWiseScore(base_score_cls=sp.SoftmaxScore, task="multilabel")
+    # Input
+    extractor = cw._make_extractor(labels_from="input")
+    assert extractor.output_keys == ("logit",)
+    assert extractor.input_keys == ("image", "label")
+
+    # Output
+    extractor = cw._make_extractor(labels_from="output")
+    assert extractor.output_keys == ("logit", "prediction")
+    assert extractor.input_keys == ("image",)
+
+    # None
+    extractor = cw._make_extractor(labels_from=None)
+    assert extractor.output_keys == ("logit",)
+    assert extractor.input_keys == ("image",)
 
 
 def test_model_mode_fit_with_pca_and_validation():
@@ -434,10 +456,10 @@ def test_score_model_mode_assigns_y():
             self.out_key = out_key
 
         def extract(self, model, loader, **kwargs):
-            return {self.out_key: X, "label": y}
+            return {self.out_key: X, "prediction": y}
 
     # Patch _make_extractor to return our dummy extractor
-    cs._make_extractor = lambda want_labels: DummyExtractor(  # type: ignore
+    cs._make_extractor = lambda labels_from: DummyExtractor(  # type: ignore
         out_key="embedding" if issubclass(DummyScore, sp.KNNScore) else "logit"
     )
     # Call score in model mode (full_matrix=False) to hit line 538
@@ -462,7 +484,7 @@ def test_score_model_mode_missing_label_raises():
         def extract(self, model, loader, **kwargs):
             return {self.out_key: X}
 
-    cs._make_extractor = lambda want_labels: DummyExtractorNoLabel(  # type: ignore
+    cs._make_extractor = lambda labels_from: DummyExtractorNoLabel(  # type: ignore
         out_key="embedding" if issubclass(DummyScore, sp.KNNScore) else "logit"
     )
     with pytest.raises(ValueError, match="Mode 'single_label' requires labels"):
@@ -528,4 +550,32 @@ def test_multi_label_no_positive_labels_filled(caplog):
     assert any(
         "Samples with no positive labels encountered" in rec.getMessage()
         for rec in caplog.records
+    )
+
+
+def test_extractor_collects_output_and_prediction():
+
+    class SimpleModel(torch.nn.Module):
+        def forward(self, x: torch.Tensor):
+            pred = (x > 0).long()
+            return {"embedding": x, "prediction": pred}
+
+    data = [
+        {"image": torch.tensor([-1.0, 2.0]), "label": torch.tensor(0)},
+        {"image": torch.tensor([3.0, -4.0]), "label": torch.tensor(1)},
+    ]
+    loader = DataLoader(data, batch_size=2, shuffle=False)  # type: ignore
+
+    cw = ClassWiseScore(base_score_cls=sp.EuclideanScore)
+    extractor = cw._make_extractor(labels_from="input")
+    extracted = extractor.extract(model=SimpleModel(), loader=loader)
+    assert "label" in extracted, "The label key should be present"
+    extractor = cw._make_extractor(labels_from="output")
+    extracted = extractor.extract(model=SimpleModel(), loader=loader)
+    assert "prediction" in extracted, "The prediction key should be present"
+    # Expected values: 0 where the original input ≤ 0, 1 where > 0.
+    # The loader batches the two samples together, so we get a (2, 2) tensor.
+    expected = torch.tensor([[0, 1], [1, 0]], dtype=torch.long)
+    assert torch.equal(extracted["prediction"], expected), (
+        "Prediction values are incorrect"
     )

@@ -126,26 +126,29 @@ class ClassWiseScore(sp.UncertaintyScore):
             return lambda s, m: s.masked_fill(~m, float("inf")).amin(dim=1)
         raise ValueError(f"Unknown aggregation '{agg}'")
 
-    def _make_extractor(self, want_labels: bool) -> ModelExtractor:
+    def _make_extractor(self, labels_from: str | None = None) -> ModelExtractor:
         """Return a `ModelExtractor` configured for the wrapped scorer.
 
-        * For KNN based scores we request the `embed` method.
-        * For Logit based scores we request the `logits` method.
-        `want_labels` determines whether the `label` key is part of the
-        `input_keys` (required during calibration / training but not during
-        scoring).
+        * For KNN based scores we request the `embedding` key.
+        * For Logit based scores we request the `logit` key.
+        * `labels_from` determines whether the `label` key is part of the
+        `input_keys` (required during fit) or from the
+        model outputs (required during scoring/selection).
         """
+        in_keys = ("image",)
         if issubclass(self.base_score_cls, sp.KNNScore):
-            out_key = "embedding"
-            keys = ("image", "label")
+            out_keys = ("embedding",)
         elif issubclass(self.base_score_cls, sp.LogitScore):
-            out_key = "logit"
-            keys = ("image", "label") if want_labels else ("image",)
+            out_keys = ("logit",)
         else:  # pragma: no cover
             raise TypeError(
                 "ClassWiseScore only supports KNNScore or LogitScore subclasses"
             )
-        return ModelExtractor(output_keys=(out_key,), input_keys=keys)
+        if labels_from == "input":
+            in_keys += ("label",)
+        if labels_from == "output":
+            out_keys += ("prediction",)
+        return ModelExtractor(output_keys=out_keys, input_keys=in_keys)
 
     def _extract_class_data(
         self,
@@ -238,7 +241,7 @@ class ClassWiseScore(sp.UncertaintyScore):
                 if issubclass(self.base_score_cls, sp.KNNScore)
                 else "logit"
             )
-            extractor = self._make_extractor(want_labels=True)
+            extractor = self._make_extractor(labels_from="input")
             data = extractor.extract(
                 model=model,
                 loader=loaders["train"],
@@ -527,8 +530,10 @@ class ClassWiseScore(sp.UncertaintyScore):
 
         if model_mode:
             assert loader is not None
-            # If full_matrix we don't need labels, otherwise we do.
-            extractor = self._make_extractor(want_labels=not full_matrix)
+            # If full_matrix we don't need labels, otherwise we extract from output
+            extractor = self._make_extractor(
+                labels_from=None if full_matrix else "output"
+            )
             data = extractor.extract(
                 model=model, loader=loader, outdir=outdir, prefix=prefix
             )
@@ -539,7 +544,7 @@ class ClassWiseScore(sp.UncertaintyScore):
             )
             X = data.get(out_key)
             if not full_matrix:
-                y = data.get("label")
+                y = data.get("prediction")
 
         assert isinstance(X, torch.Tensor)
 
