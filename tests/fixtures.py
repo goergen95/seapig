@@ -14,21 +14,28 @@ from seapig.scores.embed import EmbeddingScore
 from seapig.scores.utils import TensorPCA
 
 
-# Model missing the required method
-class BadModelNoMethod(torch.nn.Module):
-    def forward(self, x):
-        return x  # pragma: no cover
+class EmptyModel(torch.nn.Module):
+    pass
 
 
-# Model with wrong signature (no 'x' argument)
 class BadModelWrongSig(torch.nn.Module):
-    def embed(self):  # type: ignore[override]
+    def forward(self, y):  # type: ignore[override]
         return torch.zeros(1, 2)  # pragma: no cover
 
 
-class EmptyModel(torch.nn.Module):
-    def embed(self, x):
-        raise RuntimeError("Should not be called")  # pragma: no cover
+class BadForwardTask(torch.nn.Module):
+    def forward(self, x: torch.Tensor):
+        return [x]
+
+
+class BadPredictStepTask(LightningModule):
+    """Task with a predict_step that returns a list instead of dict/tensor."""
+
+    def forward(self, x: torch.Tensor):
+        pass  # pragma: no cover
+
+    def predict_step(self, batch, batch_idx: int, dataloader_idx: int = 0):
+        return [batch]
 
 
 class DummyModel(torch.nn.Module):
@@ -37,14 +44,12 @@ class DummyModel(torch.nn.Module):
         self.lin = torch.nn.Linear(1, 1)
         self.test_metrics = MetricCollection(Accuracy(task="binary"))
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x
-
-    def embed(self, x: torch.Tensor) -> torch.Tensor:
-        return x.view(x.shape[0], -1)
-
-    def logits(self, x: torch.Tensor) -> torch.Tensor:
-        return x  # pragma: no cover
+    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
+        return {
+            "embedding": x.view(x.shape[0], -1),
+            "logit": x,
+            "prediction": x,
+        }
 
 
 class MinimalEmbedding(EmbeddingScore):
@@ -65,6 +70,9 @@ class DummyTaskTensor(LightningModule):
 
     test_metrics: MetricCollection = MetricCollection(Accuracy(task="binary"))
 
+    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
+        return {"prediction": self.predict(x), "embedding": x}
+
     def predict(self, x: torch.Tensor) -> torch.Tensor:
         if isinstance(x, list):
             x = x[0]
@@ -72,23 +80,12 @@ class DummyTaskTensor(LightningModule):
             x = next(iter(x.values()))
         return 2 * x
 
-    def embed(self, x: torch.Tensor) -> torch.Tensor:
-        return x  # pragma: no cover
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.predict(x)
-
 
 class DummyTaskDict(DummyTaskTensor):
     """Task returning a dict from ``predict``."""
 
     def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:  # ty: ignore[invalid-method-override]
-        return {"predictions": 3 * x, "extra": x.sum(dim=1)}
-
-
-class BadTask(DummyTaskTensor):
-    def predict(self, x: torch.Tensor) -> list[torch.Tensor]:  # type: ignore[override, ty:invalid-method-override]
-        return [x]  # wrong type
+        return {"prediction": 3 * x, "extra": x.sum(dim=1)}
 
 
 class NoMetricTask(DummyTaskDict):

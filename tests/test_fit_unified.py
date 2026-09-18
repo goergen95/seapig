@@ -32,20 +32,20 @@ class DummyLogitModel(torch.nn.Module):
         self.K = K
         self.M = M
 
-    def logits(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor):
         N = x.shape[0]
         if self.task == "multiclass":
             if self.per_member:
-                return torch.randn(N, self.K, self.M)
-            return torch.randn(N, self.K)
+                return {"logit": torch.randn(N, self.K, self.M)}
+            return {"logit": torch.randn(N, self.K)}
         if self.task == "binary":
             if self.per_member:
-                return torch.randn(N, self.M)
-            return torch.randn(N)
+                return {"logit": torch.randn(N, self.M)}
+            return {"logit": torch.randn(N)}
         if self.task == "multilabel":
             if self.per_member:
-                return torch.randn(N, self.K, self.M)
-            return torch.randn(N, self.K)
+                return {"logit": torch.randn(N, self.K, self.M)}
+            return {"logit": torch.randn(N, self.K)}
 
 
 def test_fit_with_embeddings_only() -> None:

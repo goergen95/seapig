@@ -66,7 +66,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
         self.register_buffer("ref_embeddings", None)
         self.register_buffer("cal_embeddings", None, persistent=False)
         self.extractor = ModelExtractor(
-            method_name="embed", output_key="embedding", input_keys=("image",)
+            output_keys=("embedding",), input_keys=("image",)
         )
 
     def _fit_pca(self) -> None:

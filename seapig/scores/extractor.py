@@ -16,23 +16,25 @@ from seapig.utils.progress import track
 
 TensorDict = dict[str, torch.Tensor]
 Batch = torch.Tensor | Mapping[str, Any] | Sequence[Any]
+Extract = Callable[..., dict[str, torch.Tensor]]
 
 
-def _resolve_method(model: torch.nn.Module, name: str) -> Callable[..., Any]:
-    """Return `model.<name>` after validating that it can be called with `x`."""
+def _resolve_method(
+    model: torch.nn.Module, method_name: str = "forward"
+) -> Extract:
+    """Resolve a callable method on a torch.nn.Module."""
     if not isinstance(model, torch.nn.Module):
+        raise TypeError("`model` must be a torch.nn.Module")
+    if not hasattr(model, method_name):
         raise TypeError(
-            f"`model` must be a torch.nn.Module, got {type(model)}."
+            f"`model` is required to have a `{method_name}()` method."
         )
-
-    method = getattr(model, name, None)
-    if method is None:
-        raise TypeError(f"`model` is required to have a `{name}()` method.")
+    method = getattr(model, method_name)
     if not callable(method):
-        raise TypeError(f"`model.{name}` must be callable.")
+        raise TypeError(f"`model.{method_name}` must be callable")
     if "x" not in inspect.signature(method).parameters:
         raise AttributeError(
-            f"`{name}()` is required to accept `x` as argument."
+            f"`model.{method_name}()` is required to accept `x` as argument."
         )
     return method
 
@@ -91,23 +93,6 @@ def _normalise_inputs(
     raise TypeError(f"Unsupported batch type: {type(batch)}.")
 
 
-def _normalise_output(raw: Any, key: str) -> torch.Tensor:
-    """Reduce whatever the model returned to a single tensor."""
-    if isinstance(raw, torch.Tensor):
-        return raw
-    if isinstance(raw, Mapping):
-        if key not in raw:
-            raise KeyError(
-                f"Expected key '{key}' in model output (got {list(raw)})."
-            )
-        return raw[key]
-    if isinstance(raw, Sequence):
-        if not raw:
-            raise ValueError("Model returned an empty sequence.")
-        return raw[0]
-    raise TypeError(f"Unsupported model output type: {type(raw)}.")
-
-
 def _to_cpu(value: Any) -> torch.Tensor:
     if not isinstance(value, torch.Tensor):
         raise TypeError(f"Expected a tensor, got {type(value)}.")
@@ -129,35 +114,33 @@ def _move(
 
 
 class ModelExtractor:
-    """Extract tensors from a model over a `~torch.utils.data.DataLoader`.
-
-    Arguments
-    ----------
-    `method_name`
-        Model method called on every batch, e.g. `"embed"` or `"logits"`.
-    `output_key`
-        Name under which the method's result is stored.
-    `input_keys`
-        The first key selects the tensor handed to `method_name`; every
-        further key is taken from the batch and appended to the result
-        (e.g. `("image", "label")`).
-    `cache_tag`
-        Suffix used for the cache file name.
-    """
+    """Extract tensors from a model over a `~torch.utils.data.DataLoader`."""
 
     def __init__(
         self,
-        method_name: str,
-        output_key: str,
-        input_keys: tuple[str, ...],
+        input_keys: tuple[str, ...] = (),
+        output_keys: tuple[str, ...] = (),
         cache_tag: str | None = None,
     ):
+        """Create a ModelExtractor.
 
-        self.method_name = method_name
-        self.output_key = output_key
+        Parameters
+        ----------
+        input_keys: tuple[str, ...]
+            Keys to extract from each input batch. The first key selects the tensor
+            passed to the model's `forward` method; any additional keys are stored
+            as extra inputs alongside the model outputs.
+        output_keys: tuple[str, ...]
+            Keys to retain from the dictionary returned by the model's `forward`
+            method.
+        cache_tag: str | None, optional
+            Tag used for the cache filename `<prefix>-<cache_tag>.pt`. If `None`
+            (the default), the first `output_key` is used.
+        """
+        self.output_keys = output_keys
         self.input_keys = input_keys
         self._validated_keys()
-        self.cache_tag = output_key if cache_tag is None else cache_tag
+        self.cache_tag = output_keys[0] if cache_tag is None else cache_tag
 
     def extract(
         self,
@@ -168,10 +151,40 @@ class ModelExtractor:
         prefix: str | None = None,
         overwrite: bool = False,
     ) -> dict[str, torch.Tensor]:
-        """Return `{output_key: tensor, **extra_input_keys}` on the model device.
+        """Extract tensors for the specified `output_keys` from a model using a DataLoader.
 
-        Results are cached as `<outdir>/<prefix>-<cache_tag>.pt` whenever both
-        `outdir` and `prefix` are provided.
+        Parameters
+        ----------
+        model: torch.nn.Module
+            The model whose `forward` method will be called. It must accept an
+            argument named `x` and return a mapping from output keys to tensors.
+        loader: DataLoader[Any]
+            An iterator yielding batches. Each batch can be a tensor, a mapping,
+            or a sequence; the keys in `input_keys` are used to locate the
+            tensor(s) passed to the model.
+        outdir: Path | str | None, optional
+            Directory in which to store a cache file. If `None` (default), no
+            caching is performed.
+        prefix: str | None, optional
+            Prefix for the cache filename. Required together with `outdir` to
+            enable caching.
+        overwrite: bool, default `False`
+            If `True` and a cache file already exists, it will be overwritten;
+            otherwise the existing cache is loaded.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            A dictionary containing the extracted `output_keys` tensors as well
+            as any `extra_input_keys` defined in `input_keys` (excluding the
+            first key which is used as the model input). The tensors are placed on
+            the same device as the model.
+
+        Notes
+        -----
+        Cached results are saved to `<outdir>/<prefix>-<cache_tag>.pt` where
+        `cache_tag` defaults to the first `output_key` unless overridden in the
+        constructor.
         """
         path = _resolve_cache_path(outdir, prefix, self.cache_tag)
 
@@ -192,21 +205,23 @@ class ModelExtractor:
         keys = tuple(self.input_keys)
         if not keys:
             raise ValueError(f"{self}.input_keys must not be empty.")
-        if self.output_key in keys[1:]:
+        # Ensure no output key collides with extra input keys
+        intersect = set(self.output_keys).intersection(keys[1:])
+        if intersect:
             raise ValueError(
-                f"output_key '{self.output_key}' collides with input_keys {keys[1:]}."
+                f"output_keys {self.output_keys} collide with input_keys {keys[1:]}."
             )
 
     @torch.inference_mode()
     def _extract_loader(
         self,
         model: torch.nn.Module,
-        loader: DataLoader[Any],
+        loader: DataLoader[dict[str, torch.Tensor]],
         keys: Sequence[str],
     ) -> dict[str, torch.Tensor]:
         """Run the model over all batches and concatenate the results (on CPU)."""
         has_batch = False
-        method = _resolve_method(model, self.method_name)
+        method = _resolve_method(model)
         input_key, *extra_keys = keys
 
         was_training = model.training
@@ -216,10 +231,17 @@ class ModelExtractor:
             for batch in track(loader, desc="Iterating over loader"):
                 has_batch = True
                 inputs = _normalise_inputs(batch, keys)
-                output = _normalise_output(
-                    method(inputs[input_key]), self.output_key
-                )
-                collected[self.output_key].append(_to_cpu(output))
+                out_dict = method(inputs[input_key])
+                if not isinstance(out_dict, Mapping):
+                    raise TypeError(
+                        f"The model's forward method must return a dict, got {type(out_dict)}."
+                    )
+                for out_key in self.output_keys:
+                    if out_key not in out_dict:
+                        raise KeyError(
+                            f"Expected key '{out_key}' in model output (got {list(out_dict)})."
+                        )
+                    collected[out_key].append(_to_cpu(out_dict[out_key]))
                 for key in extra_keys:
                     collected[key].append(_to_cpu(inputs[key]))
         finally:
@@ -246,7 +268,7 @@ class ModelExtractor:
         path: Path | None,
     ) -> None:
         source = f"Cached file {path}" if path is not None else "Extracted data"
-        expected = (self.output_key, *keys[1:])
+        expected = (*self.output_keys, *keys[1:])
         missing = [key for key in expected if key not in data]
         if missing:
             raise ValueError(f"{source} is missing key(s) {missing}.")

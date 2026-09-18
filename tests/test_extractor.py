@@ -1,4 +1,5 @@
 import pathlib
+import re
 from typing import cast
 
 import pytest
@@ -11,20 +12,30 @@ from seapig.scores.extractor import (
     _model_device,
     _move,
     _normalise_inputs,
-    _normalise_output,
     _resolve_cache_path,
     _resolve_method,
     _to_cpu,
 )
 from tests.fixtures import (
-    BadModelNoMethod,
+    BadForwardTask,
     BadModelWrongSig,
     DummyModel,
     EmptyModel,
 )
 
 
-# Helper to create a deterministic DataLoader yielding tensors
+def test_extract_non_mapping_output_raises():
+    model = BadForwardTask()
+    # Use a simple loader with a single tensor batch
+    tensor = torch.randn(2, 3)
+    loader = make_loader(tensor, batch_size=1)
+    extractor = ModelExtractor(
+        output_keys=("embedding",), input_keys=("image",)
+    )
+    with pytest.raises(TypeError, match="must return a dict"):
+        extractor.extract(model, loader)
+
+
 def make_loader(tensor: torch.Tensor, batch_size: int = 1):
     dataset = TensorDataset(tensor)
 
@@ -40,19 +51,20 @@ def make_loader(tensor: torch.Tensor, batch_size: int = 1):
 
 
 def test_check_model_valid_and_invalid():
+    _resolve_method(DummyModel())
 
-    # Valid model should not raise
-    _resolve_method(DummyModel(), "embed")
-
-    # Missing method raises TypeError
     with pytest.raises(
-        TypeError, match=r"`model` is required to have a `embed\(\)` method."
+        TypeError, match=r"`model` is required to have a `noop\(\)` method."
     ):
-        _resolve_method(BadModelNoMethod(), "embed")
+        _resolve_method(DummyModel(), "noop")
 
-    # Wrong signature raises AttributeError
-    with pytest.raises(AttributeError):
-        _resolve_method(BadModelWrongSig(), "embed")
+    with pytest.raises(
+        AttributeError,
+        match=re.escape(
+            "`model.forward()` is required to accept `x` as argument."
+        ),
+    ):
+        _resolve_method(BadModelWrongSig())
 
 
 def test_setup_path_and_warnings(tmp_path: pathlib.Path):
@@ -98,20 +110,7 @@ def test_write_and_load_roundtrip(tmp_path: pathlib.Path):
         ({"out": torch.randn(1, 4)}, "out"),
     ],
 )
-def test_normalise_output_variants(raw, key):
-    # Use a copy of raw to avoid mutation issues in parametrization
-    result = _normalise_output(raw, key)
-    assert isinstance(result, torch.Tensor)
-
-
-def test_normalise_output_errors():
-    with pytest.raises(KeyError):
-        _normalise_output({"wrong": torch.tensor([1])}, "good")
-    with pytest.raises(TypeError):
-        _normalise_output(123, "any")
-
-
-def test_normalise_input_variants():
+def test_normalise_input_variants(raw, key):
     # Tensor input
     t = torch.randn(4, 5)
     out = _normalise_inputs(t, ["img"])
@@ -139,8 +138,8 @@ def test_normalise_input_variants():
 def test_extract_with_extra_keys(tmp_path: pathlib.Path):
     # Model returns extra key from batch
     class ModelWithMeta(torch.nn.Module):
-        def embed(self, x):
-            return x
+        def forward(self, x):
+            return {"embedding": x}
 
     model = ModelWithMeta()
 
@@ -152,9 +151,7 @@ def test_extract_with_extra_keys(tmp_path: pathlib.Path):
 
     loader = torch.utils.data.DataLoader(DictDataset(), batch_size=1)
     extractor = ModelExtractor(
-        method_name="embed",
-        output_key="embedding",
-        input_keys=("image", "meta"),
+        output_keys=("embedding",), input_keys=("image", "meta")
     )
     result = extractor.extract(model, loader, outdir=tmp_path, prefix="test")
     # Verify both keys present
@@ -175,7 +172,7 @@ def test_extract_missing_input_key_raises():
 
     loader = torch.utils.data.DataLoader(BadDataset(), batch_size=1)
     extractor = ModelExtractor(
-        method_name="embed", output_key="embedding", input_keys=("image",)
+        output_keys=("embedding",), input_keys=("image",)
     )
     with pytest.raises(KeyError):
         extractor.extract(model, loader)
@@ -188,7 +185,7 @@ def test_extract_concatenates_and_respects_training_state():
         torch.arange(12, dtype=torch.float32).reshape(4, 3), batch_size=2
     )
     extractor = ModelExtractor(
-        method_name="embed", output_key="embedding", input_keys=("image",)
+        output_keys=("embedding",), input_keys=("image",)
     )
     result = extractor.extract(model, loader)
     # Should concatenate 4 rows of 3 columns
@@ -201,7 +198,7 @@ def test_extract_empty_loader_raises():
     model = DummyModel()
     empty_loader = make_loader(torch.empty((0, 2)), batch_size=1)
     extractor = ModelExtractor(
-        method_name="embed", output_key="embedding", input_keys=("image",)
+        output_keys=("embedding",), input_keys=("image",)
     )
     with pytest.raises(ValueError, match="No batches found in loader"):
         extractor.extract(model, empty_loader)
@@ -213,10 +210,7 @@ def test_load_or_extract_caching(tmp_path: pathlib.Path):
     loader = make_loader(tensor, batch_size=5)
     path = tmp_path / "cached-embedding.pt"
     extractor = ModelExtractor(
-        method_name="embed",
-        output_key="embedding",
-        input_keys=("image",),
-        cache_tag="embedding",
+        output_keys=("embedding",), input_keys=("image",), cache_tag="embedding"
     )
     # First call extracts and writes file
     data1 = extractor.extract(model, loader, outdir=tmp_path, prefix="cached")
@@ -232,13 +226,13 @@ def test_load_or_extract_caching(tmp_path: pathlib.Path):
 
 def test_extract_missing_output_key_raises():
     class BadModel(torch.nn.Module):
-        def embed(self, x):
+        def forward(self, x):
             return {"wrong": torch.tensor([1])}
 
     model = BadModel()
     loader = make_loader(torch.randn(2, 2))
     extractor = ModelExtractor(
-        method_name="embed", output_key="embedding", input_keys=("image",)
+        output_keys=("embedding",), input_keys=("image",)
     )
     with pytest.raises(KeyError):
         extractor.extract(model, loader)
@@ -248,10 +242,7 @@ def test_prefix_tag_handling(tmp_path: pathlib.Path):
     model = DummyModel()
     loader = make_loader(torch.randn(2, 2))
     extractor = ModelExtractor(
-        method_name="embed",
-        output_key="embedding",
-        input_keys=("image",),
-        cache_tag="logits",
+        output_keys=("embedding",), input_keys=("image",), cache_tag="logits"
     )
     result = extractor.extract(model, loader, outdir=tmp_path, prefix="base")
     expected_path = tmp_path / "base-logits.pt"
@@ -266,10 +257,7 @@ def test_extract_loader_uses_setup_path_and_load_or_extract(
     tensor = torch.randn(3, 2)
     loader = make_loader(tensor)
     extractor = ModelExtractor(
-        method_name="embed",
-        output_key="embedding",
-        input_keys=("image",),
-        cache_tag="embedding",
+        output_keys=("embedding",), input_keys=("image",), cache_tag="embedding"
     )
     out = extractor.extract(model, loader, outdir=tmp_path, prefix="pref")
     assert "embedding" in out
@@ -299,56 +287,15 @@ def test_normalise_inputs_sequence_too_short():
         _normalise_inputs([torch.tensor([1])], ["a", "b"])
 
 
-def test_normalise_output_empty_sequence():
-    # Empty list should raise ValueError
-    with pytest.raises(ValueError, match="Model returned an empty sequence"):
-        _normalise_output([], "any")
-
-
 def test_load_invalid_type_raises(tmp_path: pathlib.Path):
     # Save a tensor (not a mapping) and attempt to load via _load
     path = tmp_path / "bad.pt"
     torch.save(torch.tensor([1, 2, 3]), path)
-    extractor = ModelExtractor(
-        method_name="embed", output_key="emb", input_keys=("x",)
-    )
+    extractor = ModelExtractor(output_keys=("emb",), input_keys=("x",))
     with pytest.raises(
         TypeError, match="Cached file .* does not contain a dict of tensors"
     ):
         extractor._load(path)
-
-
-def test_model_device_returns_parameter_device():
-    class SimpleModel(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.linear = torch.nn.Linear(2, 2).to("cpu")
-
-        def forward(self, x):
-            pass  # pragma: no cover
-
-    model = SimpleModel()
-    device = _model_device(model)
-    assert device.type == "cpu"
-
-    # Ensure non-module raises TypeError
-    class NotAModule:
-        pass
-
-    with pytest.raises(TypeError, match="`model` must be a torch.nn.Module"):
-        _resolve_method(NotAModule(), "embed")  # type: ignore
-
-    class BadModelNonCallable(torch.nn.Module):
-        embed = 42  # not callable
-
-    with pytest.raises(TypeError, match=r"`model.embed` must be callable"):
-        _resolve_method(BadModelNonCallable(), "embed")
-
-    class BadModelNonCallable(torch.nn.Module):
-        embed = 42  # not callable
-
-    with pytest.raises(TypeError, match=r"`model.embed` must be callable"):
-        _resolve_method(BadModelNonCallable(), "embed")
 
 
 def test_resolve_cache_path_both_none():
@@ -401,29 +348,23 @@ def test_concat_and_move_operations():
 def test_validated_keys_errors():
     # Empty input_keys should raise
     with pytest.raises(ValueError, match="must not be empty"):
-        ModelExtractor(method_name="embed", output_key="out", input_keys=())
+        ModelExtractor(output_keys=("out",), input_keys=())
     # Collision between output_key and extra input_keys should raise
-    with pytest.raises(ValueError, match="collides with input_keys"):
-        ModelExtractor(
-            method_name="embed", output_key="meta", input_keys=("x", "meta")
-        )
+    with pytest.raises(ValueError, match="collide with input_keys"):
+        ModelExtractor(output_keys=("meta",), input_keys=("x", "meta"))
 
 
 def test_load_non_mapping(tmp_path: pathlib.Path):
     path = tmp_path / "bad.pt"
     torch.save(torch.randn(2, 2), path)  # save a tensor, not a dict
-    extractor = ModelExtractor(
-        method_name="embed", output_key="out", input_keys=("x",)
-    )
+    extractor = ModelExtractor(output_keys=("out",), input_keys=("x",))
     with pytest.raises(TypeError, match="does not contain a dict of tensors"):
         extractor._load(path)
 
 
 def test_validate_data_missing_key(tmp_path: pathlib.Path):
     # Use an extractor that expects an extra key 'meta' which the loader won't provide
-    extractor = ModelExtractor(
-        method_name="embed", output_key="out", input_keys=("x", "meta")
-    )
+    extractor = ModelExtractor(output_keys=("out",), input_keys=("x", "meta"))
     # Create a minimal data dict missing the extra 'meta' key
     data = {"out": torch.randn(2, 2)}
     assert "meta" not in data
@@ -438,10 +379,7 @@ def test_load_existing_cache_warn(tmp_path: pathlib.Path):
     torch.save(data, path)
 
     extractor = ModelExtractor(
-        method_name="embed",
-        output_key="embedding",
-        input_keys=("image",),
-        cache_tag="embedding",
+        output_keys=("embedding",), input_keys=("image",), cache_tag="embedding"
     )
     # Empty loader (won't be used)
     loader = DataLoader([])  # type: ignore
@@ -457,17 +395,6 @@ def test_load_existing_cache_warn(tmp_path: pathlib.Path):
     assert torch.equal(result["embedding"], data["embedding"])
 
 
-def test_resolve_method_missing():
-    class NoMethodModel(torch.nn.Module):
-        def forward(self, x):
-            return x  # pragma: no cover
-
-    with pytest.raises(
-        TypeError, match=r"`model` is required to have a `embed\(\)` method"
-    ):
-        _resolve_method(NoMethodModel(), "embed")
-
-
 def test_normalise_inputs_mapping_missing_key():
     with pytest.raises(KeyError, match="Keys \\['b'\\] missing in batch"):
         _normalise_inputs({"a": torch.tensor([1])}, ["a", "b"])
@@ -480,8 +407,3 @@ def test_normalise_inputs_sequence_success():
     assert list(result.keys()) == ["first", "second"]
     assert torch.equal(result["first"], torch.tensor([1]))
     assert torch.equal(result["second"], torch.tensor([2]))
-
-
-def test_normalise_output_mapping_missing_key():
-    with pytest.raises(KeyError, match="Expected key 'out' in model output"):
-        _normalise_output({"wrong": torch.tensor([0])}, "out")
