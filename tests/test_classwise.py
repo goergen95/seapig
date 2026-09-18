@@ -153,15 +153,13 @@ def test_make_extractor_branches():
     # KNN branch
     cw_knn = ClassWiseScore(base_score_cls=sp.EuclideanScore)
     extractor_knn = cw_knn._make_extractor(want_labels=True)
-    assert extractor_knn.method_name == "embed"
-    assert extractor_knn.output_key == "embedding"
+    assert extractor_knn.output_keys == ("embedding",)
     assert extractor_knn.input_keys == ("image", "label")
 
     # Logit branch (SoftmaxScore inherits from LogitScore)
     cw_logit = ClassWiseScore(base_score_cls=sp.SoftmaxScore, task="multilabel")
     extractor_logit = cw_logit._make_extractor(want_labels=False)
-    assert extractor_logit.method_name == "logits"
-    assert extractor_logit.output_key == "logit"
+    assert extractor_logit.output_keys == ("logit",)
     assert extractor_logit.input_keys == ("image",)
 
 

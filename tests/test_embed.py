@@ -72,7 +72,7 @@ def test_set_threshold_and_select_behavior() -> None:
     assert len(res["selected"].shape) == 1
 
 
-def test_fit_model_without_embed_raises(tmp_path: pathlib.Path) -> None:
+def test_fit_model_without_correct_forward_raises() -> None:
     class NoEmbedModel(torch.nn.Module):
         pass
 
@@ -89,8 +89,10 @@ def test_fit_model_without_embed_raises(tmp_path: pathlib.Path) -> None:
 
     s = MinimalEmbedding()
     with pytest.raises(
-        TypeError,
-        match=re.escape(r"`model` is required to have a `embed()` method."),
+        AttributeError,
+        match=re.escape(
+            r"model.forward()` is required to accept `x` as argument"
+        ),
     ):
         s.fit(model=NoEmbedModel(), loaders=loaders)
 

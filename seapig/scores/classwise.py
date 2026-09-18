@@ -136,20 +136,16 @@ class ClassWiseScore(sp.UncertaintyScore):
         scoring).
         """
         if issubclass(self.base_score_cls, sp.KNNScore):
-            method = "embed"
             out_key = "embedding"
             keys = ("image", "label")
         elif issubclass(self.base_score_cls, sp.LogitScore):
-            method = "logits"
             out_key = "logit"
             keys = ("image", "label") if want_labels else ("image",)
         else:  # pragma: no cover
             raise TypeError(
                 "ClassWiseScore only supports KNNScore or LogitScore subclasses"
             )
-        return ModelExtractor(
-            method_name=method, output_key=out_key, input_keys=keys
-        )
+        return ModelExtractor(output_keys=(out_key,), input_keys=keys)
 
     def _extract_class_data(
         self,
