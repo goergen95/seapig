@@ -32,22 +32,15 @@ class ModelWithBatchNorm(LightningModule):
             Accuracy(task="multiclass", num_classes=2)
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         """Forward pass through the model."""
         x = self.conv(x)
         x = self.bn(x)
         x = torch.relu(x)
         x = self.pool(x)
-        x = x.flatten(start_dim=1)
-        return cast(torch.Tensor, self.fc(x))
-
-    def embed(self, x: torch.Tensor) -> torch.Tensor:
-        """Extract embeddings before final classification layer."""
-        x = self.conv(x)
-        x = self.bn(x)  # BatchNorm will behave differently in train vs eval
-        x = torch.relu(x)
-        x = self.pool(x)
-        return x.flatten(start_dim=1)
+        _embs = x.flatten(start_dim=1)
+        y_hat = cast(torch.Tensor, self.fc(_embs))
+        return {"prediction": y_hat, "embedding": _embs}
 
 
 def test_model_state_preserved_in_forward() -> None:
@@ -233,16 +226,18 @@ def test_embeddings_differ_in_train_vs_eval_mode() -> None:
     # Get embeddings in eval mode
     model.eval()
     with torch.inference_mode():
-        emb_eval = model.embed(x)
+        emb_eval = model(x)
 
     # Get embeddings in training mode (will use batch statistics for BatchNorm)
     model.train()
     with torch.inference_mode():
-        emb_train = model.embed(x)
+        emb_train = model(x)
 
     # Embeddings should be DIFFERENT because BatchNorm behaves differently
     # in train vs eval mode
-    assert not torch.allclose(emb_eval, emb_train, atol=1e-5), (
+    assert not torch.allclose(
+        emb_eval["embedding"], emb_train["embedding"], atol=1e-5
+    ), (
         "Embeddings should differ between training and eval modes due to BatchNorm"
     )
 

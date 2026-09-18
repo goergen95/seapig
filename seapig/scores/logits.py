@@ -299,8 +299,7 @@ class LogitScore(UncertaintyScore, abc.ABC):
         if model is None or loader is None:
             raise ValueError("`model` and `loader` must be given together.")
         extractor = ModelExtractor(
-            method_name="logits",
-            output_key="logit",
+            output_keys=("logit",),
             input_keys=("image", "label") if want_labels else ("image",),
         )
         data = extractor.extract(

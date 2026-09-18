@@ -4,8 +4,10 @@ import pytest
 import torch
 
 from seapig import RiskCoverageMetric, SelectiveInferenceTask
+from seapig.scores.logits import SoftmaxScore
 from tests.fixtures import (
-    BadTask,
+    BadForwardTask,
+    BadPredictStepTask,
     DummyScore,
     DummyTaskDict,
     DummyTaskTensor,
@@ -26,8 +28,8 @@ def test_init_accepts_default_and_alt_keys() -> None:
         torch.tensor([1]),
     ]
     out = w.predict_step(batch_pos, batch_idx=0)
-    assert "predictions" in out and torch.allclose(
-        out["predictions"], 2 * batch_pos[0]
+    assert "prediction" in out and torch.allclose(
+        out["prediction"], 2 * batch_pos[0]
     )
 
     w2 = SelectiveInferenceTask(
@@ -62,7 +64,7 @@ def test_forward_wraps_tensor_and_merges_selection() -> None:
     out = w.forward(x)
 
     # predictions wrapped and equal to 2*x
-    assert "predictions" in out and torch.allclose(out["predictions"], 2 * x)
+    assert "prediction" in out and torch.allclose(out["prediction"], 2 * x)
     # selection merged
     assert "score" in out and "selected" in out
 
@@ -75,17 +77,10 @@ def test_forward_keeps_dict_output_and_extra_keys() -> None:
     x = torch.tensor([[1.0, 2.0]])
     out = w.forward(x)
 
-    assert torch.allclose(out["predictions"], 3 * x)
+    assert torch.allclose(out["prediction"], 3 * x)
     # ensure original extra entries survive merge
     assert "extra" in out and out["extra"].shape[0] == x.shape[0]
     assert "score" in out and "selected" in out
-
-
-def test_forward_raises_when_predict_not_tensor_or_dict() -> None:
-
-    w = SelectiveInferenceTask(task=BadTask(), score=DummyScore())
-    with pytest.raises(AssertionError):
-        _ = w.forward(torch.randn(2, 3))
 
 
 def test_predict_step_uses_input_key_and_returns_selection() -> None:
@@ -95,8 +90,8 @@ def test_predict_step_uses_input_key_and_returns_selection() -> None:
 
     batch = {"image": torch.tensor([[1.0, 2.0], [3.0, 4.0]])}
     out = w.predict_step(batch, batch_idx=0)
-    assert "predictions" in out and torch.allclose(
-        out["predictions"], 2 * batch["image"]
+    assert "prediction" in out and torch.allclose(
+        out["prediction"], 2 * batch["image"]
     )
     assert out["selected"].dtype is torch.bool
 
@@ -265,7 +260,7 @@ def test_return_test_outputs_collects_outputs(
     assert isinstance(w.test_outputs, list)
     assert len(w.test_outputs) == 1
     out = w.test_outputs[0]
-    assert "predictions" in out
+    assert "prediction" in out
     assert "score" in out and "selected" in out
 
 
@@ -298,7 +293,7 @@ def test_return_test_outputs_without_metrics(
     assert isinstance(w.test_outputs, list)
     assert len(w.test_outputs) == 1
     out = w.test_outputs[0]
-    assert "predictions" in out
+    assert "prediction" in out
     assert "score" in out and "selected" in out
 
 
@@ -335,3 +330,32 @@ def test_get_from_batch_helper_behavior() -> None:
     # Unsupported batch type raises TypeError
     with pytest.raises(TypeError):
         _ = _get_from_batch(42, None, pos=0)  # type: ignore[arg-type, ty:invalid-argument-type]
+
+
+def test_forward_raises_type_error_for_invalid_output():
+    score = DummyScore()
+    w = SelectiveInferenceTask(task=BadForwardTask(), score=score)  # type: ignore
+    x = torch.tensor([[1.0, 2.0]])
+    with pytest.raises(TypeError):
+        w.forward(x)
+
+
+def test_select_raises_when_logit_key_missing_for_logit_score():
+    # SoftmaxScore inherits LogitScore and expects a ``logit`` key.
+    score = SoftmaxScore()
+    # DummyTaskTensor returns ``prediction`` and ``embedding`` but no ``logit``.
+    from tests.fixtures import DummyTaskTensor
+
+    w = SelectiveInferenceTask(task=DummyTaskTensor(), score=score)
+    x = torch.tensor([[1.0, 2.0]])
+    with pytest.raises(AssertionError):
+        w.forward(x)
+
+
+def test_predict_step_asserts_dict_output_from_task_predict_step():
+    score = DummyScore()
+    # Use default positional keys (0 for input, 1 for target) – target is unused here.
+    w = SelectiveInferenceTask(task=BadPredictStepTask(), score=score)
+    batch = [torch.tensor([[1.0, 2.0]]), torch.tensor([0])]
+    with pytest.raises(AssertionError):
+        w.predict_step(batch, batch_idx=0)
