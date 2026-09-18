@@ -32,7 +32,7 @@ class DummyLogitModel(torch.nn.Module):
         self.K = K
         self.M = M
 
-    def forward(self, x: torch.Tensor):
+    def predict(self, x: torch.Tensor):
         N = x.shape[0]
         if self.task == "multiclass":
             if self.per_member:

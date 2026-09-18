@@ -20,7 +20,7 @@ Extract = Callable[..., dict[str, torch.Tensor]]
 
 
 def _resolve_method(
-    model: torch.nn.Module, method_name: str = "forward"
+    model: torch.nn.Module, method_name: str = "predict"
 ) -> Extract:
     """Resolve a callable method on a torch.nn.Module."""
     if not isinstance(model, torch.nn.Module):

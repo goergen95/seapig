@@ -32,7 +32,15 @@ class ModelWithBatchNorm(LightningModule):
             Accuracy(task="multiclass", num_classes=2)
         )
 
-    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.conv(x)
+        x = self.bn(x)
+        x = torch.relu(x)
+        x = self.pool(x)
+        x = x.flatten(start_dim=1)
+        return cast(torch.Tensor, self.fc(x))
+
+    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         """Forward pass through the model."""
         x = self.conv(x)
         x = self.bn(x)
@@ -226,12 +234,12 @@ def test_embeddings_differ_in_train_vs_eval_mode() -> None:
     # Get embeddings in eval mode
     model.eval()
     with torch.inference_mode():
-        emb_eval = model(x)
+        emb_eval = model.predict(x)
 
     # Get embeddings in training mode (will use batch statistics for BatchNorm)
     model.train()
     with torch.inference_mode():
-        emb_train = model(x)
+        emb_train = model.predict(x)
 
     # Embeddings should be DIFFERENT because BatchNorm behaves differently
     # in train vs eval mode
