@@ -4,29 +4,13 @@ from typing import Any
 
 import pytest
 import torch
-from lightning import LightningDataModule, LightningModule, Trainer
+from lightning import LightningDataModule, Trainer
 from torch.utils.data import DataLoader, Dataset
-from torchmetrics import Accuracy
 
 from seapig import RiskCoverageMetric
 from seapig.model import SelectiveInferenceTask
 from seapig.scores.base import UncertaintyScore
-
-
-class DummyTask(LightningModule):
-    """Forward returns predictions; embed returns the input so selection can be driven by input."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        # base metric required by SelectiveInferenceTask (will be wrapped by SelectiveMetric)
-        self.test_metrics = Accuracy(task="binary")
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # predictions encoded in second column (0/1)
-        return x[:, 1].long()
-
-    def embed(self, x: torch.Tensor) -> torch.Tensor:
-        return x  # pragma: no cover
+from tests.fixtures import DummyTask
 
 
 class FlagScore(UncertaintyScore):

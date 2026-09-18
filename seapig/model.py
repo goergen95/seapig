@@ -91,6 +91,12 @@ class SelectiveInferenceTask(LightningModule):
         assert isinstance(score, UncertaintyScore), (
             "score must be a seapig UncertaintyScore instance"
         )
+        if not hasattr(self.task, "predict") and not callable(
+            self.task.predict
+        ):
+            raise TypeError(
+                "`task` is required to expose a `predict()` method."
+            )
         self.score = score
         if input_key is not None and input_key not in get_args(INPUT_KEYS):
             raise ValueError(
@@ -143,7 +149,8 @@ class SelectiveInferenceTask(LightningModule):
             wrapped model returns a `torch.Tensor` instead of a mapping, it is
             wrapped under the `'prediction'` key before merging.
         """
-        preds = self.task(x)
+        assert callable(self.task.predict)
+        preds = self.task.predict(x)
         if isinstance(preds, torch.Tensor):
             preds = {"prediction": preds}
         if not isinstance(preds, dict):

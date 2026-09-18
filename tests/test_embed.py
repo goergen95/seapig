@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from seapig.scores.utils import TensorPCA
-from tests.fixtures import DummyModel, MinimalEmbedding
+from tests.fixtures import BadModelWrongSig, DummyModel, MinimalEmbedding
 
 _EmbedLoader = DataLoader[torch.Tensor | dict[str, torch.Tensor]]
 
@@ -73,9 +73,6 @@ def test_set_threshold_and_select_behavior() -> None:
 
 
 def test_fit_model_without_correct_forward_raises() -> None:
-    class NoEmbedModel(torch.nn.Module):
-        pass
-
     loaders: dict[str, _EmbedLoader] = {
         "train": cast(
             _EmbedLoader,
@@ -91,10 +88,10 @@ def test_fit_model_without_correct_forward_raises() -> None:
     with pytest.raises(
         AttributeError,
         match=re.escape(
-            r"model.forward()` is required to accept `x` as argument"
+            r"model.predict()` is required to accept `x` as argument"
         ),
     ):
-        s.fit(model=NoEmbedModel(), loaders=loaders)
+        s.fit(model=BadModelWrongSig(), loaders=loaders)
 
 
 def test_score_with_model_loader_writes_and_returns_tensor(
