@@ -80,17 +80,17 @@ def test_single_label_fit_and_score():
     X = torch.randn(6, 3)
     y = torch.tensor([0, 0, 1, 1, 2, 2])
     cw = EuclideanClassWiseScore()
-    cw.fit(X=X, y=y)
+    cw.fit(ref={"embedding": X, "label": y})
     assert cw.mode is ClassWiseMode.SINGLE_LABEL
-    scores = cw.score(X=X, y=y)
+    scores = cw.score(query={"embedding": X, "prediction": y})
     assert scores.shape == (6,)
-    matrix = cw.score(X=X, y=y, full_matrix=True)
+    matrix = cw.score(query={"embedding": X, "prediction": y}, full_matrix=True)
     assert matrix.shape == (6, 3)
     cw.set_threshold(q=0.5)
     thr = cw.get_threshold()
     assert isinstance(thr, dict)
     assert set(thr.keys()) == {0, 1, 2}
-    sel = cw.select(X=X, y=y)
+    sel = cw.select(query={"embedding": X, "prediction": y})
     mask = sel["selected"]
     assert mask.shape == (6,)
     for i, lbl in enumerate(y.tolist()):
@@ -114,16 +114,16 @@ def test_multi_label_aggregation(agg, agg_fn):
         [[1, 0, 0], [1, 1, 0], [0, 1, 1], [1, 0, 1]], dtype=torch.float32
     )
     cw = EuclideanClassWiseScore(aggregation=agg)
-    cw.fit(X=X, y=y)
+    cw.fit(ref={"embedding": X, "label": y})
     full = cw._score_full_matrix(X)
     mask = y.to(dtype=torch.bool)
     expected = agg_fn(full, mask)
-    scores = cw.score(X=X, y=y)
+    scores = cw.score(query={"embedding": X, "prediction": y})
     assert isinstance(scores, torch.Tensor)
     assert torch.allclose(scores, expected)
     cw.set_threshold(q=0.5)
     assert isinstance(cw.get_threshold(), torch.Tensor)
-    sel = cw.select(X=X, y=y)
+    sel = cw.select(query={"embedding": X, "prediction": y})
     assert sel["selected"].shape == (4,)
     overall_thr = cw.get_threshold()
     assert isinstance(overall_thr, torch.Tensor)
@@ -175,17 +175,17 @@ def test_model_mode_fit_with_pca_and_validation():
         {"image": torch.tensor([0.0, 0.0]), "label": torch.tensor(0)},
         {"image": torch.tensor([1.0, 1.0]), "label": torch.tensor(1)},
     ]
-    val_data = [
+    cal_data = [
         {"image": torch.tensor([0.5, 0.5]), "label": torch.tensor(0)},
         {"image": torch.tensor([1.5, 1.5]), "label": torch.tensor(1)},
     ]
     train_loader = DataLoader(train_data, batch_size=2, shuffle=False)  # type: ignore
-    val_loader = DataLoader(val_data, batch_size=2, shuffle=False)  # type: ignore
+    cal_loader = DataLoader(cal_data, batch_size=2, shuffle=False)  # type: ignore
 
     pca = TensorPCA(n_components=1)
     cw = sp.EuclideanClassWiseScore(global_pca=pca)
     cw.fit(
-        model=DummyModel(), loaders={"train": train_loader, "val": val_loader}
+        model=DummyModel(), loaders={"train": train_loader, "cal": cal_loader}
     )
     # After fit, PCA should have reduced dimensionality to 1
     assert cw.pca is pca
@@ -211,7 +211,7 @@ def test_no_training_samples_for_class_raises():
     with pytest.raises(
         ValueError, match="No training samples found for class 1"
     ):
-        cw.fit(X=X, y=y)
+        cw.fit(ref={"embedding": X, "label": y})
 
 
 def test_validation_shape_mismatch_raises():
@@ -221,19 +221,22 @@ def test_validation_shape_mismatch_raises():
     y_val = torch.tensor([0, 1, 0])
     cw = sp.EuclideanClassWiseScore()
     with pytest.raises(AssertionError):
-        cw.fit(X=X_train, y=y_train, X_val=X_val, y_val=y_val)
+        cw.fit(
+            ref={"embedding": X_train, "label": y_train},
+            cal={"embedding": X_val, "label": y_val},
+        )
 
 
 def test_unknown_label_error_in_single_label_scoring():
     X = torch.randn(4, 2)
     y = torch.tensor([0, 1, 0, 1])
     cw = sp.EuclideanClassWiseScore()
-    cw.fit(X=X, y=y)
+    cw.fit(ref={"embedding": X, "label": y})
     cw.set_threshold()
     X_new = torch.randn(2, 2)
     y_invalid = torch.tensor([2, 2])  # label 2 was never seen
     with pytest.raises(ValueError, match=r"Unknown class labels in y: \[2\]"):
-        cw.score(X=X_new, y=y_invalid)
+        cw.score(query={"embedding": X_new, "prediction": y_invalid})
 
 
 def test_plot_propagates_scorer_error():
@@ -242,7 +245,7 @@ def test_plot_propagates_scorer_error():
     # Fit a single‑class dataset
     X = torch.randn(3, 2)
     y = torch.tensor([0, 0, 0])
-    cw.fit(X=X, y=y)
+    cw.fit(ref={"embedding": X, "label": y})
     with pytest.raises(
         RuntimeError, match="Plot failed for class 0: plot failure"
     ):
@@ -255,9 +258,9 @@ def test_resolve_aggregation_callable():
     # Create a tiny multi‑label dataset (2 classes, 3 samples).
     X = torch.randn(3, 2)  # dummy logits
     y = torch.tensor([[1, 0], [0, 1], [1, 1]], dtype=torch.float32)
-    cw.fit(X=X, y=y)
+    cw.fit(ref={"embedding": X, "label": y})
     cw.set_threshold(q=0.5)
-    scores = cw.score(X=X, y=y)
+    scores = cw.score(query={"embedding": X, "prediction": y})
     assert scores.shape == (3,)
 
 
@@ -265,10 +268,10 @@ def test_knn_full_matrix_scoring():
     cw = sp.EuclideanClassWiseScore()
     X_train = torch.tensor([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
     y_train = torch.tensor([0, 0, 1, 1])
-    cw.fit(X=X_train, y=y_train)
+    cw.fit(ref={"embedding": X_train, "label": y_train})
     cw.set_threshold(q=0.9)
     X_test = torch.tensor([[0.5, 0.5], [2.5, 2.5]])
-    full = cw.score(X=X_test, full_matrix=True)
+    full = cw.score(query={"embedding": X_test}, full_matrix=True)
     assert isinstance(full, torch.Tensor)
     assert full.shape == (2, 2)  # N=2, C=2 classes
 
@@ -277,7 +280,7 @@ def test_single_label_score_invalid_y_shape():
     cw = sp.EuclideanClassWiseScore()
     X = torch.randn(4, 2)
     y = torch.tensor([0, 1, 0, 1])
-    cw.fit(X=X, y=y)
+    cw.fit(ref={"embedding": X, "label": y})
     cw.set_threshold()
     X_new = torch.randn(2, 2)
     y_invalid = torch.tensor([[0, 1], [1, 0]])  # 2‑D instead of 1‑D
@@ -285,15 +288,15 @@ def test_single_label_score_invalid_y_shape():
         ValueError,
         match="Model was fit in 'single_label' mode but received labels",
     ):
-        cw.score(X=X_new, y=y_invalid)
+        cw.score(query={"embedding": X_new, "prediction": y_invalid})
 
 
 def test_select_full_matrix_warning_and_mask():
     cw = sp.EuclideanClassWiseScore()
-    X_train = torch.tensor([[0.0, 0.0], [1.0, 1.0]])
-    y_train = torch.tensor([0, 1])
-    cw.fit(X=X_train, y=y_train)
-    result = cw.select(X=X_train, full_matrix=True)
+    X = torch.tensor([[0.0, 0.0], [1.0, 1.0]])
+    y = torch.tensor([0, 1])
+    cw.fit(ref={"embedding": X, "label": y})
+    result = cw.select(query={"embedding": X}, full_matrix=True)
     # Ensure thresholds are now available.
     assert cw.get_threshold(full_matrix=True) is not None
     scores = result["score"]
@@ -337,7 +340,7 @@ def test_score_full_matrix_before_fit_raises():
 def test_score_single_label_errors():
     X, y = make_data(single_label=True)
     cs = ClassWiseScore(base_score_cls=DummyScore)
-    cs.fit(X=X, y=y)
+    cs.fit(ref={"embedding": X, "label": y})
     y_wrong = y.unsqueeze(1)
     with pytest.raises(ValueError, match="y must be a 1-D tensor"):
         cs._score_single_label(X, y_wrong)
@@ -355,7 +358,7 @@ def test_score_single_label_errors():
 def test_score_multi_label_errors():
     X, y = make_data(single_label=False)
     cs = ClassWiseScore(base_score_cls=DummyScore)
-    cs.fit(X=X, y=y)
+    cs.fit(ref={"embedding": X, "label": y})
     # Pass a 1-D tensor to trigger dimension error
     with pytest.raises(ValueError, match="y must be a 2-D binary matrix"):
         cs._score_multi_label(X, y[:, 0])
@@ -384,7 +387,7 @@ def test_score_single_label_continue_branch():
     # Fit on data containing both classes, then score with y that only has one class
     X, y = make_data(single_label=True)
     cs = ClassWiseScore(base_score_cls=DummyScore)
-    cs.fit(X=X, y=y)
+    cs.fit(ref={"embedding": X, "label": y})
     y_partial = torch.tensor([0, 0, 0, 0])  # only class 0 present
     scores = cs._score_single_label(X, y_partial)
     # Scores should be computed for class 0 and unchanged for other positions
@@ -401,13 +404,13 @@ def test_score_before_fit_raises():
     with pytest.raises(
         RuntimeError, match=r"fit\(\) must be called before scoring"
     ):
-        cs.score(X=X, y=None)
+        cs.score(query={"embedding": X, "prediction": X})
 
 
 def test_score_model_mode_assigns_y():
     X, y = make_data(single_label=True)
     cs = ClassWiseScore(base_score_cls=DummyScore)
-    cs.fit(X=X, y=y)
+    cs.fit(ref={"embedding": X, "label": y})
 
     dummy_model = DummyModel()
     # Dummy loader (not used)
@@ -434,7 +437,7 @@ def test_score_model_mode_assigns_y():
 def test_score_model_mode_missing_label_raises():
     X, y = make_data(single_label=True)
     cs = ClassWiseScore(base_score_cls=DummyScore)
-    cs.fit(X=X, y=y)
+    cs.fit(ref={"embedding": X, "label": y})
 
     dummy_model = DummyModel()
     dummy_loader = torch.utils.data.DataLoader([{"image": X}])  # type: ignore
@@ -447,22 +450,27 @@ def test_score_model_mode_missing_label_raises():
             return {self.out_key: X}
 
     cs._make_extractor = lambda labels_from: DummyExtractorNoLabel(  # type: ignore
-        out_key="embedding" if issubclass(DummyScore, sp.KNNScore) else "logit"
+        out_key="embedding"
     )
-    with pytest.raises(ValueError, match="Mode 'single_label' requires labels"):
+    with pytest.raises(
+        KeyError,
+        match="Expected tensor or dict of tensors with key `prediction`",
+    ):
         cs.score(model=dummy_model, loader=dummy_loader)
 
 
 def test_full_matrix_scoring_and_select():
     X, y = make_data(single_label=False)
     cs = ClassWiseScore(base_score_cls=DummyScore, aggregation="mean")
-    cs.fit(X=X, y=y)
-    full = cs.score(X=X, y=y, full_matrix=True)
+    cs.fit(ref={"embedding": X, "label": y})
+    full = cs.score(query={"embedding": X, "prediction": y}, full_matrix=True)
     assert full.shape == (4, 2)
     cs.set_threshold()
     thr = cs.get_threshold(full_matrix=True)
     assert isinstance(thr, dict)
-    result = cs.select(X=X, y=y, full_matrix=True)
+    result = cs.select(
+        query={"embedding": X, "prediction": y}, full_matrix=True
+    )
     assert result["score"].shape == (4, 2)
     assert result["selected"].shape == (4, 2)
 
@@ -473,7 +481,10 @@ def test_fit_multi_label_with_validation_sets_scores():
     X_val = torch.randn(2, 3)
     y_val = torch.tensor([[1, 0], [0, 1]], dtype=torch.float32)
     cw = sp.EuclideanClassWiseScore()
-    cw.fit(X=X, y=y, X_val=X_val, y_val=y_val)
+    cw.fit(
+        ref={"embedding": X, "label": y},
+        cal={"embedding": X_val, "label": y_val},
+    )
     expected = cw._score_multi_label(X_val, y_val)
     assert hasattr(cw, "scores")
     assert cw.scores is not None
@@ -492,7 +503,7 @@ def test_score_tensor_and_model_raises():
     cs = ClassWiseScore(base_score_cls=DummyScore)
     X = torch.randn(2, 2)
     with pytest.raises(ValueError, match="Specify either pre-computed tensors"):
-        cs.score(X=X, model=DummyModel(), loader=DataLoader([]))  # type: ignore
+        cs.score(query=X, model=DummyModel(), loader=DataLoader([]))  # type: ignore
 
 
 def test_multi_label_no_positive_labels_filled(caplog):
@@ -502,9 +513,9 @@ def test_multi_label_no_positive_labels_filled(caplog):
         [[1, 0], [0, 0], [0, 1]], dtype=torch.float32
     )  # second sample has no positives
     cw = ClassWiseScore(base_score_cls=DummyScore)  # default aggregation "mean"
-    cw.fit(X=X, y=y)
+    cw.fit(ref={"embedding": X, "label": y})
     with caplog.at_level(logging.WARNING):
-        scores = cw.score(X=X, y=y)
+        scores = cw.score(query={"embedding": X, "prediction": y})
     full = cw._score_full_matrix(X)
     avg_scores = torch.nanmean(full, dim=1)
     assert isinstance(scores, torch.Tensor)

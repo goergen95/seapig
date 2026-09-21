@@ -19,7 +19,7 @@ from typing_extensions import override
 
 from seapig import scores as sp
 from seapig.scores.extractor import ModelExtractor
-from seapig.scores.utils import TensorPCA
+from seapig.scores.utils import TensorPCA, _tensor
 from seapig.utils import get_logger
 
 
@@ -155,10 +155,8 @@ class ClassWiseScore(sp.UncertaintyScore):
     @override
     def fit(
         self,
-        X: torch.Tensor | None = None,
-        y: torch.Tensor | None = None,
-        X_val: torch.Tensor | None = None,
-        y_val: torch.Tensor | None = None,
+        ref: torch.Tensor | dict[str, torch.Tensor] | None = None,
+        cal: torch.Tensor | dict[str, torch.Tensor] | None = None,
         model: torch.nn.Module | None = None,
         loaders: dict[str, DataLoader[torch.Tensor | dict[str, torch.Tensor]]]
         | None = None,
@@ -181,12 +179,12 @@ class ClassWiseScore(sp.UncertaintyScore):
 
         Parameters
         ----------
-        X, y:
+        ref:
             Training tensors. `X` holds the feature representation required by
             the wrapped `base_score_cls`. `y` contains class labels; a 1-D
             tensor for single-label classification or a 2-D binary matrix for
             multi-label tasks.
-        X_val, y_val:
+        cal:
             Optional validation tensors used for calibration of per-class
             scorers.
         model:
@@ -212,7 +210,7 @@ class ClassWiseScore(sp.UncertaintyScore):
             missing for a particular class.
 
         """
-        tensor_mode = X is not None
+        tensor_mode = ref is not None
         model_mode = model is not None
         if tensor_mode == model_mode:
             raise ValueError(
@@ -224,38 +222,41 @@ class ClassWiseScore(sp.UncertaintyScore):
                 model is not None and loaders is not None and "train" in loaders
             )
             extractor = self._make_extractor(labels_from="input")
-            data = extractor.extract(
+            ref = extractor.extract(
                 model=model,
                 loader=loaders["train"],
                 outdir=outdir,
                 prefix=None if prefix is None else prefix + "-train",
                 overwrite=False,
             )
-            X = data.get("embedding")
-            y = data.get("label")
 
-            if "val" in loaders:
-                data = extractor.extract(
+            if "cal" in loaders:
+                cal = extractor.extract(
                     model=model,
-                    loader=loaders["val"],
+                    loader=loaders["cal"],
                     outdir=outdir,
-                    prefix=None if prefix is None else prefix + "-val",
+                    prefix=None if prefix is None else prefix + "-cal",
                     overwrite=False,
                 )
-                X_val = data.get("embedding")
-                y_val = data.get("label")
 
-        assert X is not None and y is not None, "Training data must be provided"
+        X = _tensor(ref, "embedding")
+        y = _tensor(ref, "label")
+        assert isinstance(X, torch.Tensor)
+        assert isinstance(y, torch.Tensor)
+        X_cal = _tensor(cal, "embedding")
+        y_cal = _tensor(cal, "label")
+
+        assert X is not None, "Training data must be provided"
         # Infer and store the scoring mode based on label tensor shape
         self._mode = self._infer_mode(y)
         assert X.shape[0] == y.shape[0], (
-            "X and y must have the same first dimension"
+            "Embeddings and labels must have the same first dimension"
         )
 
         if self.pca is not None:
             X = self.pca.fit_transform(X)
-            if X_val is not None:
-                X_val = self.pca.transform(X_val)
+            if X_cal is not None:
+                X_cal = self.pca.transform(X_cal)
 
         multi_label = y.dim() == 2
         if multi_label:
@@ -268,17 +269,21 @@ class ClassWiseScore(sp.UncertaintyScore):
             X_c = self._extract_class_data(X, y, lbl, multi_label)
             if X_c.shape[0] == 0:
                 raise ValueError(f"No training samples found for class {lbl}")
-            Y_c: torch.Tensor | None = None
-            if X_val is not None and y_val is not None:
-                assert X_val.shape[0] == y_val.shape[0]
-                Y_c = self._extract_class_data(X_val, y_val, lbl, multi_label)
+            X_cal_c: torch.Tensor | None = None
+            if X_cal is not None:
+                assert isinstance(y_cal, torch.Tensor)
+                assert X_cal.shape[0] == y_cal.shape[0]
+                X_cal_c = self._extract_class_data(
+                    X_cal, y_cal, lbl, multi_label
+                )
             scorer = self.base_score_cls(**self._base_kwargs)
-            scorer.fit(ref=X_c, cal=Y_c, **kwargs)  # type: ignore[arg-type]
+            scorer.fit(ref=X_c, cal=X_cal_c, **kwargs)
             self._scorers[lbl] = scorer
 
         if self._mode is ClassWiseMode.MULTI_LABEL:
-            if X_val is not None and y_val is not None:
-                self.scores = self._score_multi_label(X_val, y_val)
+            if X_cal is not None:
+                assert isinstance(y_cal, torch.Tensor)
+                self.scores = self._score_multi_label(X_cal, y_cal)
             else:
                 self.scores = self._score_multi_label(X, y)
 
@@ -446,8 +451,7 @@ class ClassWiseScore(sp.UncertaintyScore):
     @override
     def score(
         self,
-        X: torch.Tensor | None = None,
-        y: torch.Tensor | None = None,
+        query: dict[str, torch.Tensor] | None = None,
         model: torch.nn.Module | None = None,
         loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]]
         | None = None,
@@ -464,7 +468,7 @@ class ClassWiseScore(sp.UncertaintyScore):
 
         Parameters
         ----------
-        X:
+        query:
             Tensor of shape `(N, D)` containing the features for which scores
             should be computed. Required in tensor mode.
         model:
@@ -494,12 +498,22 @@ class ClassWiseScore(sp.UncertaintyScore):
         RuntimeError
             If `fit` has not been called before scoring.
         """
-        tensors_mode = X is not None
+        tensor_mode = query is not None
         model_mode = model is not None
-        if tensors_mode == model_mode:
+        if tensor_mode == model_mode:
             raise ValueError(
                 "Specify either pre-computed tensors (X and Y) or a model with a loader, but not both."
             )
+
+        if tensor_mode:
+            if not isinstance(query, dict):
+                raise TypeError("`query` must be a dictionary.")
+            if not "embedding" in query:
+                raise KeyError("Key `embedding` must be in `query`.")
+            if not full_matrix and not "prediction" in query:
+                raise KeyError(
+                    "Key `prediction` must be in `query` if `full_matrix=False`."
+                )
 
         if model_mode:
             assert loader is not None
@@ -507,13 +521,11 @@ class ClassWiseScore(sp.UncertaintyScore):
             extractor = self._make_extractor(
                 labels_from=None if full_matrix else "output"
             )
-            data = extractor.extract(
+            query = extractor.extract(
                 model=model, loader=loader, outdir=outdir, prefix=prefix
             )
-            X = data.get("embedding")
-            if not full_matrix:
-                y = data.get("prediction")
 
+        X = _tensor(query, "embedding")
         assert isinstance(X, torch.Tensor)
 
         if self.pca is not None:
@@ -525,11 +537,8 @@ class ClassWiseScore(sp.UncertaintyScore):
         if full_matrix:
             return self._score_full_matrix(X)
 
-        if y is None:
-            raise ValueError(
-                f"Mode '{self._mode.value}' requires labels; pass `y=` or use "
-                "`full_matrix=True` for the label-free matrix mode."
-            )
+        y = _tensor(query, "prediction")
+        assert isinstance(y, torch.Tensor)
 
         inferred = self._infer_mode(y)
         if inferred is not self._mode:
@@ -551,8 +560,7 @@ class ClassWiseScore(sp.UncertaintyScore):
     @override
     def select(
         self,
-        X: torch.Tensor | None = None,
-        y: torch.Tensor | None = None,
+        query: dict[str, torch.Tensor] | None = None,
         model: torch.nn.Module | None = None,
         loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]]
         | None = None,
@@ -570,7 +578,7 @@ class ClassWiseScore(sp.UncertaintyScore):
 
         Parameters
         ----------
-        X, model, loader, outdir, prefix:
+        query, model, loader, outdir, prefix:
             Same semantics as `score`; either pre-computed tensors or a
             model with a DataLoader must be supplied.
 
@@ -588,8 +596,7 @@ class ClassWiseScore(sp.UncertaintyScore):
             self.set_threshold()
 
         _scores = self.score(
-            X=X,
-            y=y,
+            query=query,
             model=model,
             loader=loader,
             outdir=outdir,
