@@ -62,6 +62,50 @@ def make_data(single_label: bool = True):
     return X, y
 
 
+def test_init_non_knn_base_score():
+    class DummyScore(sp.UncertaintyScore):
+        def fit(self, *args, **kwargs):  # pragma: no cover
+            pass
+
+        def score(self, *args, **kwargs):  # pragma: no cover
+            return torch.tensor([0.0])
+
+        def select(self, *args, **kwargs):  # pragma: no cover
+            return {
+                "score": torch.tensor([0.0]),
+                "selected": torch.tensor([True]),
+            }
+
+    with pytest.raises(
+        TypeError,
+        match="Class-wise scores are currently only supported for KNNScore.",
+    ):
+        ClassWiseScore(base_score_cls=DummyScore)
+
+
+def test_score_query_not_dict():
+    cw = ClassWiseScore(base_score_cls=sp.EuclideanScore)
+    with pytest.raises(TypeError, match="`query` must be a dictionary."):
+        cw.score(query=123)  # type: ignore
+
+
+def test_score_missing_embedding_key():
+    cw = ClassWiseScore(base_score_cls=sp.EuclideanScore)
+    with pytest.raises(KeyError, match="Key `embedding` must be in `query`."):
+        cw.score(query={})
+
+
+def test_score_missing_prediction_key_when_full_matrix_false():
+    cw = ClassWiseScore(base_score_cls=sp.EuclideanScore)
+    # Provide embedding but omit ``prediction``
+    query = {"embedding": torch.randn(2, 4)}
+    with pytest.raises(
+        KeyError,
+        match="Key `prediction` must be in `query` if `full_matrix=False`.",
+    ):
+        cw.score(query=query, full_matrix=False)
+
+
 def test_infer_mode():
     # single‑label vector
     y_single = torch.tensor([0, 1, 2])

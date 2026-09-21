@@ -81,9 +81,7 @@ class SelectiveInferenceTask(LightningModule):
         assert isinstance(score, UncertaintyScore), (
             "score must be a seapig UncertaintyScore instance"
         )
-        if not hasattr(self.task, "predict") and not callable(
-            self.task.predict
-        ):
+        if not callable(self.task.predict):
             raise TypeError(
                 "`task` is required to expose a `predict()` method."
             )

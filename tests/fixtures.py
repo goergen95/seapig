@@ -41,7 +41,7 @@ class BadPredictStepTask(LightningModule):
         pass  # pragma: no cover
 
     def predict_step(self, batch, batch_idx: int, dataloader_idx: int = 0):
-        return [batch]
+        return [batch]  # pragma: no cover
 
 
 class DummyModel(torch.nn.Module):
@@ -212,10 +212,7 @@ class DummyScore(UncertaintyScore):
     def select(
         self, query: dict[str, torch.Tensor] | torch.Tensor
     ) -> dict[str, torch.Tensor]:
-        if isinstance(query, dict):
-            x = query.get("prediction")
-        else:
-            x = query
+        x = query.get("prediction")
         b = x.shape[0]
         return {
             "score": torch.arange(b, dtype=x.dtype, device=x.device),

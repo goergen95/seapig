@@ -32,10 +32,8 @@ class FlagScore(UncertaintyScore):
         # no-op: store reference embeddings for completeness
         self.ref_embeddings = X  # pragma: no cover
 
-    def score(self, query: torch.Tensor) -> torch.Tensor:
-        X = query.get("image")
-        # return a dummy score vector (lower is better). Not used by select().
-        return torch.zeros(X.shape[0], dtype=torch.float32)  # pragma: no cover
+    def score(self, query: torch.Tensor):
+        pass  # pragma: no cover
 
     def select(self, query: torch.Tensor) -> dict[str, torch.Tensor]:
         X = query.get("image")
