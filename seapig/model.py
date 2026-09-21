@@ -115,18 +115,18 @@ class SelectiveInferenceTask(LightningModule):
 
         Parameters
         ----------
-        x: torch.Tensor
-            Input tensor passed directly to the underlying `task` model.
+        batch :
+            Input batch passed directly to the task's `predict` method.
 
         Returns
         -------
         dict[str, torch.Tensor]
             A dictionary containing the model's predictions merged with the
-            selection outputs produced by the configured `UncertaintyScore``.
+            selection outputs produced by the configured `UncertaintyScore`.
             The selection dictionary always includes `'score'` (the raw
-            uncertainty values) and `'selected'` (a boolean mask). If the
-            wrapped model returns a `torch.Tensor` instead of a mapping, it is
-            wrapped under the `'prediction'` key before merging.
+            uncertainty values) and `'selected'` (a boolean mask). If the wrapped
+            model returns a `torch.Tensor` instead of a mapping, it is wrapped
+            under the `'prediction'` key before merging.
         """
         assert callable(self.task.predict)
         outputs = self.task.predict(batch)
@@ -148,24 +148,22 @@ class SelectiveInferenceTask(LightningModule):
 
         Parameters
         ----------
-        batch: Mapping[str, Any] | Sequence[Any]
-            A batch from the test DataLoader. The input tensor and target are
-            extracted using `self.input_key` and `self.target_key``.
-        batch_idx: int
+        batch : Mapping[str, Any] | Sequence[Any]
+            A batch from the test DataLoader. It is passed directly to the wrapped
+            model's `predict` method via `self.forward`.
+        batch_idx : int
             Index of the current batch (required by Lightning but not used here).
-        dataloader_idx: int, optional
-            Index of the DataLoader when multiple loaders are used. Defaults to
-            `0``.
+        dataloader_idx : int, optional
+            Index of the DataLoader when multiple loaders are used. Defaults to `0`.
 
         Notes
         -----
-        The method extracts `x` and `y` from the batch, runs `self.forward``
-        to obtain predictions together with `score` and `selected` masks, and
-        updates any attached `SelectiveMetric` and `RiskCoverageMetric``.
-        Per-batch outputs are optionally stored in `self.test_outputs` when the
-        instance was created with `acc_test_outputs=True``. No value is returned;
-        metrics are logged via Lightning's `log_dict` mechanism.
-
+        The method runs `self.forward` to obtain predictions together with the
+        `score` and `selected` masks produced by the configured
+        `UncertaintyScore`. It then updates any attached `SelectiveMetric` and
+        `RiskCoverageMetric` (if supplied) and optionally records the full
+        selection dict in `self.test_outputs` when `acc_test_outputs=True`.
+        Metrics are logged via Lightning's `log_dict` mechanism.
         """
         selection = self.forward(batch)
         if "prediction" not in selection:
@@ -213,9 +211,8 @@ class SelectiveInferenceTask(LightningModule):
     ) -> dict[str, torch.Tensor]:
         """Perform prediction and return predictions with selection outputs.
 
-        The wrapper calls `forward(x)` and returns the combined mapping produced by
-        the wrapped model and the score. This mapping typically contains the
-        model's predictions and the selection outputs (e.g. `score` and `selected`).
+        The wrapper calls `self.forward` and returns a mapping containing the
+        model's `prediction` together with the `score` and `selected` masks.
         """
         selection = self.forward(batch)
         if "prediction" not in selection:
