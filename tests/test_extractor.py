@@ -11,7 +11,6 @@ from seapig.scores.extractor import (
     _concat,
     _model_device,
     _move,
-    _normalise_inputs,
     _resolve_cache_path,
     _resolve_method,
     _to_cpu,
@@ -62,7 +61,7 @@ def test_check_model_valid_and_invalid():
     with pytest.raises(
         AttributeError,
         match=re.escape(
-            "`model.predict()` is required to accept `x` as argument."
+            "`model.predict()` is required to accept `batch` as argument."
         ),
     ):
         _resolve_method(BadModelWrongSig())
@@ -101,39 +100,6 @@ def test_write_and_load_roundtrip(tmp_path: pathlib.Path):
     assert isinstance(loaded_dict, dict)
     for k, v in d.items():
         assert torch.equal(loaded_dict[k], v)
-
-
-@pytest.mark.parametrize(
-    "raw, key",
-    [
-        (torch.randn(2, 2), "emb"),
-        ([torch.randn(3, 3)], "out"),
-        ({"out": torch.randn(1, 4)}, "out"),
-    ],
-)
-def test_normalise_input_variants(raw, key):
-    # Tensor input
-    t = torch.randn(4, 5)
-    out = _normalise_inputs(t, ["img"])
-    assert out == {"img": t}
-
-    # List/tuple input
-    lst = [torch.randn(2, 2), torch.randn(2, 2)]
-    out = _normalise_inputs(tuple(lst), ["a", "b"])
-    assert out == {"a": lst[0], "b": lst[1]}
-
-    # Dict input
-    d = {"x": torch.tensor([1]), "y": torch.tensor([2])}
-    out = _normalise_inputs(d, ["x", "y"])
-    assert out == d
-
-    # Missing key raises
-    with pytest.raises(KeyError):
-        _normalise_inputs({"only": torch.tensor([0])}, ["missing"])
-
-    # Unsupported type raises
-    with pytest.raises(TypeError):
-        _normalise_inputs(42, ["a"])  # type: ignore
 
 
 def test_extract_with_extra_keys(tmp_path: pathlib.Path):
@@ -272,14 +238,6 @@ def test_check_model_non_callable_method():
         _resolve_method(BadModelNonCallable(), "embed")
 
 
-def test_normalise_inputs_sequence_too_short():
-    # Provide a list shorter than required keys
-    with pytest.raises(
-        ValueError, match="Batch has 1 elements but 2 input_keys"
-    ):
-        _normalise_inputs([torch.tensor([1])], ["a", "b"])
-
-
 def test_load_invalid_type_raises(tmp_path: pathlib.Path):
     # Save a tensor (not a mapping) and attempt to load via _load
     path = tmp_path / "bad.pt"
@@ -386,17 +344,3 @@ def test_load_existing_cache_warn(tmp_path: pathlib.Path):
         )
     # Result should match cached data
     assert torch.equal(result["embedding"], data["embedding"])
-
-
-def test_normalise_inputs_mapping_missing_key():
-    with pytest.raises(KeyError, match="Keys \\['b'\\] missing in batch"):
-        _normalise_inputs({"a": torch.tensor([1])}, ["a", "b"])
-
-
-def test_normalise_inputs_sequence_success():
-    result = _normalise_inputs(
-        [torch.tensor([1]), torch.tensor([2])], ["first", "second"]
-    )
-    assert list(result.keys()) == ["first", "second"]
-    assert torch.equal(result["first"], torch.tensor([1]))
-    assert torch.equal(result["second"], torch.tensor([2]))
