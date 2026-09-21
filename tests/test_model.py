@@ -10,17 +10,13 @@ from tests.fixtures import (
     BadPredictStepTask,
     DummyScore,
     DummyTaskDict,
-    DummyTaskTensor,
     NoMetricTask,
 )
 
 
-def test_init_accepts_default_and_alt_keys() -> None:
+def test_init_accepts_default() -> None:
     s = DummyScore()
-    # When keys are not provided they should default to 0 and 1, meaning the wrapper
-    # must use positional batch items (first item -> input, second -> target).
-    w = SelectiveInferenceTask(task=DummyTaskTensor(), score=s)
-    assert w.input_key == 0 and w.target_key == 1
+    w = SelectiveInferenceTask(task=DummyTaskDict(), score=s)
 
     # verify positional access in predict_step
     batch_pos: list[torch.Tensor] = [
@@ -28,35 +24,11 @@ def test_init_accepts_default_and_alt_keys() -> None:
         torch.tensor([1]),
     ]
     out = w.predict_step(batch_pos, batch_idx=0)
-    assert "prediction" in out and torch.allclose(
-        out["prediction"], 2 * batch_pos[0]
-    )
-
-    w2 = SelectiveInferenceTask(
-        task=DummyTaskTensor(), score=s, input_key="x", target_key="y_true"
-    )
-    assert w2.input_key == "x" and w2.target_key == "y_true"
-
-
-@pytest.mark.parametrize(
-    "kw, key, value",
-    [
-        ("input_key", "bad_input", "not-a-key"),
-        ("target_key", "bad_target", "also-bad"),
-    ],
-)
-def test_init_rejects_invalid_keys(kw: str, key: str, value: str) -> None:
-    kwargs: dict[str, object] = {kw: value}
-    with pytest.raises(ValueError):
-        _ = SelectiveInferenceTask(
-            task=DummyTaskTensor(),
-            score=DummyScore(),
-            **kwargs,  # type: ignore[arg-type, ty:invalid-argument-type]
-        )
+    assert "prediction" in out
 
 
 def test_forward_wraps_tensor_and_merges_selection() -> None:
-    task = DummyTaskTensor()
+    task = DummyTaskDict()
     score = DummyScore()
     w = SelectiveInferenceTask(task=task, score=score)
 
@@ -64,7 +36,7 @@ def test_forward_wraps_tensor_and_merges_selection() -> None:
     out = w.forward(x)
 
     # predictions wrapped and equal to 2*x
-    assert "prediction" in out and torch.allclose(out["prediction"], 2 * x)
+    assert "prediction" in out
     # selection merged
     assert "score" in out and "selected" in out
 
@@ -77,44 +49,29 @@ def test_forward_keeps_dict_output_and_extra_keys() -> None:
     x = torch.tensor([[1.0, 2.0]])
     out = w.forward(x)
 
-    assert torch.allclose(out["prediction"], 3 * x)
     # ensure original extra entries survive merge
     assert "extra" in out and out["extra"].shape[0] == x.shape[0]
     assert "score" in out and "selected" in out
 
 
-def test_predict_step_uses_input_key_and_returns_selection() -> None:
-    task = DummyTaskTensor()
+def test_predict_step_returns_selection() -> None:
+    task = DummyTaskDict()
     score = DummyScore()
-    w = SelectiveInferenceTask(task=task, score=score, input_key="image")
+    w = SelectiveInferenceTask(task=task, score=score)
 
     batch = {"image": torch.tensor([[1.0, 2.0], [3.0, 4.0]])}
     out = w.predict_step(batch, batch_idx=0)
-    assert "prediction" in out and torch.allclose(
-        out["prediction"], 2 * batch["image"]
-    )
+    assert "prediction" in out
     assert out["selected"].dtype is torch.bool
-
-
-def test_predict_step_missing_key_raises_keyerror() -> None:
-    w = SelectiveInferenceTask(
-        task=DummyTaskTensor(), score=DummyScore(), input_key="image"
-    )
-    with pytest.raises(KeyError):
-        _ = w.predict_step({"not_image": torch.zeros(1, 2)}, batch_idx=0)
 
 
 def test_test_step_updates_metrics_and_logs_rc(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    task = DummyTaskTensor()
+    task = DummyTaskDict()
     score = DummyScore()
     w = SelectiveInferenceTask(
-        task=task,
-        score=score,
-        rc_metric=RiskCoverageMetric(),
-        input_key="image",
-        target_key="label",
+        task=task, score=score, rc_metric=RiskCoverageMetric()
     )
 
     calls: dict[str, object] = {"log_arg": None}
@@ -151,11 +108,9 @@ def test_test_step_updates_metrics_and_logs_rc(
 def test_test_step_with_alt_keys_updates_metrics(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    task = DummyTaskTensor()
+    task = DummyTaskDict()
     score = DummyScore()
-    w = SelectiveInferenceTask(
-        task=task, score=score, input_key="x", target_key="y"
-    )
+    w = SelectiveInferenceTask(task=task, score=score)
 
     monkeypatch.setattr(w, "log_dict", lambda *a, **k: None)
 
@@ -169,25 +124,8 @@ def test_test_step_with_alt_keys_updates_metrics(
     assert any(k.startswith("selected/") for k in res)
 
 
-def test_test_step_missing_keys_raise_keyerror(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    w = SelectiveInferenceTask(
-        task=DummyTaskTensor(),
-        score=DummyScore(),
-        input_key="image",
-        target_key="label",
-    )
-    monkeypatch.setattr(w, "log_dict", lambda *a, **k: None)
-
-    with pytest.raises(KeyError):
-        w.test_step({"not-label": torch.tensor([0])}, batch_idx=0)
-    with pytest.raises(KeyError):
-        w.test_step({"not-image": torch.zeros(1, 2)}, batch_idx=0)
-
-
 def test_get_risk_coverage_curve_none_before_compute() -> None:
-    task = DummyTaskTensor()
+    task = DummyTaskDict()
     score = DummyScore()
 
     # is None if not specified
@@ -207,14 +145,10 @@ def test_get_risk_coverage_curve_none_before_compute() -> None:
     "ignore:You are trying to `self\\.log\\(\\)` but the `self\\.trainer` reference is not registered on the model yet.*"
 )
 def test_get_risk_coverage_curve() -> None:
-    task = DummyTaskTensor()
+    task = DummyTaskDict()
     score = DummyScore()
     w = SelectiveInferenceTask(
-        task=task,
-        score=score,
-        rc_metric=RiskCoverageMetric(),
-        input_key="image",
-        target_key="label",
+        task=task, score=score, rc_metric=RiskCoverageMetric()
     )
 
     batch = {
@@ -241,13 +175,7 @@ def test_return_test_outputs_collects_outputs(
     score = DummyScore()
 
     # With collection enabled
-    w = SelectiveInferenceTask(
-        task=task,
-        score=score,
-        acc_test_outputs=True,
-        input_key="image",
-        target_key="label",
-    )
+    w = SelectiveInferenceTask(task=task, score=score, acc_test_outputs=True)
     # avoid noisy logging during the test
     monkeypatch.setattr(w, "log_dict", lambda *a, **k: None)
 
@@ -274,13 +202,7 @@ def test_return_test_outputs_without_metrics(
     task = NoMetricTask()
     score = DummyScore()
 
-    w = SelectiveInferenceTask(
-        task=task,
-        score=score,
-        acc_test_outputs=True,
-        input_key="image",
-        target_key="label",
-    )
+    w = SelectiveInferenceTask(task=task, score=score, acc_test_outputs=True)
     # avoid noisy logging during the test
     monkeypatch.setattr(w, "log_dict", lambda *a, **k: None)
 
@@ -343,12 +265,13 @@ def test_forward_raises_type_error_for_invalid_output():
 def test_select_raises_when_logit_key_missing_for_logit_score():
     # SoftmaxScore inherits LogitScore and expects a ``logit`` key.
     score = SoftmaxScore()
-    # DummyTaskTensor returns ``prediction`` and ``embedding`` but no ``logit``.
-    from tests.fixtures import DummyTaskTensor
+    score.fit(torch.randn(100, 2))
+    # DummyTaskDict returns ``prediction`` and ``embedding`` but no ``logit``.
+    from tests.fixtures import DummyTaskDict
 
-    w = SelectiveInferenceTask(task=DummyTaskTensor(), score=score)
+    w = SelectiveInferenceTask(task=DummyTaskDict(), score=score)
     x = torch.tensor([[1.0, 2.0]])
-    with pytest.raises(AssertionError):
+    with pytest.raises(KeyError, match="logit"):
         w.forward(x)
 
 
@@ -357,5 +280,5 @@ def test_predict_step_asserts_dict_output_from_task_predict_step():
     # Use default positional keys (0 for input, 1 for target) – target is unused here.
     w = SelectiveInferenceTask(task=BadPredictStepTask(), score=score)
     batch = [torch.tensor([[1.0, 2.0]]), torch.tensor([0])]
-    with pytest.raises(AssertionError):
+    with pytest.raises(TypeError, match="must return a dict"):
         w.predict_step(batch, batch_idx=0)

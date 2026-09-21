@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import torch
@@ -19,18 +20,18 @@ class EmptyModel(torch.nn.Module):
 
 
 class BadModel(torch.nn.Module):
-    def predict(self, x):
+    def predict(self, batch):
         return {"wrong": torch.tensor([1])}
 
 
 class BadModelWrongSig(torch.nn.Module):
-    def predict(self, y):  # type: ignore[override]
+    def predict(self, x):  # type: ignore[override]
         return torch.zeros(1, 2)  # pragma: no cover
 
 
 class BadForwardTask(torch.nn.Module):
-    def predict(self, x: torch.Tensor):
-        return [x]
+    def predict(self, batch: torch.Tensor):
+        return [batch]
 
 
 class BadPredictStepTask(LightningModule):
@@ -49,7 +50,13 @@ class DummyModel(torch.nn.Module):
         self.lin = torch.nn.Linear(1, 1)
         self.test_metrics = MetricCollection(Accuracy(task="binary"))
 
-    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
+    def predict(
+        self, batch: dict[str, torch.Tensor] | torch.Tensor
+    ) -> dict[str, torch.Tensor]:
+        if isinstance(batch, dict):
+            x = batch["image"]
+        else:
+            x = batch
         return {
             "embedding": x.view(x.shape[0], -1),
             "logit": x,
@@ -79,34 +86,40 @@ class DummyTask(LightningModule):
         # base metric required by SelectiveInferenceTask (will be wrapped by SelectiveMetric)
         self.test_metrics = Accuracy(task="binary")
 
-    def predict(self, x: torch.Tensor) -> torch.Tensor:
+    def predict(
+        self, batch: dict[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor]:
         # predictions encoded in second column (0/1)
-        return x[:, 1].long()
+        return {
+            "prediction": batch["image"][:, 1].long(),
+            "image": batch["image"],
+            "label": batch["label"],
+        }
 
 
-class DummyTaskTensor(LightningModule):
+class DummyTaskDict(LightningModule):
     """Task returning a tensor from ``predict``."""
 
     test_metrics: MetricCollection = MetricCollection(Accuracy(task="binary"))
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: Mapping[str, Any] | Sequence[Any] | torch.Tensor):
         if isinstance(x, list):
             x = x[0]
         if isinstance(x, dict):
             x = next(iter(x.values()))
-        x = 2 * x
+        x = 2 * x  # type: ignore
         return x
 
-    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
-        x = self.forward(x)
-        return {"prediction": x, "embedding": x}
-
-
-class DummyTaskDict(DummyTaskTensor):
-    """Task returning a dict from ``predict``."""
-
-    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
-        return {"prediction": 3 * x, "extra": x.sum(dim=1)}
+    def predict(
+        self, batch: dict[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor]:
+        out = self.forward(batch)
+        return {
+            "prediction": (out > 0.5).long(),
+            "embedding": out,
+            "label": (out > 0.5).long(),
+            "extra": out,
+        }
 
 
 class NoMetricTask(DummyTaskDict):
@@ -196,15 +209,21 @@ class SimpleL2Score(EmbeddingScore):
 class DummyScore(UncertaintyScore):
     """Minimal duck-typed score with select()."""
 
-    def select(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
+    def select(
+        self, query: dict[str, torch.Tensor] | torch.Tensor
+    ) -> dict[str, torch.Tensor]:
+        if isinstance(query, dict):
+            x = query.get("prediction")
+        else:
+            x = query
         b = x.shape[0]
         return {
             "score": torch.arange(b, dtype=x.dtype, device=x.device),
             "selected": torch.ones(b, dtype=torch.bool, device=x.device),
         }
 
-    def score(self, x: torch.Tensor) -> torch.Tensor:
-        return x  # pragma: no cover
+    def score(self, query: torch.Tensor) -> torch.Tensor:
+        return query  # pragma: no cover
 
     def fit(
         self,

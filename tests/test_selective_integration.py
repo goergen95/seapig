@@ -32,17 +32,17 @@ class FlagScore(UncertaintyScore):
         # no-op: store reference embeddings for completeness
         self.ref_embeddings = X  # pragma: no cover
 
-    def score(self, embeddings: torch.Tensor) -> torch.Tensor:
+    def score(self, query: torch.Tensor) -> torch.Tensor:
+        X = query.get("image")
         # return a dummy score vector (lower is better). Not used by select().
-        return torch.zeros(
-            embeddings.shape[0], dtype=torch.float32
-        )  # pragma: no cover
+        return torch.zeros(X.shape[0], dtype=torch.float32)  # pragma: no cover
 
-    def select(self, embeddings: torch.Tensor) -> dict[str, torch.Tensor]:
+    def select(self, query: torch.Tensor) -> dict[str, torch.Tensor]:
+        X = query.get("image")
         # boolean selection
-        selected = embeddings[:, 0].to(torch.bool)
+        selected = X[:, 0].to(torch.bool)
         # numeric score (lower is better) — include in outputs for RiskCoverageMetric
-        score = (1.0 - embeddings[:, 0].to(torch.float32)).reshape(-1)
+        score = (1.0 - X[:, 0].to(torch.float32)).reshape(-1)
         return {"selected": selected, "score": score}
 
 
@@ -96,9 +96,7 @@ def test_selective_inference_trainer_integration(
 ) -> None:
     task = DummyTask()
     score = FlagScore()
-    sel_model = SelectiveInferenceTask(
-        task, score, input_key="image", target_key="label"
-    )
+    sel_model = SelectiveInferenceTask(task, score)
 
     trainer = Trainer(
         logger=False, enable_checkpointing=False, accelerator="cpu", devices=1
@@ -167,11 +165,7 @@ def test_risk_coverage_integration_via_trainer(tmp_path: pathlib.Path) -> None:
     task = DummyTask()
     score = FlagScore()
     sel_model = SelectiveInferenceTask(
-        task,
-        score,
-        rc_metric=RiskCoverageMetric(risk="selective"),
-        input_key="image",
-        target_key="label",
+        task, score, rc_metric=RiskCoverageMetric(risk="selective")
     )
 
     trainer = Trainer(

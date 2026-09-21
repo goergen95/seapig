@@ -59,10 +59,7 @@ def test_datamodule_transform_applied_consistently(tmp_path: Path) -> None:
     from lightning import LightningModule
 
     task = SelectiveInferenceTask(
-        task=cast(LightningModule, model),
-        score=score,
-        input_key="image",
-        target_key="label",
+        task=cast(LightningModule, model), score=score
     )
 
     trainer = Trainer(
