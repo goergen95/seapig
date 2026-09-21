@@ -54,7 +54,7 @@ def test_fit_with_embeddings_only() -> None:
     ref_embs = torch.randn(10, 5)
     cal_embs = torch.randn(5, 5)
 
-    score.fit(X=ref_embs, Y=cal_embs)
+    score.fit(ref=ref_embs, cal=cal_embs)
 
     assert score.ref_embeddings is not None
     assert torch.equal(score.ref_embeddings, ref_embs)
@@ -83,7 +83,7 @@ def test_fit_with_model_loaders() -> None:
         model=model,
         loaders={
             "train": cast(_EmbedLoader, train_loader),
-            "val": cast(_EmbedLoader, val_loader),
+            "cal": cast(_EmbedLoader, val_loader),
         },
     )
 
@@ -122,7 +122,7 @@ def test_fit_rejects_both_embeddings_and_model() -> None:
 
     score = MinimalEmbedding()
     with pytest.raises(ValueError):
-        score.fit(X=ref_embs, model=model, loaders={"train": train_loader})
+        score.fit(ref=ref_embs, model=model, loaders={"train": train_loader})
 
 
 def test_fit_rejects_neither_embeddings_nor_model() -> None:
@@ -157,7 +157,7 @@ def test_euclidean_score_fit_with_embeddings() -> None:
     ref_embs = torch.randn(20, 8)
     cal_embs = torch.randn(10, 8)
 
-    score.fit(X=ref_embs, Y=cal_embs)
+    score.fit(ref=ref_embs, cal=cal_embs)
 
     assert score.ref_embeddings is not None
     assert score.is_trained()
@@ -185,7 +185,7 @@ def test_euclidean_score_fit_with_model() -> None:
         model=model,
         loaders={
             "train": cast(_EmbedLoader, train_loader),
-            "val": cast(_EmbedLoader, val_loader),
+            "cal": cast(_EmbedLoader, val_loader),
         },
     )
 
@@ -200,7 +200,7 @@ def test_pca_score_fit_with_embeddings() -> None:
     ref_embs = torch.randn(20, 8)
     cal_embs = torch.randn(10, 8)
 
-    score.fit(X=ref_embs, Y=cal_embs)
+    score.fit(ref=ref_embs, cal=cal_embs)
 
     assert score.ref_embeddings is not None
     assert score.is_trained()
@@ -228,7 +228,7 @@ def test_pca_score_fit_with_model() -> None:
         model=model,
         loaders={
             "train": cast(_EmbedLoader, train_loader),
-            "val": cast(_EmbedLoader, val_loader),
+            "cal": cast(_EmbedLoader, val_loader),
         },
     )
 
@@ -248,7 +248,7 @@ def test_pyod_score_fit_with_embeddings() -> None:
     ref_embs = torch.randn(20, 8)
     cal_embs = torch.randn(10, 8)
 
-    score.fit(X=ref_embs, Y=cal_embs)
+    score.fit(ref=ref_embs, cal=cal_embs)
 
     assert score.ref_embeddings is not None
     assert score.is_trained()
@@ -281,7 +281,7 @@ def test_pyod_score_fit_with_model() -> None:
         model=model,
         loaders={
             "train": cast(_EmbedLoader, train_loader),
-            "val": cast(_EmbedLoader, val_loader),
+            "cal": cast(_EmbedLoader, val_loader),
         },
     )
 

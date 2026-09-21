@@ -48,7 +48,7 @@ def test_datamodule_transform_applied_consistently(tmp_path: Path) -> None:
         model=model,
         loaders=cast(
             dict[str, _EmbedLoader],
-            {"train": dm.train_dataloader(), "val": dm.val_dataloader()},
+            {"train": dm.train_dataloader(), "cal": dm.val_dataloader()},
         ),
     )
 

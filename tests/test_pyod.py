@@ -73,7 +73,7 @@ def test_fit_with_calibration_sets_calibrated_and_scores_from_decision_function(
     det = DetCal()
     score = PyODScore(detector=det, pca=None)  # type: ignore[argument-type, ty:invalid-argument-type]
 
-    score.fit(X=refs, Y=cal, q=False)
+    score.fit(ref=refs, cal=cal, q=False)
 
     assert score.is_trained()
     assert score.is_calibrated()

@@ -11,7 +11,7 @@ from typing_extensions import override
 from seapig.scores.classwise import ClassWiseScore
 from seapig.scores.embed import EmbeddingScore
 from seapig.scores.mixins import FAISSIndexMixin
-from seapig.scores.utils import TensorPCA
+from seapig.scores.utils import TensorPCA, _tensor
 
 __all__ = [
     "CosineClassWiseScore",
@@ -118,7 +118,7 @@ class KNNScore(EmbeddingScore, FAISSIndexMixin, ABC):
         self.ref_embeddings = self.ref_embeddings[index, :]
 
     @override
-    def _score(self, X: torch.Tensor) -> torch.Tensor:
+    def _score(self, query: torch.Tensor) -> torch.Tensor:
         """Compute an uncertainty score based on sample embeddings.
 
         Returns scores where low values indicate samples similar
@@ -131,6 +131,8 @@ class KNNScore(EmbeddingScore, FAISSIndexMixin, ABC):
             A `torch.Tensor` representing sample embeddings of shape `(B, D)`.
         """
         assert self.index is not None, "Index must be built before scoring"
+        X = _tensor(query, "embedding")
+        assert X is not None
         if self.pca is not None:
             X = self.pca.transform(X)
         score, _ = self._distance(query=X)

@@ -273,7 +273,7 @@ class ClassWiseScore(sp.UncertaintyScore):
                 assert X_val.shape[0] == y_val.shape[0]
                 Y_c = self._extract_class_data(X_val, y_val, lbl, multi_label)
             scorer = self.base_score_cls(**self._base_kwargs)
-            scorer.fit(X=X_c, Y=Y_c, **kwargs)  # type: ignore[arg-type]
+            scorer.fit(ref=X_c, cal=Y_c, **kwargs)  # type: ignore[arg-type]
             self._scorers[lbl] = scorer
 
         if self._mode is ClassWiseMode.MULTI_LABEL:
