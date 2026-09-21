@@ -229,8 +229,9 @@ class MySegmentationTask(SemanticSegmentationTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def predict(self, x: torch.Tensor) -> torch.Tensor:
+    def predict(self, batch: torch.Tensor) -> torch.Tensor:
         """Generate embeddings from the model's encoder for use in selection scoring."""
+        x = batch["image"]
         x = x.to(next(self.model.parameters()).device)
         features = self.model.encoder(x)
         decoder_output = self.model.decoder(features)
@@ -316,7 +317,7 @@ samples. This breakdown reveals where the model is reliable (selected) and where
 it struggles (rejected), providing actionable insights for deployment:
 
 ```{python sel-task}
-sel_model = SelectiveInferenceTask(task=model, score=score, input_key='image', target_key='mask')
+sel_model = SelectiveInferenceTask(task=model, score=score)
 stats = trainer.test(sel_model, test_dl)
 ```
 
