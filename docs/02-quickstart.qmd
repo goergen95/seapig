@@ -229,7 +229,7 @@ class MySegmentationTask(SemanticSegmentationTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def predict(self, batch: torch.Tensor) -> torch.Tensor:
+    def predict(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         """Generate embeddings from the model's encoder for use in selection scoring."""
         x = batch["image"]
         x = x.to(next(self.model.parameters()).device)
