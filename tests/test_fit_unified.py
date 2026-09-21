@@ -445,7 +445,7 @@ def test_fit_score_select_logits(
 
     # ---------- pre‑computed logits ----------
     scorer = ScoreClass(task=task)
-    scorer.fit(logits, labels, temp_scale=False)
+    scorer.fit(ref={"logit": logits, "label": labels}, temp_scale=False)
     assert scorer.logits is not None
     assert scorer.labels is not None
     assert scorer.temperature is None
@@ -463,7 +463,7 @@ def test_fit_score_select_logits(
 
     # ---------- temperature scaling ----------
     scorer_ts = ScoreClass(task=task)
-    scorer_ts.fit(logits, labels, temp_scale=True)
+    scorer_ts.fit(ref={"logit": logits, "label": labels}, temp_scale=True)
     assert (
         isinstance(scorer_ts.temperature, float) and scorer_ts.temperature > 0
     )
@@ -528,7 +528,7 @@ def test_logit_score_rejects_both_logits_and_model(ScoreClass):
     logits = torch.randn(10, 3)
     scorer = ScoreClass()
     with pytest.raises(ValueError, match=match):
-        scorer.fit(X=logits, model=model, loader=loader)
+        scorer.fit(ref={"logit": logits}, model=model, loader=loader)
     # also raises when one is specified, but missing the other
     with pytest.raises(
         ValueError, match="`model` and `loader` must be given together."
