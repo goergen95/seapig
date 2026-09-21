@@ -2,8 +2,10 @@ from typing import Any
 
 import pytest
 import torch
+from lightning import LightningModule
 
 from seapig import RiskCoverageMetric, SelectiveInferenceTask
+from seapig.scores import UncertaintyScore
 from seapig.scores.logits import SoftmaxScore
 from tests.fixtures import (
     BadForwardTask,
@@ -12,6 +14,88 @@ from tests.fixtures import (
     DummyTaskDict,
     NoMetricTask,
 )
+
+
+class BareScore(UncertaintyScore):
+    def fit(self):
+        pass
+
+    def select(self, query):
+        return query  # pragma: no cover
+
+    def score(self, query):
+        return query  # pragma: no cover
+
+
+class SimpleTask(LightningModule):
+    def __init__(self, output):
+        super().__init__()
+        self._output = output
+
+    def predict(self, batch):  # pragma: no cover
+        return self._output
+
+
+def test_init_requires_predict_method():
+    class BadPredictTask(LightningModule):
+        predict: int = 123
+
+    with pytest.raises(
+        TypeError,
+        match="`task` is required to expose a `predict\\(\\)` method.",
+    ):
+        SelectiveInferenceTask(task=BadPredictTask(), score=BareScore())
+
+
+def test_init_invalid_test_metrics_type():
+    task = SimpleTask(
+        output={"prediction": torch.tensor([1]), "label": torch.tensor([0])}
+    )
+    task.test_metrics = 123  # type: ignore
+    with pytest.raises(
+        TypeError,
+        match="Wrapped task's test_metrics must be a Metric or MetricCollection",
+    ):
+        SelectiveInferenceTask(task=task, score=BareScore())
+
+
+def test_init_invalid_rc_metric_type():
+    task = SimpleTask(
+        output={"prediction": torch.tensor([1]), "label": torch.tensor([0])}
+    )
+    with pytest.raises(
+        TypeError,
+        match="rc_metric must be a seapig RiskCoverageMetric instance or None.",
+    ):
+        SelectiveInferenceTask(
+            task=task,
+            score=BareScore(),
+            rc_metric=object(),  # type: ignore
+        )
+
+
+def test_test_step_missing_prediction_key():
+
+    # ``predict`` returns only ``label`` – ``prediction`` is absent.
+    task = SimpleTask(output={"label": torch.tensor([0])})
+    inference = SelectiveInferenceTask(task=task, score=BareScore())
+    with pytest.raises(KeyError, match="prediction"):
+        inference.test_step(batch={}, batch_idx=0)
+
+
+def test_test_step_missing_label_key():
+    # ``predict`` returns only ``prediction`` – ``label`` is absent.
+    task = SimpleTask(output={"prediction": torch.tensor([1])})
+    inference = SelectiveInferenceTask(task=task, score=BareScore())
+    with pytest.raises(KeyError, match="label"):
+        inference.test_step(batch={}, batch_idx=0)
+
+
+def test_predict_step_missing_prediction_key():
+    task = SimpleTask(output={"label": torch.tensor([0])})
+    inference = SelectiveInferenceTask(task=task, score=BareScore())
+    with pytest.raises(KeyError, match="prediction"):
+        inference.predict_step(batch={}, batch_idx=0)
 
 
 def test_init_accepts_default() -> None:
