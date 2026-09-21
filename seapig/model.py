@@ -9,7 +9,7 @@ testing.
 
 import copy
 from collections.abc import Mapping, Sequence
-from typing import Any, Literal, get_args
+from typing import Any, Literal
 
 import torch
 from lightning import LightningModule
@@ -17,7 +17,7 @@ from torchmetrics import Metric, MetricCollection
 
 from seapig.metric import RiskCoverageMetric, SelectiveMetric
 from seapig.risk import RiskCoverage
-from seapig.scores import EmbeddingScore, LogitScore, UncertaintyScore
+from seapig.scores import UncertaintyScore
 
 INPUT_KEYS = Literal["image", "input", "images", "inputs", "x"]
 TARGET_KEYS = Literal[
@@ -50,8 +50,6 @@ class SelectiveInferenceTask(LightningModule):
         task: LightningModule,
         score: UncertaintyScore,
         acc_test_outputs: bool = False,
-        input_key: INPUT_KEYS | None = None,
-        target_key: TARGET_KEYS | None = None,
         rc_metric: RiskCoverageMetric | None = None,
     ) -> None:
         """Create a SelectiveInferenceTask.
@@ -69,25 +67,17 @@ class SelectiveInferenceTask(LightningModule):
             `EmbeddingScore` / `LogitScore` which operate on specific model
             outputs.
         acc_test_outputs: bool, default `False``
-            If `True` the per‑batch outputs (predictions merged with selection
+            If `True` the per-batch outputs (predictions merged with selection
             results) are stored in `self.test_outputs` for later inspection.
-        input_key: INPUT_KEYS | None, optional
-            Key or positional index used to extract the input tensor from a batch.
-            `None` (default) selects the first element (position `0``). When a
-            string is supplied it must be one of the literals defined in
-            `INPUT_KEYS``.
-        target_key: TARGET_KEYS | None, optional
-            Similar to `input_key` but for the target/label tensor. `None``
-            selects the second element (position `1``). Must be a member of the
-            `TARGET_KEYS` literals when provided.
         rc_metric: RiskCoverageMetric | None, optional
-            Optional metric to track risk‑coverage during testing. If supplied it
+            Optional metric to track risk-coverage during testing. If supplied it
             will be updated on each test step and the final curve can be retrieved
             via :meth:`get_risk_coverage_curve`.
         """
         super().__init__()
         self.task = copy.deepcopy(task)
-        self.task.eval()  # Keep the wrapped task in evaluation mode
+        self.task.eval()
+
         assert isinstance(score, UncertaintyScore), (
             "score must be a seapig UncertaintyScore instance"
         )
@@ -98,40 +88,29 @@ class SelectiveInferenceTask(LightningModule):
                 "`task` is required to expose a `predict()` method."
             )
         self.score = score
-        if input_key is not None and input_key not in get_args(INPUT_KEYS):
-            raise ValueError(
-                f"input_key must be one of {get_args(INPUT_KEYS)}; got {input_key!r}"
-            )
-        self.input_key = 0 if input_key is None else input_key
-        if target_key is not None and target_key not in get_args(TARGET_KEYS):
-            raise ValueError(
-                f"target_key must be one of {get_args(TARGET_KEYS)}; got {target_key!r}"
-            )
-        self.target_key = 1 if target_key is None else target_key
 
-        self.test_metrics: SelectiveMetric | None = None
         task_metric = getattr(task, "test_metrics", None)
+        self.test_metrics = None
         if task_metric is not None:
-            assert isinstance(task_metric, (MetricCollection, Metric)), (
-                "Wrapped task's test_metrics must be a Metric or MetricCollection"
-            )
+            if not isinstance(task_metric, (MetricCollection, Metric)):
+                raise TypeError(
+                    "Wrapped task's test_metrics must be a Metric or MetricCollection"
+                )
             self.test_metrics = SelectiveMetric(base=task_metric)
 
-        self.rc_metric: RiskCoverageMetric | None = None
-        if rc_metric is not None:
-            assert isinstance(rc_metric, RiskCoverageMetric), (
-                "rc_metric must be a seapig RiskCoverageMetric instance or None"
+        if rc_metric is not None and not isinstance(
+            rc_metric, RiskCoverageMetric
+        ):
+            raise TypeError(
+                "rc_metric must be a seapig RiskCoverageMetric instance or None."
             )
-            self.rc_metric = rc_metric
-
-        # Initialize per‑batch output collection if requested
-        if acc_test_outputs:
-            self.test_outputs = []
-        else:
-            self.test_outputs = None
+        self.rc_metric = rc_metric
+        self.test_outputs = [] if acc_test_outputs else None
 
     @torch.inference_mode()
-    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
+    def forward(
+        self, batch: Mapping[str, Any] | Sequence[Any] | torch.Tensor
+    ) -> dict[str, torch.Tensor]:
         """Run the wrapped model and attach selection results.
 
         Parameters
@@ -150,39 +129,13 @@ class SelectiveInferenceTask(LightningModule):
             wrapped under the `'prediction'` key before merging.
         """
         assert callable(self.task.predict)
-        preds = self.task.predict(x)
-        if isinstance(preds, torch.Tensor):
-            preds = {"prediction": preds}
-        if not isinstance(preds, dict):
+        outputs = self.task.predict(batch)
+        if not isinstance(outputs, dict):
             raise TypeError(
-                f"Wrapped task must return a dict or torch.Tensor, got {type(preds).__name__}"
+                f"Wrapped task must return a dict, got {type(outputs).__name__}"
             )
-        assert "prediction" in preds, "Missing 'prediction' key in task output"
-        if isinstance(preds["prediction"], dict):
-            inner = preds.pop("prediction")
-            preds.update(inner)
-        selection = self._select(preds, x)
-        return preds | selection
-
-    def _select(
-        self, preds: dict[str, torch.Tensor], x_input: torch.Tensor
-    ) -> dict[str, torch.Tensor]:
-        """Compute selection mask from inputs."""
-        if isinstance(self.score, EmbeddingScore):
-            assert "embedding" in preds, (
-                "Embedding score requires `embedding` key in model's output dict."
-            )
-            _x = preds["embedding"]
-        elif isinstance(self.score, LogitScore):
-            assert "logit" in preds, (
-                "Logit score requires `logit` key in model's output dict."
-            )
-            _x = preds["logit"]
-        else:
-            # Generic UncertaintyScore expects the original model input tensor.
-            _x = x_input
-        selection = self.score.select(_x)
-        return selection
+        selection = self.score.select(query=outputs)
+        return outputs | selection
 
     @torch.inference_mode()
     def test_step(
@@ -214,28 +167,35 @@ class SelectiveInferenceTask(LightningModule):
         metrics are logged via Lightning's `log_dict` mechanism.
 
         """
-        x = _get_from_batch(batch, self.input_key, pos=0)
-        y = _get_from_batch(batch, self.target_key, pos=1)
-
-        outputs = self.forward(x)
+        selection = self.forward(batch)
+        if "prediction" not in selection:
+            raise KeyError(
+                "`test_step()` of SelectiveInferenceTask score requires `prediction` key in output of `predict()`."
+            )
+        if "label" not in selection:
+            raise KeyError(
+                "`test_step()` of SelectiveInferenceTask score requires `label` key in output of `predict()`."
+            )
 
         if self.test_metrics is not None:
             self.test_metrics.update(
-                preds=outputs["prediction"],
-                target=y,
-                selected=outputs["selected"],
+                preds=selection["prediction"],
+                target=selection["label"],
+                selected=selection["selected"],
             )
             self.log_dict(self.test_metrics.compute(), sync_dist=True)
 
         # Update risk-coverage metric; final values are logged in on_test_epoch_end
         if self.rc_metric is not None:
             self.rc_metric.update(
-                preds=outputs["prediction"], target=y, scores=outputs["score"]
+                preds=selection["prediction"],
+                target=selection["label"],
+                scores=selection["score"],
             )
             self.log_dict(self.rc_metric.compute(), sync_dist=True)
 
         if self.test_outputs is not None:
-            self.test_outputs.append(outputs)
+            self.test_outputs.append(selection)
 
     def on_test_epoch_end(self) -> None:
         """Log final computed test metrics once at the end of testing."""
@@ -257,21 +217,14 @@ class SelectiveInferenceTask(LightningModule):
         the wrapped model and the score. This mapping typically contains the
         model's predictions and the selection outputs (e.g. `score` and `selected`).
         """
-        x = _get_from_batch(batch, self.input_key, pos=0)
-
-        # if task has no predict_step we simply call forward
-        if not hasattr(self.task, "predict_step") or not callable(
-            self.task.predict_step
-        ):
-            return self.forward(x)
-
-        # otherwise we call the task's predict_step and merge with selection results
-        preds = self.task.predict_step(batch, batch_idx, dataloader_idx)
-        if isinstance(preds, torch.Tensor):
-            preds = {"prediction": preds}
-        assert isinstance(preds, dict)
-        selection = self._select(preds, x)
-        return preds | selection
+        selection = self.forward(batch)
+        if "prediction" not in selection:
+            raise KeyError(
+                "`predict_step()` of SelectiveInferenceTask score requires `prediction` key in output of `predict()`."
+            )
+        keys = ["prediction", "score", "selected"]
+        outputs = {k: v for k, v in selection.items() if k in keys}
+        return outputs
 
     def get_risk_coverage_curve(
         self,

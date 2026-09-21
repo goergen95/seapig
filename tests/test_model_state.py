@@ -32,23 +32,24 @@ class ModelWithBatchNorm(LightningModule):
             Accuracy(task="multiclass", num_classes=2)
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         x = self.conv(x)
         x = self.bn(x)
         x = torch.relu(x)
         x = self.pool(x)
-        x = x.flatten(start_dim=1)
-        return cast(torch.Tensor, self.fc(x))
+        embs = x.flatten(start_dim=1)
+        assert isinstance(embs, torch.Tensor)
+        return self.fc(embs), embs
 
-    def predict(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
+    def predict(
+        self, batch: torch.Tensor | dict[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor]:
         """Forward pass through the model."""
-        x = self.conv(x)
-        x = self.bn(x)
-        x = torch.relu(x)
-        x = self.pool(x)
-        _embs = x.flatten(start_dim=1)
-        y_hat = cast(torch.Tensor, self.fc(_embs))
-        return {"prediction": y_hat, "embedding": _embs}
+        if isinstance(batch, torch.Tensor):
+            y_hat, embs = self.forward(batch)
+        else:
+            y_hat, embs = self.forward(batch["image"])
+        return {"prediction": y_hat, "embedding": embs}
 
 
 def test_model_state_preserved_in_forward() -> None:
@@ -95,12 +96,12 @@ def test_fit_preserves_model_state() -> None:
     train_dataset = DictDataset(train_data)
     train_loader = DataLoader(train_dataset, batch_size=4)
 
-    val_data = torch.randn(10, 3, 8, 8)
-    val_dataset = DictDataset(val_data)
-    val_loader = DataLoader(val_dataset, batch_size=4)
+    cal_data = torch.randn(10, 3, 8, 8)
+    cal_dataset = DictDataset(cal_data)
+    cal_loader = DataLoader(cal_dataset, batch_size=4)
 
     loaders: dict[str, _EmbedLoader] = cast(
-        dict[str, _EmbedLoader], {"train": train_loader, "val": val_loader}
+        dict[str, _EmbedLoader], {"train": train_loader, "cal": cal_loader}
     )
 
     score = EuclideanScore(k=2)

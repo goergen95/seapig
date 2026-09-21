@@ -32,8 +32,8 @@ class DummyLogitModel(torch.nn.Module):
         self.K = K
         self.M = M
 
-    def predict(self, x: torch.Tensor):
-        N = x.shape[0]
+    def predict(self, batch):
+        N = batch.shape[0]
         if self.task == "multiclass":
             if self.per_member:
                 return {"logit": torch.randn(N, self.K, self.M)}
