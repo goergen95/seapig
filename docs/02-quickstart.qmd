@@ -45,6 +45,7 @@ import tempfile
 from typing import Tuple, List
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchmetrics import MetricCollection
 from torchmetrics import Accuracy
@@ -228,13 +229,16 @@ class MySegmentationTask(SemanticSegmentationTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def embed(self, x: torch.Tensor) -> torch.Tensor:
+    def predict(self, x: torch.Tensor) -> torch.Tensor:
         """Generate embeddings from the model's encoder for use in selection scoring."""
         x = x.to(next(self.model.parameters()).device)
-        embs = self.model.encoder(x)[-1]
-        embs = torch.mean(embs, dim=(-2, -1)) + torch.amax(embs, dim=(-2, -1))
-        embs = torch.nn.functional.normalize(embs, p=2, dim=1, out=embs)
-        return embs
+        features = self.model.encoder(x)
+        decoder_output = self.model.decoder(features)
+        masks = self.model.segmentation_head(decoder_output)
+        embedding = features[-1] # bottleneck representation
+        embedding = torch.mean(embedding, dim=(-2, -1)) + torch.amax(embedding, dim=(-2, -1))
+        embedding = F.normalize(embedding, p=2, dim=1)
+        return {"embedding": embedding, "prediction": masks}
 
     def configure_metrics(self) -> None:
         """Configure metrics for training, validation, and testing."""
@@ -290,7 +294,7 @@ validation score distribution. This means the model will flag roughly the top
 ```{python fit-score}
 #| warning: false
 score = CosineScore(k=1)
-score.fit(model=model, loaders={"train": train_dl, "val": val_dl})
+score.fit(model=model, loaders={"train": train_dl, "cal": val_dl})
 score.set_threshold(q=0.80)
 print(f"Threshold: {score.threshold}")
 ```
