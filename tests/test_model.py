@@ -18,7 +18,7 @@ from tests.fixtures import (
 
 class BareScore(UncertaintyScore):
     def fit(self):
-        pass
+        pass  # pragma: no cover
 
     def select(self, query):
         return query  # pragma: no cover

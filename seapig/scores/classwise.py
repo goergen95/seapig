@@ -239,10 +239,20 @@ class ClassWiseScore(sp.UncertaintyScore):
                     overwrite=False,
                 )
 
+        if not isinstance(ref, dict):
+            raise TypeError(
+                "`ref` must be a dictionary with `embedding` and `label`."
+            )
+
         X = _tensor(ref, "embedding")
         y = _tensor(ref, "label")
         assert isinstance(X, torch.Tensor)
         assert isinstance(y, torch.Tensor)
+
+        if cal is not None and not isinstance(cal, dict):
+            raise TypeError(
+                "`cal` must be a dictionary with `embedding` and `label`."
+            )
         X_cal = _tensor(cal, "embedding")
         y_cal = _tensor(cal, "label")
 
@@ -270,8 +280,7 @@ class ClassWiseScore(sp.UncertaintyScore):
             if X_c.shape[0] == 0:
                 raise ValueError(f"No training samples found for class {lbl}")
             X_cal_c: torch.Tensor | None = None
-            if X_cal is not None:
-                assert isinstance(y_cal, torch.Tensor)
+            if X_cal is not None and y_cal is not None:
                 assert X_cal.shape[0] == y_cal.shape[0]
                 X_cal_c = self._extract_class_data(
                     X_cal, y_cal, lbl, multi_label
@@ -281,8 +290,7 @@ class ClassWiseScore(sp.UncertaintyScore):
             self._scorers[lbl] = scorer
 
         if self._mode is ClassWiseMode.MULTI_LABEL:
-            if X_cal is not None:
-                assert isinstance(y_cal, torch.Tensor)
+            if X_cal is not None and y_cal is not None:
                 self.scores = self._score_multi_label(X_cal, y_cal)
             else:
                 self.scores = self._score_multi_label(X, y)

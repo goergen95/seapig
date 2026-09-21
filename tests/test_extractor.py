@@ -297,12 +297,29 @@ def test_concat_and_move_operations():
 
 
 def test_validated_keys_errors():
+    # Empty output_keys should raise
+    with pytest.raises(ValueError, match="`output_keys` is required."):
+        ModelExtractor(output_keys=(), input_keys=("x",))
     # Empty input_keys should raise
     with pytest.raises(ValueError, match="must not be empty"):
         ModelExtractor(output_keys=("out",), input_keys=())
     # Collision between output_key and extra input_keys should raise
     with pytest.raises(ValueError, match="collide with input_keys"):
         ModelExtractor(output_keys=("meta",), input_keys=("x", "meta"))
+
+
+def test_loader_non_dict_batch_raises():
+    # Use make_loader which yields raw tensors (no dict)
+    tensor = torch.randn(2, 3)
+    loader = make_loader(tensor)
+    # Provide an extra input key to force the extra‑keys branch
+    extractor = ModelExtractor(
+        output_keys=("embedding",), input_keys=("image", "meta")
+    )
+    with pytest.raises(
+        TypeError, match="Expected data loader to return a dictionary."
+    ):
+        extractor.extract(DummyModel(), loader)
 
 
 def test_load_non_mapping(tmp_path: pathlib.Path):

@@ -30,6 +30,11 @@ def test_random_score() -> None:
         == (selection["score"] < random_score.get_threshold())  # type: ignore[operator, ty:unsupported-operator]
     )
 
+    # dict as input
+    scores = random_score.score({"batch": batch})
+    assert scores.shape == (10,)
+    assert torch.all(scores >= 0) and torch.all(scores <= 1)
+
 
 @pytest.mark.parametrize("include_query", [False, True])
 def test_plot_method(include_query: bool) -> None:
