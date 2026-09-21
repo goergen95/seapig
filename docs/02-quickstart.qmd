@@ -239,7 +239,7 @@ class MySegmentationTask(SemanticSegmentationTask):
         embedding = features[-1] # bottleneck representation
         embedding = torch.mean(embedding, dim=(-2, -1)) + torch.amax(embedding, dim=(-2, -1))
         embedding = F.normalize(embedding, p=2, dim=1)
-        return {"embedding": embedding, "prediction": masks}
+        return {"embedding": embedding, "prediction": masks, "label": batch["mask"]}
 
     def configure_metrics(self) -> None:
         """Configure metrics for training, validation, and testing."""
