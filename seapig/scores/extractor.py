@@ -32,9 +32,9 @@ def _resolve_method(
     method = getattr(model, method_name)
     if not callable(method):
         raise TypeError(f"`model.{method_name}` must be callable")
-    if "x" not in inspect.signature(method).parameters:
+    if "batch" not in inspect.signature(method).parameters:
         raise AttributeError(
-            f"`model.{method_name}()` is required to accept `x` as argument."
+            f"`model.{method_name}()` is required to accept `batch` as argument."
         )
     return method
 
@@ -65,32 +65,6 @@ def _resolve_cache_path(
     outdir.mkdir(parents=True, exist_ok=True)
     name = f"{prefix}-{tag}" if tag else prefix
     return outdir / f"{name}.pt"
-
-
-def _normalise_inputs(
-    batch: Batch, keys: Sequence[str]
-) -> dict[str, torch.Tensor]:
-    """Map a batch of any common structure onto `keys`."""
-    if isinstance(batch, torch.Tensor):
-        return {keys[0]: batch}
-
-    if isinstance(batch, Mapping):
-        missing = [key for key in keys if key not in batch]
-        if missing:
-            raise KeyError(
-                f"Keys {missing} missing in batch (got {list(batch)})."
-            )
-        return {key: batch[key] for key in keys}
-
-    if isinstance(batch, Sequence):
-        if len(batch) < len(keys):
-            raise ValueError(
-                f"Batch has {len(batch)} elements but {len(keys)} input_keys "
-                f"were requested ({list(keys)})."
-            )
-        return {key: batch[i] for i, key in enumerate(keys)}
-
-    raise TypeError(f"Unsupported batch type: {type(batch)}.")
 
 
 def _to_cpu(value: Any) -> torch.Tensor:
@@ -222,16 +196,13 @@ class ModelExtractor:
         """Run the model over all batches and concatenate the results (on CPU)."""
         has_batch = False
         method = _resolve_method(model)
-        input_key, *extra_keys = keys
-
         was_training = model.training
         model.eval()
         collected: dict[str, list[torch.Tensor]] = defaultdict(list)
         try:
             for batch in track(loader, desc="Iterating over loader"):
                 has_batch = True
-                inputs = _normalise_inputs(batch, keys)
-                out_dict = method(inputs[input_key])
+                out_dict = method(batch)
                 if not isinstance(out_dict, Mapping):
                     raise TypeError(
                         f"The model's forward method must return a dict, got {type(out_dict)}."
@@ -242,8 +213,14 @@ class ModelExtractor:
                             f"Expected key '{out_key}' in model output (got {list(out_dict)})."
                         )
                     collected[out_key].append(_to_cpu(out_dict[out_key]))
+
+                _, *extra_keys = keys
                 for key in extra_keys:
-                    collected[key].append(_to_cpu(inputs[key]))
+                    if not isinstance(batch, dict):
+                        raise TypeError(
+                            "Expected data loader to return a dictionary."
+                        )
+                    collected[key].append(_to_cpu(batch[key]))
         finally:
             model.train(was_training)
 
