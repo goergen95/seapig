@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from typing_extensions import override
 
+from seapig.scores.utils import _tensor
 from seapig.utils import get_logger
 
 logger = get_logger(__name__)
@@ -274,15 +275,15 @@ class RandomScore(UncertaintyScore):
         self.set_threshold(q=0.99)
 
     @override
-    def fit(
-        self, X: torch.Tensor | None = None, Y: torch.Tensor | None = None
-    ) -> None:
+    def fit(self, *args, **kwargs) -> None:
         """Unused."""
         raise NotImplementedError()
 
     @override
     @torch.inference_mode()
-    def score(self, X: torch.Tensor) -> torch.Tensor:
+    def score(
+        self, query: torch.Tensor | dict[str, torch.Tensor]
+    ) -> torch.Tensor:
         """Compute a random uncertainty score for every sample in a batch.
 
         Returns random scores where low values indicate likely inliers and
@@ -290,7 +291,7 @@ class RandomScore(UncertaintyScore):
 
         Parameters
         ----------
-        X : torch.Tensor
+        ref : torch.Tensor
             Input batch of shape `(B, ...)`. Only the batch size is used.
 
         Returns
@@ -307,11 +308,19 @@ class RandomScore(UncertaintyScore):
         scores = score.score(torch.zeros(4, 10))
         ```
         """
-        return torch.rand(X.shape[0])
+        if isinstance(query, dict):
+            key = next(iter(query))
+            _query = _tensor(query, key)
+        else:
+            _query = query
+        assert isinstance(_query, torch.Tensor)
+        return torch.rand(_query.shape[0])
 
     @override
     @torch.inference_mode()
-    def select(self, X: torch.Tensor) -> dict[str, torch.Tensor]:
+    def select(
+        self, query: torch.Tensor | dict[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor]:
         """Select samples for prediction based on their random uncertainty score.
 
         Samples with scores lower than the threshold are selected for prediction.
@@ -343,7 +352,7 @@ class RandomScore(UncertaintyScore):
             )
             self.set_threshold()
         assert self.threshold is not None
-        score = self.score(X=X)
+        score = self.score(query=query)
         return {"score": score, "selected": score < self.threshold}
 
     @override
