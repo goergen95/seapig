@@ -31,9 +31,9 @@ class PCAScore(EmbeddingScore):
     from seapig.scores.utils import TensorPCA
 
     score = PCAScore(pca=TensorPCA(n_components=0.90))
-    score.fit(X=torch.randn(200, 64), Y=torch.randn(50, 64))
+    score.fit(ref=torch.randn(200, 64), cal=torch.randn(50, 64))
     score.set_threshold(q=0.95)
-    result = score.select(X=torch.randn(10, 64))
+    result = score.select(query=torch.randn(10, 64))
     print(result)
     ```
 
