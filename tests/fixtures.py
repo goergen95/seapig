@@ -63,8 +63,9 @@ class MinimalEmbedding(EmbeddingScore):
         self.train_required = False
         self.cal_required = False
 
-    def _score(self, X: torch.Tensor) -> torch.Tensor:
-        return X.sum(dim=1)
+    def _score(self, query: torch.Tensor | None) -> torch.Tensor:
+        assert query is not None
+        return query.sum(dim=1)
 
     def _fit(self, q: bool | float = False) -> None:
         pass  # pragma: no cover
@@ -186,9 +187,9 @@ class SimpleL2Score(EmbeddingScore):
         )
         self.set_calibrated()
 
-    def _score(self, X: torch.Tensor):
+    def _score(self, query: torch.Tensor | None):
         assert self.ref_embeddings is not None
-        dists = torch.cdist(X, self.ref_embeddings)
+        dists = torch.cdist(query, self.ref_embeddings)
         return dists.min(dim=1).values
 
 
@@ -207,8 +208,8 @@ class DummyScore(UncertaintyScore):
 
     def fit(
         self,
-        X: torch.Tensor | None = None,
-        Y: torch.Tensor | None = None,
+        ref: torch.Tensor | dict[str, torch.Tensor] | None = None,
+        cal: torch.Tensor | dict[str, torch.Tensor] | None = None,
         *args,
         **kwargs,
     ) -> None:

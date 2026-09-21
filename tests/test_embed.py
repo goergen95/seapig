@@ -166,7 +166,7 @@ def test_visualize_embeddings() -> None:
 
     with pytest.raises(ValueError):
         score.plot_embs(
-            query_embeddings=query_embeddings,
+            query=query_embeddings,
             method="invalid_method",  # type: ignore[arg-type, ty:invalid-argument-type]
             method_args=tsne_args,
         )
@@ -178,9 +178,7 @@ def test_visualize_embeddings() -> None:
     with patch.object(plt, "show"):
         # Test with umap
         score.plot_embs(
-            query_embeddings=query_embeddings,
-            method="tsne",
-            method_args=tsne_args,
+            query=query_embeddings, method="tsne", method_args=tsne_args
         )
 
     # Ensure no exceptions were raised
@@ -197,7 +195,7 @@ def test_score_with_embeddings_only() -> None:
     embeddings = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
 
     # Call score with embeddings
-    scores = s.score(X=embeddings)
+    scores = s.score(query=embeddings)
 
     assert isinstance(scores, torch.Tensor)
     assert scores.shape[0] == 3
@@ -241,7 +239,7 @@ def test_score_rejects_mixed_parameters() -> None:
 
     # Should raise ValueError when both X and model are provided
     with pytest.raises(ValueError, match=match):
-        s.score(X=embeddings, model=DummyModel(), loader=loader)
+        s.score(query=embeddings, model=DummyModel(), loader=loader)
 
 
 def test_score_requires_parameters() -> None:
@@ -277,7 +275,7 @@ def test_select_with_embeddings_only() -> None:
     embeddings = torch.tensor([[1.0, 2.0], [10.0, 10.0]])
 
     # Call select with embeddings
-    result = s.select(X=embeddings)
+    result = s.select(query=embeddings)
 
     assert "score" in result
     assert "selected" in result
@@ -328,7 +326,7 @@ def test_select_rejects_mixed_parameters() -> None:
 
     # Should raise ValueError when both X and model are provided
     with pytest.raises(ValueError, match=match):
-        s.select(X=embeddings, model=DummyModel(), loader=loader)
+        s.select(query=embeddings, model=DummyModel(), loader=loader)
 
 
 def test_select_requires_parameters() -> None:
@@ -353,7 +351,7 @@ def test_fit_parameter_validation_errors() -> None:
     X = torch.randn(2, 4)
 
     with pytest.raises(ValueError, match=match):
-        s.fit(X=X, model=DummyModel(), loaders={"a": 1})  # type: ignore
+        s.fit(ref=X, model=DummyModel(), loaders={"a": 1})  # type: ignore
 
     # neither provided should raise
     with pytest.raises(ValueError, match=match):
@@ -408,10 +406,10 @@ def test_plot_embs_missing_libraries_raise(
 
     if method is None:
         with pytest.raises(ImportError, match=expected_msg):
-            e.plot_embs(query_embeddings=torch.randn(2, 4))
+            e.plot_embs(query=torch.randn(2, 4))
     else:
         with pytest.raises(ImportError, match=expected_msg):
-            e.plot_embs(query_embeddings=torch.randn(2, 4), method=method)  # type: ignore[arg-type, ty:invalid-argument-type]
+            e.plot_embs(query=torch.randn(2, 4), method=method)  # type: ignore[arg-type, ty:invalid-argument-type]
 
 
 def test_fit_errors_when_both_or_neither_provided() -> None:
@@ -424,7 +422,9 @@ def test_fit_errors_when_both_or_neither_provided() -> None:
 
     with pytest.raises(ValueError, match=match):
         s.fit(
-            X=emb, model=DummyModel(), loaders=cast(dict[str, _EmbedLoader], {})
+            ref=emb,
+            model=DummyModel(),
+            loaders=cast(dict[str, _EmbedLoader], {}),
         )
 
 
@@ -440,7 +440,7 @@ def test_select_triggers_set_threshold_when_none(
     caplog.clear()
     caplog.set_level("WARNING")
     X = torch.tensor([[0.0, 0.0], [1.0, 1.0]])
-    res = s.select(X=X)
+    res = s.select(query=X)
     assert any(
         "Threshold has not been set" in rec.message for rec in caplog.records
     )
@@ -463,7 +463,7 @@ def test_select_and_set_threshold_with_calibrated() -> None:
     e.set_threshold(q=0.5)
     # now select with query embeddings
     X = torch.randn(2, 4)
-    result = e.select(X=X)
+    result = e.select(query=X)
     assert "score" in result and "selected" in result
     assert result["score"].shape[0] == X.shape[0]
     assert result["selected"].dtype == torch.bool

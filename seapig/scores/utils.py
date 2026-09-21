@@ -506,3 +506,17 @@ class TensorPCA(torch.nn.Module):
                     setattr(self, name, val)
                 else:
                     self.register_buffer(name, val)
+
+
+def _tensor(
+    x: torch.Tensor | dict[str, torch.Tensor] | None, key: str
+) -> torch.Tensor | None:
+    if x is None:
+        return None
+    if isinstance(x, torch.Tensor):
+        return x
+    if not isinstance(x, dict):
+        raise TypeError(f"Expected tensor or dict of tensors with key `{key}`")
+    if not key in x:
+        raise KeyError(f"Expected tensor or dict of tensors with key `{key}`")
+    return x[key]

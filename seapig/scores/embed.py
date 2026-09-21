@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from typing_extensions import override
 
 from seapig.scores.base import UncertaintyScore
-from seapig.scores.utils import TensorPCA
+from seapig.scores.utils import TensorPCA, _tensor
 from seapig.utils import get_logger
 
 logger = get_logger(__name__)
@@ -85,8 +85,8 @@ class EmbeddingScore(UncertaintyScore, ABC):
 
     def fit(
         self,
-        X: torch.Tensor | None = None,
-        Y: torch.Tensor | None = None,
+        ref: torch.Tensor | dict[str, torch.Tensor] | None = None,
+        cal: torch.Tensor | dict[str, torch.Tensor] | None = None,
         model: torch.nn.Module | None = None,
         loaders: dict[str, DataLoader[torch.Tensor | dict[str, torch.Tensor]]]
         | None = None,
@@ -118,10 +118,10 @@ class EmbeddingScore(UncertaintyScore, ABC):
 
         Parameters
         ----------
-        X:
+        ref:
             A `torch.Tensor` with training sample embeddings. Required when not
             using `model` and `loaders`.
-        Y:
+        cal:
             A `torch.Tensor` with calibration sample embeddings. Optional.
         model:
             A `torch.nn.Module` with an `.embed()` method. Required when not
@@ -139,7 +139,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
             A `float` or `bool` indicating if outliers from the training
             distribution should be filtered before fitting. Defaults to `False`.
         """
-        tensor_mode = X is not None
+        tensor_mode = ref is not None
         model_mode = model is not None or loaders is not None
         if tensor_mode == model_mode:
             raise ValueError(
@@ -149,25 +149,23 @@ class EmbeddingScore(UncertaintyScore, ABC):
             assert model is not None
             assert loaders is not None
             assert "train" in loaders
-            data = self.extractor.extract(
+            ref = self.extractor.extract(
                 model=model,
                 loader=loaders["train"],
                 outdir=outdir,
                 prefix=prefix,
                 overwrite=False,
             )
-            X = data.get("embedding")
-            if "val" in loaders:
-                data = self.extractor.extract(
+            if "cal" in loaders:
+                cal = self.extractor.extract(
                     model=model,
-                    loader=loaders["val"],
+                    loader=loaders["cal"],
                     outdir=outdir,
                     prefix=prefix,
                     overwrite=False,
                 )
-                Y = data.get("embedding")
-        self.ref_embeddings = X
-        self.cal_embeddings = Y
+        self.ref_embeddings = _tensor(ref, "embedding")
+        self.cal_embeddings = _tensor(cal, "embedding")
         self._fit(q=q)
 
     def _fit(self, q: bool | float = False):
@@ -178,7 +176,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
     @override
     def score(
         self,
-        X: torch.Tensor | None = None,
+        query: torch.Tensor | dict[str, torch.Tensor] | None = None,
         model: torch.nn.Module | None = None,
         loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]]
         | None = None,
@@ -208,7 +206,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
 
         Parameters
         ----------
-        X:
+        query:
             A `torch.Tensor` with query embeddings of shape `(N, D)`.
             Required when not using `model` and `loader`.
         model:
@@ -230,7 +228,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
             1-D tensor of shape `(N,)` with uncertainty scores.
             Low values indicate likely inliers, high values indicate likely outliers.
         """
-        tensors_mode = X is not None
+        tensors_mode = query is not None
         model_mode = model is not None and loader is not None
 
         if tensors_mode == model_mode:
@@ -238,14 +236,14 @@ class EmbeddingScore(UncertaintyScore, ABC):
                 "Specify either pre-computed tensors (X and Y) or a model with a loader, but not both."
             )
         if model_mode:
-            data = self.extractor.extract(
+            query = self.extractor.extract(
                 model=model, loader=loader, outdir=outdir, prefix=prefix
             )
-            X = data.get("embedding")
-        assert isinstance(X, torch.Tensor)
+        X = _tensor(query, "embedding")
+        assert X is not None
         return self._score(X)
 
-    def _score(self, X: torch.Tensor):
+    def _score(self, query: torch.Tensor):
         raise NotImplementedError(
             "Subclasses must implement the `_score` method."
         )
@@ -253,7 +251,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
     @override
     def select(
         self,
-        X: torch.Tensor | None = None,
+        query: torch.Tensor | dict[str, torch.Tensor] | None = None,
         model: torch.nn.Module | None = None,
         loader: DataLoader[torch.Tensor | dict[str, torch.Tensor]]
         | None = None,
@@ -290,7 +288,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
 
         Parameters
         ----------
-        X:
+        query:
             A `torch.Tensor` with query sample embeddings of shape `(N, D)`.
             Required when not using `model` and `loader`.
         model:
@@ -324,7 +322,11 @@ class EmbeddingScore(UncertaintyScore, ABC):
         assert self.threshold is not None
 
         score = self.score(
-            X=X, model=model, loader=loader, outdir=outdir, prefix=prefix
+            query=query,
+            model=model,
+            loader=loader,
+            outdir=outdir,
+            prefix=prefix,
         )
         return {"score": score, "selected": score < self.threshold}
 
@@ -351,7 +353,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
 
     def plot_embs(
         self,
-        query_embeddings: torch.Tensor | None,
+        query: torch.Tensor | None,
         method: Literal["tsne", "umap"] = "tsne",
         method_args: dict[str, Any] | None = None,
     ) -> None:
@@ -384,9 +386,9 @@ class EmbeddingScore(UncertaintyScore, ABC):
             embeddings.append(self.cal_embeddings)
             labels.extend(["cal"] * len(self.cal_embeddings))
 
-        if query_embeddings is not None:
-            embeddings.append(query_embeddings)
-            labels.extend(["query"] * len(query_embeddings))
+        if query is not None:
+            embeddings.append(query)
+            labels.extend(["query"] * len(query))
 
         all_embeddings: torch.Tensor = torch.cat(embeddings, dim=0)
 
