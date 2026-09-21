@@ -15,6 +15,7 @@ from typing_extensions import override
 from seapig.scores.base import UncertaintyScore
 from seapig.scores.extractor import ModelExtractor
 from seapig.scores.logits_utils import Task, TemperatureScaler, get_task
+from seapig.scores.utils import _tensor
 
 __all__ = [
     "EnergyScore",
@@ -117,8 +118,8 @@ class LogitScore(UncertaintyScore, abc.ABC):
 
     def fit(
         self,
-        X: torch.Tensor | None = None,
-        Y: torch.Tensor | None = None,
+        ref: torch.Tensor | dict[str, torch.Tensor] | None = None,
+        cal: torch.Tensor | dict[str, torch.Tensor] | None = None,
         temp_scale: bool = False,
         model: torch.nn.Module | None = None,
         loader: DataLoader[Batch] | None = None,
@@ -140,11 +141,11 @@ class LogitScore(UncertaintyScore, abc.ABC):
 
         Parameters
         ----------
-        X : torch.Tensor or None
+        ref : torch.Tensor or None
             Reference logits. Shape depends on task (see class docstring).
             Required when not using `model` and `loader`.
-        Y : torch.Tensor or None
-            Optional labels for temperature fitting. Shape/type depends on task.
+        cal:
+            Unused. For compatiblity with Embedding based scores API interface.
         temp_scale: bool
             Boolean indicating if temperature scaling is to be applied. Defaults to
             `False`. If set to `True` labels are required.
@@ -163,9 +164,15 @@ class LogitScore(UncertaintyScore, abc.ABC):
         Labels are required for temperature fitting to minimize NLL for the task.
         """
         logits, extracted_labels = self._resolve(
-            X, model, loader, outdir, prefix, want_labels=temp_scale
+            _tensor(ref, "logit"),
+            model,
+            loader,
+            outdir,
+            prefix,
+            want_labels=temp_scale,
         )
-        labels = Y if Y is not None else extracted_labels
+        labels = _tensor(ref, "label")
+        labels = labels if labels is not None else extracted_labels
 
         self.logits, self.labels = logits, labels
         if labels is not None and temp_scale:
@@ -175,7 +182,7 @@ class LogitScore(UncertaintyScore, abc.ABC):
     @override
     def score(
         self,
-        query_logits: torch.Tensor | None = None,
+        query: torch.Tensor | dict[str, torch.Tenso] | None = None,
         model: torch.nn.Module | None = None,
         loader: DataLoader[Batch] | None = None,
         outdir: Path | None = None,
@@ -204,8 +211,9 @@ class LogitScore(UncertaintyScore, abc.ABC):
 
         Parameters
         ----------
-        query_logits : torch.Tensor
-            Logits for samples to score. Shape depends on task.
+        query : torch.Tensor | dict[str, torch.Tensor]
+            Logits for samples to score. Shape depends on task. Key `logit` required
+            if a dict is specified.
         model:
             A `torch.nn.Module` with an `.embed()` method.
             Required when not using `X`.
@@ -225,13 +233,18 @@ class LogitScore(UncertaintyScore, abc.ABC):
             1-D tensor of shape `(N,)`. Lower values indicate lower uncertainty.
         """
         logits, _ = self._resolve(
-            query_logits, model, loader, outdir, prefix, want_labels=False
+            _tensor(query, "logit"),
+            model,
+            loader,
+            outdir,
+            prefix,
+            want_labels=False,
         )
         return self._score(logits)
 
     def select(
         self,
-        query_logits: torch.Tensor | None = None,
+        query: torch.Tensor | None = None,
         model: torch.nn.Module | None = None,
         loader: DataLoader[Batch] | None = None,
         outdir: Path | None = None,
@@ -244,8 +257,9 @@ class LogitScore(UncertaintyScore, abc.ABC):
 
         Parameters
         ----------
-        query_logits : torch.Tensor
-            Logits for samples to select. Shape depends on task.
+        query : torch.Tensor | dict[str, torch.Tensor]
+            Logits for samples to score. Shape depends on task. Key `logit` required
+            if a dict is specified.
         model:
                 A `torch.nn.Module` with an `.embed()` method.
             Required when not using `X`.
@@ -268,7 +282,7 @@ class LogitScore(UncertaintyScore, abc.ABC):
         if self.threshold is None:
             self.set_threshold()
         assert self.threshold is not None
-        scores = self.score(query_logits, model, loader, outdir, prefix)
+        scores = self.score(query, model, loader, outdir, prefix)
         return {"score": scores, "selected": scores < self.threshold}
 
     def _resolve(

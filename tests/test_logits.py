@@ -96,11 +96,11 @@ def test_temperature_scaling_path():
     labels = torch.randint(0, 3, (10,))
     # No scaling – temperature stays None
     score_no_scale = SoftmaxScore()
-    score_no_scale.fit(logits, labels, temp_scale=False)
+    score_no_scale.fit(ref={"logit": logits, "label": labels}, temp_scale=False)
     assert score_no_scale.temperature is None
     # With scaling – temperature set to a positive float
     score_scale = SoftmaxScore()
-    score_scale.fit(logits, labels, temp_scale=True)
+    score_scale.fit(ref={"logit": logits, "label": labels}, temp_scale=True)
     assert isinstance(score_scale.temperature, float)
     assert score_scale.temperature > 0
 
@@ -122,7 +122,7 @@ def _run_pointwise_score(
     score_cls, logits, labels, temp_scale, task="multiclass"
 ):
     scorer = score_cls(task=task)  # specify task for binary cases
-    scorer.fit(logits, labels, temp_scale=temp_scale)
+    scorer.fit(ref={"logit": logits, "label": labels}, temp_scale=temp_scale)
     if temp_scale:
         assert isinstance(scorer.temperature, float) and scorer.temperature > 0
     else:
@@ -170,7 +170,7 @@ def _run_ensemble_score(
     score_cls, logits, labels, temp_scale, task="multiclass"
 ):
     scorer = score_cls(task=task)  # task selection for binary cases
-    scorer.fit(logits, labels, temp_scale=temp_scale)
+    scorer.fit(ref={"logit": logits, "label": labels}, temp_scale=temp_scale)
     if temp_scale:
         assert isinstance(scorer.temperature, float) and scorer.temperature > 0
     else:
