@@ -119,13 +119,13 @@ class EmbeddingScore(UncertaintyScore, ABC):
         Parameters
         ----------
         ref:
-            A `torch.Tensor` with training sample embeddings. Required when not
+            A `torch.Tensor` or a `dict[str, torch.Tensor]` with training sample embeddings. Required when not
             using `model` and `loaders`.
         cal:
-            A `torch.Tensor` with calibration sample embeddings. Optional.
+            A `torch.Tensor` or a `dict[str, torch.Tensor]` with calibration sample embeddings. Optional.
         model:
             A `torch.nn.Module` with an `.embed()` method. Required when not
-            using `X`.
+            using `ref`.
         loaders:
             A `dict` with `DataLoader` objects. Required keys: `["train"]`.
             Optional key: `["val"]`. Required when using `model`.
@@ -207,7 +207,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
         Parameters
         ----------
         query:
-            A `torch.Tensor` with query embeddings of shape `(N, D)`.
+            A `torch.Tensor` or a `dict[str, torch.Tensor]` with query embeddings of shape `(N, D)`.
             Required when not using `model` and `loader`.
         model:
             A `torch.nn.Module` with an `.embed()` method.
@@ -289,7 +289,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
         Parameters
         ----------
         query:
-            A `torch.Tensor` with query sample embeddings of shape `(N, D)`.
+            A `torch.Tensor` or a `dict[str, torch.Tensor]` with query embeddings of shape `(N, D)`.
             Required when not using `model` and `loader`.
         model:
             A `torch.nn.Module` with an `.embed()` method.
@@ -361,7 +361,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
 
         Parameters
         ----------
-        query_embeddings : torch.Tensor | None, optional
+        query : torch.Tensor | None, optional
             Embeddings of query samples to visualize.
         method : {"tsne", "umap"}, optional
             Dimensionality reduction method, by default "tsne".
