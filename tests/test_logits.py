@@ -1,3 +1,5 @@
+import warnings
+
 import pytest
 import torch
 
@@ -211,3 +213,24 @@ def test_ensemble_score_bernoulli_binary(ScoreClass):
     _run_ensemble_score(
         ScoreClass, logits, labels, temp_scale=True, task="binary"
     )
+
+
+def test_fit_ref_and_cal_uses_cal_and_warn():
+    # Create distinct tensors so we can differentiate which one was used.
+    ref_logits = torch.randn(2, 3)
+    cal_logits = torch.randn(2, 3) + 10.0  # shift to make it clearly different
+    ref = {"logit": ref_logits, "label": torch.randint(0, 3, (2,))}
+    cal = {"logit": cal_logits, "label": torch.randint(0, 3, (2,))}
+
+    scorer = SoftmaxScore()
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        scorer.fit(ref=ref, cal=cal, temp_scale=False)
+        # Exactly one warning should have been raised.
+        assert len(w) == 1
+        assert "Both `ref` and `cal` specified" in str(w[0].message)
+
+    assert isinstance(scorer.logits, torch.Tensor)
+    assert torch.allclose(scorer.logits, cal_logits)
+    assert isinstance(scorer.labels, torch.Tensor)
+    assert torch.equal(scorer.labels, cal["label"])

@@ -92,21 +92,21 @@ class ModelExtractor:
 
     def __init__(
         self,
+        output_keys: tuple[str, ...],
         input_keys: tuple[str, ...] = (),
-        output_keys: tuple[str, ...] = (),
         cache_tag: str | None = None,
     ):
         """Create a ModelExtractor.
 
         Parameters
         ----------
+        output_keys: tuple[str, ...]
+            Keys to retain from the dictionary returned by the model's `forward`
+            method.
         input_keys: tuple[str, ...]
             Keys to extract from each input batch. The first key selects the tensor
             passed to the model's `forward` method; any additional keys are stored
             as extra inputs alongside the model outputs.
-        output_keys: tuple[str, ...]
-            Keys to retain from the dictionary returned by the model's `forward`
-            method.
         cache_tag: str | None, optional
             Tag used for the cache filename `<prefix>-<cache_tag>.pt`. If `None`
             (the default), the first `output_key` is used.
@@ -114,6 +114,8 @@ class ModelExtractor:
         self.output_keys = output_keys
         self.input_keys = input_keys
         self._validated_keys()
+        if len(output_keys) == 0:
+            raise ValueError("`output_keys` is required.")
         self.cache_tag = output_keys[0] if cache_tag is None else cache_tag
 
     def extract(

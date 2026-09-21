@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import abc
+import warnings
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
@@ -163,15 +164,25 @@ class LogitScore(UncertaintyScore, abc.ABC):
         -----
         Labels are required for temperature fitting to minimize NLL for the task.
         """
+        if ref is not None and cal is not None:
+            warnings.warn(
+                "Both `ref` and `cal` specified for a LogitScore. We are using `cal`."
+            )
+            _target = cal
+        elif ref is not None:
+            _target = ref
+        else:
+            _target = cal
+
         logits, extracted_labels = self._resolve(
-            _tensor(ref, "logit"),
+            _tensor(_target, "logit"),
             model,
             loader,
             outdir,
             prefix,
             want_labels=temp_scale,
         )
-        labels = _tensor(ref, "label")
+        labels = _target.get("label") if isinstance(_target, dict) else None
         labels = labels if labels is not None else extracted_labels
 
         self.logits, self.labels = logits, labels
@@ -182,7 +193,7 @@ class LogitScore(UncertaintyScore, abc.ABC):
     @override
     def score(
         self,
-        query: torch.Tensor | dict[str, torch.Tenso] | None = None,
+        query: torch.Tensor | dict[str, torch.Tensor] | None = None,
         model: torch.nn.Module | None = None,
         loader: DataLoader[Batch] | None = None,
         outdir: Path | None = None,
@@ -244,7 +255,7 @@ class LogitScore(UncertaintyScore, abc.ABC):
 
     def select(
         self,
-        query: torch.Tensor | None = None,
+        query: torch.Tensor | dict[str, torch.Tensor] | None = None,
         model: torch.nn.Module | None = None,
         loader: DataLoader[Batch] | None = None,
         outdir: Path | None = None,

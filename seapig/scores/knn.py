@@ -90,8 +90,6 @@ class KNNScore(EmbeddingScore, FAISSIndexMixin, ABC):
             distribution should be filtered before fitting. Defaults to `False`.
         """
         assert self.ref_embeddings is not None
-        if self.cal_required:
-            assert self.cal_embeddings is not None
         self._apply_pca()
         self._filter_outliers(q=q)
         self._setup_index()
