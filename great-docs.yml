@@ -154,23 +154,7 @@ reference:
           - set_threshold
           - get_threshold
           - plot
-      - name: scores.EnergyClassWiseScore
-        members:
-          - fit
-          - score
-          - select
-          - set_threshold
-          - get_threshold
-          - plot
       - name: scores.EntropyScore
-        members:
-          - fit
-          - score
-          - select
-          - set_threshold
-          - get_threshold
-          - plot
-      - name: scores.EntropyClassWiseScore
         members:
           - fit
           - score
@@ -186,23 +170,7 @@ reference:
           - set_threshold
           - get_threshold
           - plot
-      - name: scores.MarginClassWiseScore
-        members:
-          - fit
-          - score
-          - select
-          - set_threshold
-          - get_threshold
-          - plot
       - name: scores.SoftmaxScore
-        members:
-          - fit
-          - score
-          - select
-          - set_threshold
-          - get_threshold
-          - plot
-      - name: scores.SoftmaxClassWiseScore
         members:
           - fit
           - score
@@ -218,14 +186,6 @@ reference:
           - set_threshold
           - get_threshold
           - plot
-      - name: scores.MutualInformationClassWiseScore
-        members:
-          - fit
-          - score
-          - select
-          - set_threshold
-          - get_threshold
-          - plot
       - name: scores.PredictiveVarianceScore
         members:
           - fit
@@ -234,15 +194,6 @@ reference:
           - set_threshold
           - get_threshold
           - plot
-      - name: scores.PredictiveVarianceClassWiseScore
-        members:
-          - fit
-          - score
-          - select
-          - set_threshold
-          - get_threshold
-          - plot
-
   - title: Other Uncertainty Scores
     desc: Uncertainty scoring methods based on other principles
     contents:
