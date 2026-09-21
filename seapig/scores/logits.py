@@ -13,23 +13,16 @@ from torch.utils.data import DataLoader
 from typing_extensions import override
 
 from seapig.scores.base import UncertaintyScore
-from seapig.scores.classwise import ClassWiseScore
 from seapig.scores.extractor import ModelExtractor
 from seapig.scores.logits_utils import Task, TemperatureScaler, get_task
 
 __all__ = [
-    "EnergyClassWiseScore",
     "EnergyScore",
-    "EntropyClassWiseScore",
     "EntropyScore",
     "LogitScore",
-    "MarginClassWiseScore",
     "MarginScore",
-    "MutualInformationClassWiseScore",
     "MutualInformationScore",
-    "PredictiveVarianceClassWiseScore",
     "PredictiveVarianceScore",
-    "SoftmaxClassWiseScore",
     "SoftmaxScore",
 ]
 
@@ -412,15 +405,6 @@ class SoftmaxScore(PointwiseLogitScore):
         return -torch.maximum(p, 1 - p)
 
 
-class SoftmaxClassWiseScore(ClassWiseScore):
-    """Class-wise version of :class:`~seapig.scores.logits.SoftmaxScore`."""
-
-    ident = "softmax-classwise"
-
-    def __init__(self, **kwargs):
-        super().__init__(base_score_cls=SoftmaxScore, **kwargs)
-
-
 class EntropyScore(PointwiseLogitScore):
     """Predictive entropy (worst label for multilabel)."""
 
@@ -433,17 +417,6 @@ class EntropyScore(PointwiseLogitScore):
     @override
     def _bernoulli(self, z):
         return _bernoulli_entropy(z.sigmoid())
-
-
-class EntropyClassWiseScore(ClassWiseScore):
-    """Class-wise version of :class:`~seapig.scores.logits.EntropyScore`."""
-
-    ident = "entropy-classwise"
-
-    def __init__(self, **kwargs):
-        super().__init__(
-            base_score_cls=EntropyScore, **kwargs
-        )  # pragma: no cover
 
 
 class MarginScore(PointwiseLogitScore):
@@ -461,17 +434,6 @@ class MarginScore(PointwiseLogitScore):
         return -z.abs()
 
 
-class MarginClassWiseScore(ClassWiseScore):
-    """Class-wise version of :class:`~seapig.scores.logits.MarginScore`."""
-
-    ident = "margin-classwise"
-
-    def __init__(self, **kwargs):
-        super().__init__(
-            base_score_cls=MarginScore, **kwargs
-        )  # pragma: no cover
-
-
 class EnergyScore(PointwiseLogitScore):
     """Free energy of the logit distribution."""
 
@@ -485,17 +447,6 @@ class EnergyScore(PointwiseLogitScore):
     @override
     def _bernoulli(self, z):
         return -self.T * F.softplus(z)
-
-
-class EnergyClassWiseScore(ClassWiseScore):
-    """Class-wise version of :class:`~seapig.scores.logits.EnergyScore`."""
-
-    ident = "energy-classwise"
-
-    def __init__(self, **kwargs):
-        super().__init__(
-            base_score_cls=EnergyScore, **kwargs
-        )  # pragma: no cover
 
 
 class MutualInformationScore(EnsembleLogitScore):
@@ -518,17 +469,6 @@ class MutualInformationScore(EnsembleLogitScore):
         )
 
 
-class MutualInformationClassWiseScore(ClassWiseScore):
-    """Class-wise version of :class:`~seapig.scores.logits.MutualInformationScore`."""
-
-    ident = "mutual_information-classwise"
-
-    def __init__(self, **kwargs):
-        super().__init__(
-            base_score_cls=MutualInformationScore, **kwargs
-        )  # pragma: no cover
-
-
 class PredictiveVarianceScore(EnsembleLogitScore):
     """Variance of predicted probabilities across members."""
 
@@ -541,14 +481,3 @@ class PredictiveVarianceScore(EnsembleLogitScore):
     @override
     def _bernoulli(self, z):
         return z.sigmoid().var(dim=-1, unbiased=False)
-
-
-class PredictiveVarianceClassWiseScore(ClassWiseScore):
-    """Class-wise version of :class:`~seapig.scores.logits.PredictiveVarianceScore`."""
-
-    ident = "predictive_variance-classwise"
-
-    def __init__(self, **kwargs):
-        super().__init__(
-            base_score_cls=PredictiveVarianceScore, **kwargs
-        )  # pragma: no cover

@@ -41,7 +41,7 @@ class ClassWiseScore(sp.UncertaintyScore):
     * **Tensor mode** - Directly provide pre-computed feature tensors `X` and label
       tensor `y` to :meth:`fit` and optionally to :meth:`score`.
     * **Model mode** - Supply a `torch.nn.Module` and a `DataLoader`; the
-      :class:`ModelExtractor` extracts the required embeddings or logits.
+      :class:`ModelExtractor` extracts the required embeddings.
     * **Full-matrix mode** - When calling :meth:`score`, setting `full_matrix=True`
       returns the raw `(N, C)` score matrix without aggregating over classes.
       This mode is useful when downstream code needs per-class scores.
@@ -69,6 +69,10 @@ class ClassWiseScore(sp.UncertaintyScore):
         **base_kwargs: Any,
     ) -> None:
         super().__init__()
+        if not issubclass(base_score_cls, sp.KNNScore):
+            raise TypeError(
+                "Class-wise scores are currently only supported for KNNScore."
+            )
         self.base_score_cls = base_score_cls
         self.pca = global_pca
         self.aggregation = self._resolve_aggregation(aggregation)
@@ -77,12 +81,6 @@ class ClassWiseScore(sp.UncertaintyScore):
         self._thresholds: dict[int, torch.Tensor] = {}
         self._threshold: torch.Tensor | None = None
         self._mode: ClassWiseMode | None = None
-        if issubclass(self.base_score_cls, sp.LogitScore):
-            task = base_kwargs.get("task")
-            if task != "multilabel":
-                raise ValueError(
-                    "Class-wise logit scores require a multilabel task."
-                )
         self._base_kwargs: dict[str, Any] = base_kwargs
 
     @property
@@ -129,21 +127,12 @@ class ClassWiseScore(sp.UncertaintyScore):
     def _make_extractor(self, labels_from: str | None = None) -> ModelExtractor:
         """Return a `ModelExtractor` configured for the wrapped scorer.
 
-        * For KNN based scores we request the `embedding` key.
-        * For Logit based scores we request the `logit` key.
-        * `labels_from` determines whether the `label` key is part of the
+        `labels_from` determines whether the `label` key is part of the
         `input_keys` (required during fit) or from the
         model outputs (required during scoring/selection).
         """
         in_keys = ("image",)
-        if issubclass(self.base_score_cls, sp.KNNScore):
-            out_keys = ("embedding",)
-        elif issubclass(self.base_score_cls, sp.LogitScore):
-            out_keys = ("logit",)
-        else:  # pragma: no cover
-            raise TypeError(
-                "ClassWiseScore only supports KNNScore or LogitScore subclasses"
-            )
+        out_keys = ("embedding",)
         if labels_from == "input":
             in_keys += ("label",)
         if labels_from == "output":
@@ -185,7 +174,7 @@ class ClassWiseScore(sp.UncertaintyScore):
           provided directly.
         * **Model mode** - a `torch.nn.Module` together with a `DataLoader`
           is supplied; the underlying `ModelExtractor` extracts the required
-          embeddings or logits.
+          embeddings.
 
         Exactly one of these modes must be selected.  If both or neither are
         provided a `ValueError`is raised.
@@ -194,8 +183,7 @@ class ClassWiseScore(sp.UncertaintyScore):
         ----------
         X, y:
             Training tensors. `X` holds the feature representation required by
-            the wrapped `base_score_cls` (embeddings for KNN-based scores or
-            logits for logit-based scores). `y` contains class labels; a 1-D
+            the wrapped `base_score_cls`. `y` contains class labels; a 1-D
             tensor for single-label classification or a 2-D binary matrix for
             multi-label tasks.
         X_val, y_val:
@@ -235,12 +223,6 @@ class ClassWiseScore(sp.UncertaintyScore):
             assert (
                 model is not None and loaders is not None and "train" in loaders
             )
-            # Choose the correct output key based on the underlying scorer type
-            out_key = (
-                "embedding"
-                if issubclass(self.base_score_cls, sp.KNNScore)
-                else "logit"
-            )
             extractor = self._make_extractor(labels_from="input")
             data = extractor.extract(
                 model=model,
@@ -249,7 +231,7 @@ class ClassWiseScore(sp.UncertaintyScore):
                 prefix=None if prefix is None else prefix + "-train",
                 overwrite=False,
             )
-            X = data.get(out_key)
+            X = data.get("embedding")
             y = data.get("label")
 
             if "val" in loaders:
@@ -260,7 +242,7 @@ class ClassWiseScore(sp.UncertaintyScore):
                     prefix=None if prefix is None else prefix + "-val",
                     overwrite=False,
                 )
-                X_val = data.get(out_key)
+                X_val = data.get("embedding")
                 y_val = data.get("label")
 
         assert X is not None and y is not None, "Training data must be provided"
@@ -348,7 +330,7 @@ class ClassWiseScore(sp.UncertaintyScore):
         Parameters
         ----------
         X : torch.Tensor
-            Input tensor (features or logits) with shape `(N, D)`.
+            Input tensor embeddings with shape `(N, D)`.
 
         Returns
         -------
@@ -363,11 +345,7 @@ class ClassWiseScore(sp.UncertaintyScore):
         scores = torch.empty((N, C), device=X.device, dtype=X.dtype)
         for col_idx, lbl in enumerate(self._class_labels):
             scorer = self._scorers[lbl]
-            if issubclass(self.base_score_cls, sp.LogitScore):
-                col_logits = X[:, lbl].unsqueeze(1)
-                scores[:, col_idx] = scorer.score(col_logits)  # type: ignore[arg-type]
-            else:
-                scores[:, col_idx] = scorer.score(X)  # type: ignore[arg-type]
+            scores[:, col_idx] = scorer.score(X)
         return scores
 
     def _score_single_label(
@@ -378,7 +356,7 @@ class ClassWiseScore(sp.UncertaintyScore):
         Parameters
         ----------
         X : torch.Tensor
-            Input tensor (features or logits) with shape `(N, D)`.
+            Input tensor (embeddings) with shape `(N, D)`.
         y : torch.Tensor
             1-D tensor of class labels with length `N`.
 
@@ -405,11 +383,7 @@ class ClassWiseScore(sp.UncertaintyScore):
             if not mask.any():
                 continue
             scorer = self._scorers[lbl]
-            if issubclass(self.base_score_cls, sp.LogitScore):
-                col_logits = X[:, lbl].unsqueeze(1)
-                col_scores = scorer.score(col_logits)  # type: ignore[arg-type]
-            else:
-                col_scores = scorer.score(X)  # type: ignore[arg-type]
+            col_scores = scorer.score(X)
             scores[mask] = col_scores[mask]
         return scores
 
@@ -421,7 +395,7 @@ class ClassWiseScore(sp.UncertaintyScore):
         Parameters
         ----------
         X : torch.Tensor
-            Input tensor of shape `(N, D)` (features or logits).
+            Input tensor features of shape `(N, D)` .
         y : torch.Tensor
             Binary label matrix of shape `(N, C)` where `C` matches the
             number of classes available during `fit()`. Each row must contain at
@@ -485,9 +459,8 @@ class ClassWiseScore(sp.UncertaintyScore):
         """Compute per-class uncertainty scores.
 
         Mirrors the `fit` method in accepting either pre-computed tensors or a
-        `torch.nn.Module` with a `DataLoader`. The appropriate representation
-        (embeddings for KNN-based scorers or logits for logit-based scorers) is
-        extracted via `_make_extractor` when a model is supplied.
+        `torch.nn.Module` with a `DataLoader`. The appropriate embeddings for KNN-based
+        scorers are extracted via `_make_extractor` when a model is supplied.
 
         Parameters
         ----------
@@ -537,12 +510,7 @@ class ClassWiseScore(sp.UncertaintyScore):
             data = extractor.extract(
                 model=model, loader=loader, outdir=outdir, prefix=prefix
             )
-            out_key = (
-                "embedding"
-                if issubclass(self.base_score_cls, sp.KNNScore)
-                else "logit"
-            )
-            X = data.get(out_key)
+            X = data.get("embedding")
             if not full_matrix:
                 y = data.get("prediction")
 
@@ -560,7 +528,7 @@ class ClassWiseScore(sp.UncertaintyScore):
         if y is None:
             raise ValueError(
                 f"Mode '{self._mode.value}' requires labels; pass `y=` or use "
-                "`full_matrix=True` for the label‑free matrix mode."
+                "`full_matrix=True` for the label-free matrix mode."
             )
 
         inferred = self._infer_mode(y)

@@ -6,14 +6,14 @@ from torch.utils.data import DataLoader
 
 from seapig import scores as sp
 from seapig.scores.classwise import ClassWiseMode, ClassWiseScore
-from seapig.scores.logits import SoftmaxClassWiseScore
+from seapig.scores.knn import EuclideanClassWiseScore
 from seapig.scores.utils import TensorPCA
 from tests.fixtures import DummyModel
 
 torch.manual_seed(0)
 
 
-class DummyScore(sp.UncertaintyScore):
+class DummyScore(sp.KNNScore):
     train_required = False
     cal_required = False
     ident = "dummy"
@@ -27,10 +27,10 @@ class DummyScore(sp.UncertaintyScore):
         X: torch.Tensor | None = None,
         Y: torch.Tensor | None = None,
         **kwargs,
-    ):
+    ):  # ty: ignore[invalid-method-override]
         return None
 
-    def score(self, X: torch.Tensor) -> torch.Tensor:
+    def score(self, X: torch.Tensor) -> torch.Tensor:  # ty: ignore[invalid-method-override]
         return X.mean(dim=1)
 
     def set_threshold(self, q: float = 0.99) -> None:
@@ -40,8 +40,17 @@ class DummyScore(sp.UncertaintyScore):
         assert self.threshold is not None
         return self.threshold
 
-    def select(self, X: torch.Tensor):  # pragma: no cover
+    def select(self, X: torch.Tensor):  # ty: ignore[invalid-method-override]
         raise NotImplementedError
+
+    def _distance(self, query: torch.Tensor):  # ty: ignore[invalid-method-override]
+        pass  # pragma: no cover
+
+    def _setup_index(self):
+        pass  # pragma: no cover
+
+    def plot(self, query_scores=None, bins=100):
+        raise RuntimeError("plot failure")
 
 
 def make_data(single_label: bool = True):
@@ -67,24 +76,16 @@ def test_infer_mode():
         ClassWiseScore._infer_mode(torch.randn(2, 2, 2))
 
 
-def _expected_softmax_single_score(logits, label):
-    col = logits[:, label].unsqueeze(1)
-    p = torch.sigmoid(col)
-    return -torch.maximum(p, 1 - p).squeeze(1)
-
-
 def test_single_label_fit_and_score():
     X = torch.randn(6, 3)
     y = torch.tensor([0, 0, 1, 1, 2, 2])
-    cw = SoftmaxClassWiseScore(task="multilabel")
+    cw = EuclideanClassWiseScore()
     cw.fit(X=X, y=y)
     assert cw.mode is ClassWiseMode.SINGLE_LABEL
     scores = cw.score(X=X, y=y)
     assert scores.shape == (6,)
-    # verify each entry matches the per‑class SoftmaxScore behaviour
-    for i, lbl in enumerate(y.tolist()):
-        expected = _expected_softmax_single_score(X, lbl)[i]
-        assert torch.allclose(scores[i], expected)
+    matrix = cw.score(X=X, y=y, full_matrix=True)
+    assert matrix.shape == (6, 3)
     cw.set_threshold(q=0.5)
     thr = cw.get_threshold()
     assert isinstance(thr, dict)
@@ -112,7 +113,7 @@ def test_multi_label_aggregation(agg, agg_fn):
     y = torch.tensor(
         [[1, 0, 0], [1, 1, 0], [0, 1, 1], [1, 0, 1]], dtype=torch.float32
     )
-    cw = SoftmaxClassWiseScore(task="multilabel", aggregation=agg)
+    cw = EuclideanClassWiseScore(aggregation=agg)
     cw.fit(X=X, y=y)
     full = cw._score_full_matrix(X)
     mask = y.to(dtype=torch.bool)
@@ -132,14 +133,14 @@ def test_multi_label_aggregation(agg, agg_fn):
 def test_fit_errors_and_mode_property():
     X = torch.randn(2, 2)
     y = torch.tensor([0, 1])
-    cw = SoftmaxClassWiseScore(task="multilabel")
+    cw = EuclideanClassWiseScore()
 
     dummy = DummyModel()
     # providing both tensors and a model should raise ValueError
     with pytest.raises(ValueError):
         cw.fit(X=X, y=y, model=dummy, loaders={"train": []})  # type: ignore
     # accessing mode before fit should raise RuntimeError
-    cw2 = SoftmaxClassWiseScore(task="multilabel")
+    cw2 = EuclideanClassWiseScore()
     with pytest.raises(RuntimeError):
         _ = cw2.mode
 
@@ -165,23 +166,6 @@ def test_make_extractor_branches():
     # None
     extractor = cw._make_extractor(labels_from=None)
     assert extractor.output_keys == ("embedding",)
-    assert extractor.input_keys == ("image",)
-
-    # Logit branch
-    cw = ClassWiseScore(base_score_cls=sp.SoftmaxScore, task="multilabel")
-    # Input
-    extractor = cw._make_extractor(labels_from="input")
-    assert extractor.output_keys == ("logit",)
-    assert extractor.input_keys == ("image", "label")
-
-    # Output
-    extractor = cw._make_extractor(labels_from="output")
-    assert extractor.output_keys == ("logit", "prediction")
-    assert extractor.input_keys == ("image",)
-
-    # None
-    extractor = cw._make_extractor(labels_from=None)
-    assert extractor.output_keys == ("logit",)
     assert extractor.input_keys == ("image",)
 
 
@@ -253,21 +237,8 @@ def test_unknown_label_error_in_single_label_scoring():
 
 
 def test_plot_propagates_scorer_error():
-    class BadPlotScore(sp.UncertaintyScore):
-        def fit(self, X=None, Y=None, **kwargs):
-            self.set_trained()
 
-        @torch.inference_mode()
-        def score(self, X):
-            pass  # pragma: no cover
-
-        def select(self, X):
-            pass  # pragma: no cover
-
-        def plot(self, query_scores=None, bins=100):
-            raise RuntimeError("plot failure")
-
-    cw = ClassWiseScore(base_score_cls=BadPlotScore)
+    cw = ClassWiseScore(base_score_cls=DummyScore)
     # Fit a single‑class dataset
     X = torch.randn(3, 2)
     y = torch.tensor([0, 0, 0])
@@ -278,18 +249,9 @@ def test_plot_propagates_scorer_error():
         cw.plot()
 
 
-def test_logit_score_requires_multilabel_task():
-    with pytest.raises(
-        ValueError, match="Class-wise logit scores require a multilabel task"
-    ):
-        ClassWiseScore(base_score_cls=sp.SoftmaxScore, task="single_label")
-
-
 def test_resolve_aggregation_callable():
     agg = lambda s, m: torch.sum(s * m, dim=1)
-    cw = ClassWiseScore(
-        base_score_cls=sp.SoftmaxScore, aggregation=agg, task="multilabel"
-    )
+    cw = ClassWiseScore(base_score_cls=sp.EuclideanScore, aggregation=agg)
     # Create a tiny multi‑label dataset (2 classes, 3 samples).
     X = torch.randn(3, 2)  # dummy logits
     y = torch.tensor([[1, 0], [0, 1], [1, 1]], dtype=torch.float32)
@@ -510,7 +472,7 @@ def test_fit_multi_label_with_validation_sets_scores():
     y = torch.tensor([[1, 0], [0, 1], [1, 0], [0, 1]], dtype=torch.float32)
     X_val = torch.randn(2, 3)
     y_val = torch.tensor([[1, 0], [0, 1]], dtype=torch.float32)
-    cw = sp.SoftmaxClassWiseScore(task="multilabel")
+    cw = sp.EuclideanClassWiseScore()
     cw.fit(X=X, y=y, X_val=X_val, y_val=y_val)
     expected = cw._score_multi_label(X_val, y_val)
     assert hasattr(cw, "scores")
@@ -519,7 +481,7 @@ def test_fit_multi_label_with_validation_sets_scores():
 
 
 def test_score_multi_label_before_fit_raises():
-    cw = sp.SoftmaxClassWiseScore(task="multilabel")
+    cw = sp.EuclideanClassWiseScore()
     X = torch.randn(2, 3)
     y = torch.randn(2, 2)
     with pytest.raises(RuntimeError, match="fit must be called before scoring"):
