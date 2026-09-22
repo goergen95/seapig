@@ -116,14 +116,19 @@ below uses random tensors to illustrate the API.
 import torch
 from seapig.scores import EuclideanScore
 from seapig.utils.progress import disable
+
 disable()  # disables  seapig progress bars for quickstart example
-torch.manual_seed(0) 
+torch.manual_seed(0)
 # latent representations a torch.Tensor of shapes (N, D), (M, D), (Q, D)
-ref_emb, cal_emb, query_emb = torch.randn(1000, 32), torch.randn(200, 32), torch.randn(10, 32)
+ref_emb, cal_emb, query_emb = (
+    torch.randn(1000, 32),
+    torch.randn(200, 32),
+    torch.randn(10, 32),
+)
 
 score = EuclideanScore(k=5, stat="mean")
 score.fit(ref=ref_emb, cal=cal_emb)
-score.set_threshold(q=0.90)   # keep ~90% coverage on validation set
+score.set_threshold(q=0.90)  # keep ~90% coverage on validation set
 sel = score.select(query=query_emb)
 print(sel)
 ```
@@ -141,15 +146,16 @@ the API.
 
 ``` python
 from torch.utils.data import TensorDataset, DataLoader
+
 ds_train = TensorDataset(torch.randn(1000, 32), torch.randint(0, 2, (1000,)))
 ds_val = TensorDataset(torch.randn(200, 32), torch.randint(0, 2, (200,)))
-ds_test = TensorDataset(torch.randn(10, 32), torch.randint(0, 2, (10,))) 
+ds_test = TensorDataset(torch.randn(10, 32), torch.randint(0, 2, (10,)))
 train_loader = DataLoader(ds_train, batch_size=64)
 val_loader = DataLoader(ds_val, batch_size=64)
 test_loader = DataLoader(ds_test, batch_size=64)
 
-class Model(torch.nn.Module):
 
+class Model(torch.nn.Module):
     def forward(self, batch: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
         image, label = batch
         return torch.rand(image.shape[0])
@@ -158,14 +164,15 @@ class Model(torch.nn.Module):
         image, label = batch
         return {
             "embedding": torch.randn(image.shape[0], 32),
-            "prediction": torch.randn(image.shape[0])
+            "prediction": torch.randn(image.shape[0]),
         }
+
 
 model = Model()
 
 score = EuclideanScore(k=3)
 score.fit(model=model, loaders={"train": train_loader, "cal": val_loader})
-score.set_threshold(q=0.80) # keep ~80% coverage on validation set
+score.set_threshold(q=0.80)  # keep ~80% coverage on validation set
 
 sel = score.select(model=model, loader=test_loader)
 print(sel)
@@ -188,22 +195,22 @@ from seapig import SelectiveInferenceTask
 from lightning import Trainer, LightningModule
 from torchmetrics import Accuracy
 
-# minimal LightningModule 
-class Model(LightningModule):
 
-    def __init__(self, model:torch.nn.Module):
+# minimal LightningModule
+class Model(LightningModule):
+    def __init__(self, model: torch.nn.Module):
         super().__init__()
         self.model = model
         self.test_metrics = Accuracy("binary")
 
     def forward(self, batch: dict[str, torch.Tensor]):
         return self.model(batch)
-    
+
     def extract(self, batch: dict[str, torch.Tensor]):
         _, label = batch
         outputs = self.model.extract(batch)
         return {"label": label} | outputs
- 
+
 
 trainer = Trainer(accelerator="cpu")
 task = Model(model=model)
