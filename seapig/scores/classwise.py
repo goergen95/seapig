@@ -155,8 +155,8 @@ class ClassWiseScore(sp.UncertaintyScore):
     @override
     def fit(
         self,
-        ref: torch.Tensor | dict[str, torch.Tensor] | None = None,
-        cal: torch.Tensor | dict[str, torch.Tensor] | None = None,
+        ref: dict[str, torch.Tensor] | None = None,
+        cal: dict[str, torch.Tensor] | None = None,
         model: torch.nn.Module | None = None,
         loaders: dict[str, DataLoader[torch.Tensor | dict[str, torch.Tensor]]]
         | None = None,
@@ -516,9 +516,9 @@ class ClassWiseScore(sp.UncertaintyScore):
         if tensor_mode:
             if not isinstance(query, dict):
                 raise TypeError("`query` must be a dictionary.")
-            if not "embedding" in query:
+            if "embedding" not in query:
                 raise KeyError("Key `embedding` must be in `query`.")
-            if not full_matrix and not "prediction" in query:
+            if not full_matrix and "prediction" not in query:
                 raise KeyError(
                     "Key `prediction` must be in `query` if `full_matrix=False`."
                 )
