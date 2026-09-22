@@ -32,17 +32,17 @@ class SimpleTask(LightningModule):
         super().__init__()
         self._output = output
 
-    def predict(self, batch):  # pragma: no cover
+    def extract(self, batch):  # pragma: no cover
         return self._output
 
 
 def test_init_requires_predict_method():
     class BadPredictTask(LightningModule):
-        predict: int = 123
+        extract: int = 123
 
     with pytest.raises(
         TypeError,
-        match="`task` is required to expose a `predict\\(\\)` method.",
+        match="`task` is required to expose a `extract\\(\\)` method.",
     ):
         SelectiveInferenceTask(task=BadPredictTask(), score=BareScore())
 

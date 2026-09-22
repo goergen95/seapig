@@ -130,7 +130,7 @@ print(sel)
 #### On-the-fly embedding extraction
 
 If you have a model that can compute embeddings on the fly, you can fit a score 
-with the `model` and `loaders` API. This requires the model to expose an `.predict()`
+with the `model` and `loaders` API. This requires the model to expose an `.extract()`
 method returning a dictionary with the relevant keys. The example below uses a dummy
 model and random data to illustrate the API.
 
@@ -149,7 +149,7 @@ class Model(torch.nn.Module):
         image, label = batch
         return torch.rand(image.shape[0])
 
-    def predict(self, batch: tuple[..., torch.Tensor]):
+    def extract(self, batch: tuple[..., torch.Tensor]):
         image, label = batch
         return {
             "embedding": torch.randn(image.shape[0], 32),
@@ -191,7 +191,7 @@ class Model(LightningModule):
     def forward(self, batch: dict[str, torch.Tensor]):
         return self.model(batch)
     
-    def predict(self, batch: dict[str, torch.Tensor]):
+    def extract(self, batch: dict[str, torch.Tensor]):
         _, label = batch
         outputs = self.model.predict(batch)
         return {"label": label} | outputs

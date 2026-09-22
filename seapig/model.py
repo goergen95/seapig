@@ -23,6 +23,7 @@ INPUT_KEYS = Literal["image", "input", "images", "inputs", "x"]
 TARGET_KEYS = Literal[
     "mask", "label", "masks", "labels", "targets", "target", "y", "y_true"
 ]
+METHOD = "extract"
 
 
 class SelectiveInferenceTask(LightningModule):
@@ -57,9 +58,9 @@ class SelectiveInferenceTask(LightningModule):
         Parameters
         ----------
         task: LightningModule
-            A trained LightningModule that provides a `forward(x)` method returning
+            A trained LightningModule that provides a `extract(x)` method returning
             a dict with predictions and any required fields for the score (e.g.
-            `embedding` or `logit``). The task is deep‑copied and set to eval mode
+            `embedding` or `logit``). The task is deep-copied and set to eval mode
             to avoid side-effects during inference.
         score: UncertaintyScore
             An instance implementing `select` to compute a selection mask. It can
@@ -81,9 +82,11 @@ class SelectiveInferenceTask(LightningModule):
         assert isinstance(score, UncertaintyScore), (
             "score must be a seapig UncertaintyScore instance"
         )
-        if not hasattr(self.task, "predict") or not callable(self.task.predict):
+        if not hasattr(self.task, METHOD) or not callable(
+            getattr(self.task, METHOD)
+        ):
             raise TypeError(
-                "`task` is required to expose a `predict()` method."
+                f"`task` is required to expose a `{METHOD}()` method."
             )
         self.score = score
 
@@ -114,7 +117,7 @@ class SelectiveInferenceTask(LightningModule):
         Parameters
         ----------
         batch :
-            Input batch passed directly to the task's `predict` method.
+            Input batch passed directly to the task's `extract()` method.
 
         Returns
         -------
@@ -122,12 +125,11 @@ class SelectiveInferenceTask(LightningModule):
             A dictionary containing the model's predictions merged with the
             selection outputs produced by the configured `UncertaintyScore`.
             The selection dictionary always includes `'score'` (the raw
-            uncertainty values) and `'selected'` (a boolean mask). If the wrapped
-            model returns a `torch.Tensor` instead of a mapping, it is wrapped
-            under the `'prediction'` key before merging.
+            uncertainty values) and `'selected'` (a boolean mask).
         """
-        assert callable(self.task.predict)
-        outputs = self.task.predict(batch)
+        method = getattr(self.task, METHOD)
+        assert callable(method)
+        outputs = method(batch)
         if not isinstance(outputs, dict):
             raise TypeError(
                 f"Wrapped task must return a dict, got {type(outputs).__name__}"
@@ -148,7 +150,7 @@ class SelectiveInferenceTask(LightningModule):
         ----------
         batch : Mapping[str, Any] | Sequence[Any]
             A batch from the test DataLoader. It is passed directly to the wrapped
-            model's `predict` method via `self.forward`.
+            model's `extract` method via `self.forward`.
         batch_idx : int
             Index of the current batch (required by Lightning but not used here).
         dataloader_idx : int, optional
