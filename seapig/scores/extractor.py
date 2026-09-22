@@ -132,8 +132,8 @@ class ModelExtractor:
         Parameters
         ----------
         model: torch.nn.Module
-            The model whose `forward` method will be called. It must accept an
-            argument named `x` and return a mapping from output keys to tensors.
+            The model whose `predict` method will be called. It must accept an
+            argument named `batch` and return a mapping from output keys to tensors.
         loader: DataLoader[Any]
             An iterator yielding batches. Each batch can be a tensor, a mapping,
             or a sequence; the keys in `input_keys` are used to locate the
@@ -207,7 +207,7 @@ class ModelExtractor:
                 out_dict = method(batch)
                 if not isinstance(out_dict, Mapping):
                     raise TypeError(
-                        f"The model's forward method must return a dict, got {type(out_dict)}."
+                        f"The model's `predict()` method must return a dict, got {type(out_dict)}."
                     )
                 for out_key in self.output_keys:
                     if out_key not in out_dict:
