@@ -193,7 +193,7 @@ class Model(LightningModule):
     
     def extract(self, batch: dict[str, torch.Tensor]):
         _, label = batch
-        outputs = self.model.predict(batch)
+        outputs = self.model.extract(batch)
         return {"label": label} | outputs
  
 
