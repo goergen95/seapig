@@ -61,7 +61,7 @@ def test_check_model_valid_and_invalid():
     with pytest.raises(
         AttributeError,
         match=re.escape(
-            "`model.predict()` is required to accept `batch` as argument."
+            "`model.extract()` is required to accept `batch` as argument."
         ),
     ):
         _resolve_method(BadModelWrongSig())

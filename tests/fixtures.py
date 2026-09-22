@@ -20,24 +20,24 @@ class EmptyModel(torch.nn.Module):
 
 
 class BadModel(torch.nn.Module):
-    def predict(self, batch):
+    def extract(self, batch):
         return {"wrong": torch.tensor([1])}
 
 
 class BadModelWrongSig(torch.nn.Module):
-    def predict(self, x):  # type: ignore[override]
+    def extract(self, x):  # type: ignore[override]
         return torch.zeros(1, 2)  # pragma: no cover
 
 
 class BadForwardTask(torch.nn.Module):
-    def predict(self, batch: torch.Tensor):
+    def extract(self, batch: torch.Tensor):
         return [batch]
 
 
 class BadPredictStepTask(LightningModule):
     """Task with a predict_step that returns a list instead of dict/tensor."""
 
-    def predict(self, x: torch.Tensor):
+    def extract(self, x: torch.Tensor):
         pass  # pragma: no cover
 
     def predict_step(self, batch, batch_idx: int, dataloader_idx: int = 0):
@@ -50,7 +50,7 @@ class DummyModel(torch.nn.Module):
         self.lin = torch.nn.Linear(1, 1)
         self.test_metrics = MetricCollection(Accuracy(task="binary"))
 
-    def predict(
+    def extract(
         self, batch: dict[str, torch.Tensor] | torch.Tensor
     ) -> dict[str, torch.Tensor]:
         if isinstance(batch, dict):
@@ -86,7 +86,7 @@ class DummyTask(LightningModule):
         # base metric required by SelectiveInferenceTask (will be wrapped by SelectiveMetric)
         self.test_metrics = Accuracy(task="binary")
 
-    def predict(
+    def extract(
         self, batch: dict[str, torch.Tensor]
     ) -> dict[str, torch.Tensor]:
         # predictions encoded in second column (0/1)
@@ -110,7 +110,7 @@ class DummyTaskDict(LightningModule):
         x = 2 * x  # type: ignore
         return x
 
-    def predict(
+    def extract(
         self, batch: dict[str, torch.Tensor]
     ) -> dict[str, torch.Tensor]:
         out = self.forward(batch)

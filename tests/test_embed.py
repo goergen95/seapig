@@ -88,7 +88,7 @@ def test_fit_model_without_correct_forward_raises() -> None:
     with pytest.raises(
         AttributeError,
         match=re.escape(
-            r"model.predict()` is required to accept `batch` as argument"
+            r"model.extract()` is required to accept `batch` as argument"
         ),
     ):
         s.fit(model=BadModelWrongSig(), loaders=loaders)

@@ -17,10 +17,11 @@ from seapig.utils.progress import track
 TensorDict = dict[str, torch.Tensor]
 Batch = torch.Tensor | Mapping[str, Any] | Sequence[Any]
 Extract = Callable[..., dict[str, torch.Tensor]]
+METHOD = "extract"
 
 
 def _resolve_method(
-    model: torch.nn.Module, method_name: str = "predict"
+    model: torch.nn.Module, method_name: str = METHOD
 ) -> Extract:
     """Resolve a callable method on a torch.nn.Module."""
     if not isinstance(model, torch.nn.Module):
@@ -132,7 +133,7 @@ class ModelExtractor:
         Parameters
         ----------
         model: torch.nn.Module
-            The model whose `predict` method will be called. It must accept an
+            The model whose `extract()` method will be called. It must accept an
             argument named `batch` and return a mapping from output keys to tensors.
         loader: DataLoader[Any]
             An iterator yielding batches. Each batch can be a tensor, a mapping,
@@ -207,7 +208,7 @@ class ModelExtractor:
                 out_dict = method(batch)
                 if not isinstance(out_dict, Mapping):
                     raise TypeError(
-                        f"The model's `predict()` method must return a dict, got {type(out_dict)}."
+                        f"The model's `{METHOD}()` method must return a dict, got {type(out_dict)}."
                     )
                 for out_key in self.output_keys:
                     if out_key not in out_dict:

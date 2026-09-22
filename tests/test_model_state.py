@@ -41,7 +41,7 @@ class ModelWithBatchNorm(LightningModule):
         assert isinstance(embs, torch.Tensor)
         return self.fc(embs), embs
 
-    def predict(
+    def extract(
         self, batch: torch.Tensor | dict[str, torch.Tensor]
     ) -> dict[str, torch.Tensor]:
         """Forward pass through the model."""
@@ -235,12 +235,12 @@ def test_embeddings_differ_in_train_vs_eval_mode() -> None:
     # Get embeddings in eval mode
     model.eval()
     with torch.inference_mode():
-        emb_eval = model.predict(x)
+        emb_eval = model.extract(x)
 
     # Get embeddings in training mode (will use batch statistics for BatchNorm)
     model.train()
     with torch.inference_mode():
-        emb_train = model.predict(x)
+        emb_train = model.extract(x)
 
     # Embeddings should be DIFFERENT because BatchNorm behaves differently
     # in train vs eval mode

@@ -32,7 +32,7 @@ class DummyLogitModel(torch.nn.Module):
         self.K = K
         self.M = M
 
-    def predict(self, batch):
+    def extract(self, batch):
         N = batch.shape[0]
         if self.task == "multiclass":
             if self.per_member:

@@ -573,7 +573,7 @@ def test_multi_label_no_positive_labels_filled(caplog):
 def test_extractor_collects_output_and_prediction():
 
     class SimpleModel(torch.nn.Module):
-        def predict(self, batch: dict[str, torch.Tensor]):
+        def extract(self, batch: dict[str, torch.Tensor]):
             x = batch["image"]
             pred = (x > 0).long()
             return {"embedding": x, "prediction": pred}
