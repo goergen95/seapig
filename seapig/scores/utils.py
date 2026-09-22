@@ -517,6 +517,6 @@ def _tensor(
         return x
     if not isinstance(x, dict):
         raise TypeError(f"Expected tensor or dict of tensors with key `{key}`")
-    if not key in x:
+    if key not in x:
         raise KeyError(f"Expected tensor or dict of tensors with key `{key}`")
     return x[key]
