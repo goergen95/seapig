@@ -160,12 +160,10 @@ class Model(torch.nn.Module):
         image, label = batch
         return torch.rand(image.shape[0])
 
-    def extract(self, batch: tuple[..., torch.Tensor]):
-        image, label = batch
-        return {
-            "embedding": torch.randn(image.shape[0], 32),
-            "prediction": torch.randn(image.shape[0]),
-        }
+    def extract(self, batch: tuple[torch.Tensor, torch.Tensor]):
+        preds = self.forward(batch)
+        embs = torch.randn(preds.shape[0], 32)
+        return {"prediction": preds, "embedding": embs}
 
 
 model = Model()
@@ -178,8 +176,8 @@ sel = score.select(model=model, loader=test_loader)
 print(sel)
 ```
 
-    {'score': tensor([6.0572, 5.9501, 5.3723, 5.9930, 5.6975, 5.2952, 5.0631, 5.9311, 5.5367,
-            6.7848]), 'selected': tensor([False,  True,  True,  True,  True,  True,  True,  True,  True, False])}
+    {'score': tensor([5.6522, 6.6245, 5.5196, 5.1725, 5.8717, 5.6051, 5.3821, 5.2224, 5.0285,
+            5.8041]), 'selected': tensor([ True, False,  True,  True,  True,  True,  True,  True,  True,  True])}
 
 #### Using SelectiveInferenceTask with a lightning module
 
@@ -203,13 +201,12 @@ class Model(LightningModule):
         self.model = model
         self.test_metrics = Accuracy("binary")
 
-    def forward(self, batch: dict[str, torch.Tensor]):
+    def forward(self, batch: tuple[torch.Tensor, torch.Tensor]):
         return self.model(batch)
 
-    def extract(self, batch: dict[str, torch.Tensor]):
-        _, label = batch
+    def extract(self, batch: tuple[torch.Tensor, torch.Tensor]):
         outputs = self.model.extract(batch)
-        return {"label": label} | outputs
+        return {"label": batch[1]} | outputs
 
 
 trainer = Trainer(accelerator="cpu")
@@ -229,8 +226,8 @@ print(preds)
 ┃<span style="font-weight: bold">        Test metric        </span>┃<span style="font-weight: bold">       DataLoader 0        </span>┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
 │<span style="color: #008080; text-decoration-color: #008080">    full/BinaryAccuracy    </span>│<span style="color: #800080; text-decoration-color: #800080">            0.5            </span>│
-│<span style="color: #008080; text-decoration-color: #008080">  rejected/BinaryAccuracy  </span>│<span style="color: #800080; text-decoration-color: #800080">     0.800000011920929     </span>│
-│<span style="color: #008080; text-decoration-color: #008080">  selected/BinaryAccuracy  </span>│<span style="color: #800080; text-decoration-color: #800080">    0.20000000298023224    </span>│
+│<span style="color: #008080; text-decoration-color: #008080">  rejected/BinaryAccuracy  </span>│<span style="color: #800080; text-decoration-color: #800080">            0.0            </span>│
+│<span style="color: #008080; text-decoration-color: #008080">  selected/BinaryAccuracy  </span>│<span style="color: #800080; text-decoration-color: #800080">    0.5555555820465088     </span>│
 └───────────────────────────┴───────────────────────────┘
 </pre>
 
@@ -240,9 +237,9 @@ print(preds)
 
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
 
-    [{'prediction': tensor([ 0.5641,  0.2575, -1.3197, -0.1385,  0.9253, -0.0205,  0.9074, -0.1878,
-            -0.7209,  0.1282]), 'score': tensor([5.1530, 6.4472, 5.2951, 5.5737, 5.3889, 5.4212, 5.6243, 5.4739, 5.2840,
-            5.7805]), 'selected': tensor([ True, False,  True,  True,  True,  True,  True,  True,  True,  True])}]
+    [{'prediction': tensor([0.3412, 0.6198, 0.8258, 0.8317, 0.8443, 0.0064, 0.4464, 0.5923, 0.1485,
+            0.4144]), 'score': tensor([5.0690, 5.0864, 6.4270, 5.6630, 5.2806, 5.5488, 5.2757, 5.8282, 5.4030,
+            5.9053]), 'selected': tensor([ True,  True, False,  True,  True,  True,  True,  True,  True,  True])}]
 
 #### Available scores
 
