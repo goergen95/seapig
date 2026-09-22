@@ -3341,7 +3341,7 @@ wheels = [
 
 [[package]]
 name = "pyod"
-version = "3.6.5"
+version = "3.6.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "joblib" },
@@ -3351,9 +3351,9 @@ dependencies = [
     { name = "scikit-learn" },
     { name = "scipy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/dd/82/6d6c2ac1fc6189bfda9a401042e2669625ae4cd01b4f0b9abd3929e20cd8/pyod-3.6.5.tar.gz", hash = "sha256:1080a25452abda883b784ebea9f2976e549f1818cf1be2fc454daaf47545e431", size = 355121, upload-time = "2026-08-17T04:10:03.477Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5e/03/a21d82bfb14001a69f455a0976ccf581aef7cdef941fc9b4e66d21fdf7ed/pyod-3.6.6.tar.gz", hash = "sha256:cb2556d5e80621a927209d610f76f3dfc182152d73a88cebd196ede080ede25e", size = 353014, upload-time = "2026-09-17T02:19:24.941Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/21/a9/fed288d3f1da12a60158bce77ece8110ba6a1bcea0f381b9d3907c2b3d0b/pyod-3.6.5-py3-none-any.whl", hash = "sha256:59f259a58b145404d97f7ab7b094c5f4c64f821ab02ceb210cb3bd63b65be83e", size = 418757, upload-time = "2026-08-17T04:10:01.832Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/3a/cf2a46fb4591ddeaf902b20cce03e7a1e26cab648a773dc48250e40df4d9/pyod-3.6.6-py3-none-any.whl", hash = "sha256:c778c00a91a630ed454e001ea1ca981141e389a20f90128b06dc712a3eaf90d7", size = 419467, upload-time = "2026-09-17T02:19:22.643Z" },
 ]
 
 [[package]]
