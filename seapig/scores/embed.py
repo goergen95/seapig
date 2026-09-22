@@ -9,13 +9,11 @@ from torch.utils.data import DataLoader
 from typing_extensions import override
 
 from seapig.scores.base import UncertaintyScore
+from seapig.scores.extractor import ModelExtractor
 from seapig.scores.utils import TensorPCA, _tensor
 from seapig.utils import get_logger
 
 logger = get_logger(__name__)
-
-
-from seapig.scores.extractor import ModelExtractor
 
 
 class EmbeddingScore(UncertaintyScore, ABC):
