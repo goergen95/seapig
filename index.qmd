@@ -149,11 +149,12 @@ class Model(torch.nn.Module):
         image, label = batch
         return torch.rand(image.shape[0])
 
-    def extract(self, batch: tuple[..., torch.Tensor]):
-        image, label = batch
+    def extract(self, batch: tuple[torch.Tensor, torch.Tensor]):
+        preds = self.forward(batch)
+        embs = torch.randn(preds.shape[0], 32)
         return {
-            "embedding": torch.randn(image.shape[0], 32),
-            "prediction": torch.randn(image.shape[0])
+            "prediction": preds,
+            "embedding": embs,
         }
 
 model = Model()
@@ -188,13 +189,12 @@ class Model(LightningModule):
         self.model = model
         self.test_metrics = Accuracy("binary")
 
-    def forward(self, batch: dict[str, torch.Tensor]):
+    def forward(self, batch: tuple[torch.Tensor, torch.Tensor]):
         return self.model(batch)
     
-    def extract(self, batch: dict[str, torch.Tensor]):
-        _, label = batch
+    def extract(self, batch: tuple[torch.Tensor, torch.Tensor]):
         outputs = self.model.extract(batch)
-        return {"label": label} | outputs
+        return {"label": batch[1]} | outputs
  
 
 trainer = Trainer(accelerator="cpu")
