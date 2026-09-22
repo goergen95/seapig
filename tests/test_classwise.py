@@ -612,11 +612,11 @@ def test_fit_both_tensor_and_model_raises():
 def test_ref_not_dict_raises():
     cw = ClassWiseScore(base_score_cls=sp.EuclideanScore)
     with pytest.raises(TypeError, match="`ref` must be a dictionary"):
-        cw.fit(ref=torch.randn(2, 2))
+        cw.fit(ref=torch.randn(2, 2))  # type: ignore
 
 
 def test_cal_not_dict_raises():
     cw = ClassWiseScore(base_score_cls=sp.EuclideanScore)
     ref = {"embedding": torch.randn(2, 2), "label": torch.tensor([0, 1])}
     with pytest.raises(TypeError, match="`cal` must be a dictionary"):
-        cw.fit(ref=ref, cal=torch.randn(2, 2))
+        cw.fit(ref=ref, cal=torch.randn(2, 2))  # type: ignore
