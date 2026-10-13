@@ -421,11 +421,7 @@ def test_fit_errors_when_both_or_neither_provided() -> None:
         s.fit()
 
     with pytest.raises(ValueError, match=match):
-        s.fit(
-            ref=emb,
-            model=DummyModel(),
-            loaders=cast(dict[str, _EmbedLoader], {}),
-        )
+        s.fit(ref=emb, model=DummyModel(), loaders={})
 
 
 def test_select_triggers_set_threshold_when_none(
