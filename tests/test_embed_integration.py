@@ -46,10 +46,7 @@ def test_datamodule_transform_applied_consistently(tmp_path: Path) -> None:
     # Fit the score by extracting embeddings from the dataloaders
     score.fit(
         model=model,
-        loaders=cast(
-            dict[str, _EmbedLoader],
-            {"train": dm.train_dataloader(), "cal": dm.val_dataloader()},
-        ),
+        loaders={"train": dm.train_dataloader(), "cal": dm.val_dataloader()},
     )
 
     # deterministic threshold (median of calibration scores)
