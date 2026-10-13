@@ -39,15 +39,15 @@ help:
 env:
 	uv venv; source .venv/bin/activate;
 env-req:
-	source .venv/bin/activate; uv pip install -e .
+	source .venv/bin/activate; uv sync; uv pip install -e .
 env-sug:
-	source .venv/bin/activate; uv pip install -e .[suggested]
+	source .venv/bin/activate; uv sync --extra suggested; uv pip install -e .
 env-dev:
-	source .venv/bin/activate; uv pip install -e .[dev]
+	source .venv/bin/activate; uv sync --extra dev; uv pip install -e .
 env-doc:
-	source .venv/bin/activate; uv pip install -e .[docs]
+	source .venv/bin/activate; uv sync --extra docs; uv pip install -e .
 env-all:
-	source .venv/bin/activate; uv pip install -e .[all]
+	source .venv/bin/activate; uv sync --extra all; uv pip install -e .
 env-clean:
 	rm -rf .venv
 env-lock:
