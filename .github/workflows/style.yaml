@@ -24,7 +24,7 @@ jobs:
             pyproject.toml
             uv.lock
       - name: Install dependencies
-        run: uv pip install .[suggested,dev]
+        run: uv sync --all-extras
       - name: List dependencies
         run: uv pip list
       - name: Run ruff checks
@@ -50,7 +50,7 @@ jobs:
             pyproject.toml
             uv.lock
       - name: Install dependencies
-        run: uv pip install .[suggested,dev]
+        run: uv sync --all-extras
       - name: List dependencies
         run: uv pip list
       - name: Run ty

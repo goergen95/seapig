@@ -24,7 +24,7 @@ jobs:
             pyproject.toml
             uv.lock
       - name: Install dependencies
-        run: uv pip install .[all]
+        run: uv sync --all-extras
       - name: Build sdist & wheel
         run: uv build
       - name: Upload dist artifact

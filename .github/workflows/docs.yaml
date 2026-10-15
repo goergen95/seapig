@@ -28,7 +28,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install .[all]
+          uv sync --all-extras
 
       - name: List dependencies
         run: uv pip list
