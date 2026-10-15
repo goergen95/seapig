@@ -123,7 +123,7 @@ class DummyTaskDict(LightningModule):
 
 
 class NoMetricTask(DummyTaskDict):
-    test_metrics: None = None  # type: ignore
+    test_metrics: None = None
 
 
 class DictDataset(Dataset):
