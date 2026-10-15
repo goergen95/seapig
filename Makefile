@@ -38,6 +38,8 @@ help:
 	@printf "\nRun \`make <target>\` to execute a target. See Makefile for details.\n\n"
 env:
 	uv venv; source .venv/bin/activate;
+update:
+	uv sync --all-extras
 env-req:
 	source .venv/bin/activate; uv sync; uv pip install -e .
 env-sug:
