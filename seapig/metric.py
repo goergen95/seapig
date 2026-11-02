@@ -207,7 +207,7 @@ class RiskCoverageMetric(Metric):
     ```
     """
 
-    full_state_update: bool = False
+    full_state_update = False
     scores: torch.Tensor
     residuals: torch.Tensor
 
