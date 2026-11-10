@@ -1,6 +1,6 @@
 """Uncertainty Scores supplied by seapig."""
 
-from seapig.scores.base import RandomScore, UncertaintyScore
+from seapig.scores.base import ConfidenceScore, RandomScore
 from seapig.scores.classwise import ClassWiseScore
 from seapig.scores.embed import EmbeddingScore
 from seapig.scores.knn import (
@@ -25,6 +25,7 @@ from seapig.scores.pca import PCAScore
 
 __all__ = [
     "ClassWiseScore",
+    "ConfidenceScore",
     "CosineClassWiseScore",
     "CosineScore",
     "EmbeddingScore",
@@ -42,7 +43,6 @@ __all__ = [
     "PredictiveVarianceScore",
     "RandomScore",
     "SoftmaxScore",
-    "UncertaintyScore",
 ]
 
 try:

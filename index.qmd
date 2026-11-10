@@ -7,9 +7,9 @@
 
 ---
 
-seapig provides uncertainty-based selective inference for deep learning
+seapig provides confidence-based selective inference for deep learning
 models. Its main focus currently lies on analyzing latent representations. 
-The library implements a small set of lightweight, composable uncertainty scores 
+The library implements a small set of lightweight, composable confidence scores 
 that are used to decide whether to accept or reject an individual query sample 
 at prediction time. Thresholds are calibrated on an independent validation
 set. It provides a wrapper for torchmetrics that allows evaluating the performance 
@@ -63,9 +63,9 @@ The core idea is to compute a representation for each input, score how
 similar the representation is to training representations, and reject inputs 
 whose score indicates low support.
 
-### From uncertainty scores to selective inference
+### From confidence scores to selective inference
 
-All uncertainty scores produce a scalar score $s(x)$ for each query
+All confidence scores produce a scalar score $s(x)$ for each query
 $x$. Given a threshold $\lambda$, we derive a binary selection function 
 indicating which samples to accept. For example, accepting
 samples with score below $\lambda$:
@@ -122,7 +122,7 @@ ref_emb, cal_emb, query_emb = torch.randn(1000, 32), torch.randn(200, 32), torch
 
 score = EuclideanScore(k=5, stat="mean")
 score.fit(ref=ref_emb, cal=cal_emb)
-score.set_threshold(q=0.90)   # keep ~90% coverage on validation set
+score.set_threshold(q=0.10)   # keep ~90% coverage on validation set
 sel = score.select(query=query_emb)
 print(sel)
 ```
@@ -161,7 +161,7 @@ model = Model()
 
 score = EuclideanScore(k=3)
 score.fit(model=model, loaders={"train": train_loader, "cal": val_loader})
-score.set_threshold(q=0.80) # keep ~80% coverage on validation set
+score.set_threshold(q=0.20) # keep ~80% coverage on validation set
 
 sel = score.select(model=model, loader=test_loader)
 print(sel)

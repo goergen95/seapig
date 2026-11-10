@@ -13,10 +13,10 @@ from seapig.utils import get_logger
 logger = get_logger(__name__)
 
 
-class UncertaintyScore(torch.nn.Module, ABC):
+class ConfidenceScore(torch.nn.Module, ABC):
     """Abstract Base Class for Uncertainty Scores.
 
-    Uncertainty scores quantify the deviation of query samples from the training
+    Confidence scores quantify the confidence of query samples relative to the training distribution
     distribution. Low scores indicate likely inliers (samples similar to training),
     while high scores indicate likely outliers (samples deviating from training).
     Samples with scores exceeding the threshold are excluded from prediction.
@@ -32,15 +32,14 @@ class UncertaintyScore(torch.nn.Module, ABC):
     calibrated : bool
         Whether the score has been calibrated. Defaults to `False`.
     scores : torch.Tensor or None
-        Uncertainty scores of the calibration samples. Low scores indicate
-        likely inliers, high scores indicate likely outliers.
+        Confidence scores of the calibration samples. High scores indicate likely inliers (high confidence), low scores indicate likely outliers (low confidence).
     threshold : torch.Tensor or None
-        Rejection threshold. Samples with scores higher than this value are
+        Rejection threshold. Samples with scores lower than this value are
         excluded from prediction.
     device : str
         Device to which internal tensors are put. Defaults to `"cpu"`.
     ident : str
-        String identifying the uncertainty score implementation.
+        String identifying the confidence score implementation.
 
     See Also
     --------
@@ -90,10 +89,10 @@ class UncertaintyScore(torch.nn.Module, ABC):
         """Get the current threshold value."""
         return self.threshold
 
-    def set_threshold(self, q: float = 0.99) -> None:
+    def set_threshold(self, q: float = 0.01) -> None:
         """Set a threshold based on a specific quantile on the available scores.
 
-        Samples with scores higher than this threshold are excluded from prediction.
+        Samples with scores lower than this threshold are excluded from prediction.
 
         Parameters
         ----------
@@ -118,7 +117,7 @@ class UncertaintyScore(torch.nn.Module, ABC):
 
     @abstractmethod
     def fit(self, *args: Any, **kwargs: Any) -> None:
-        """Fit an uncertainty score on training data.
+        """Fit a confidence score on training data.
 
         `X` is used as training samples to fit the underlying method,
         while `Y` is an optional parameter that can be used to compute
@@ -130,32 +129,32 @@ class UncertaintyScore(torch.nn.Module, ABC):
 
     @abstractmethod
     def score(self, *args: Any, **kwargs: Any) -> Any:
-        """Calculate the uncertainty score for a tensor of samples.
+        """Calculate the confidence score for a tensor of samples.
 
-        Returns scores where low values indicate likely inliers and high values
-        indicate likely outliers.
+        Returns scores where high values indicate likely inliers (high confidence) and low values
+        indicate likely outliers (low confidence).
         """
 
     @abstractmethod
     def select(self, *args: Any, **kwargs: Any) -> Any:
-        """Select samples for prediction based on their uncertainty score.
+        """Select samples for prediction based on their confidence score.
 
-        Samples with scores lower than the threshold are selected for prediction,
-        while samples with scores higher than the threshold are excluded.
+        Samples with scores higher than the threshold are selected for prediction,
+        while samples with scores lower than the threshold are excluded.
 
         Returns
         -------
         dict[str, torch.Tensor]
-            A dict with keys `'score'` (raw uncertainty scores) and
+            A dict with keys `'score'` (raw confidence scores) and
             `'selected'` (boolean selection mask).
         """
 
     def plot(
         self, query_scores: torch.Tensor | None = None, bins: int = 100
     ) -> None:
-        """Plot densities for uncertainty scores.
+        """Plot densities for confidence scores.
 
-        By default, this method plots densities for the uncertainty scores.
+        By default, this method plots densities for the confidence scores.
         Optionally, it can also plot densities for `query_scores`.
 
         Parameters
@@ -196,9 +195,9 @@ class UncertaintyScore(torch.nn.Module, ABC):
         # Calculate rejected samples
         if self.threshold is not None:
             threshold_value = self.threshold.cpu().item()
-            rejected_calibration = int(np.sum(scores > threshold_value))
+            rejected_calibration = int(np.sum(scores < threshold_value))
             rejected_query = (
-                int(np.sum(q_scores > threshold_value))
+                int(np.sum(q_scores < threshold_value))
                 if q_scores is not None
                 else 0
             )
@@ -243,8 +242,8 @@ class UncertaintyScore(torch.nn.Module, ABC):
             )
 
         # Add labels and legend
-        plt.title("Uncertainty Score Densities")
-        plt.xlabel("Uncertainty Score")
+        plt.title("Confidence Score Densities")
+        plt.xlabel("Confidence Score")
         plt.ylabel("Density")
         plt.legend()
         plt.grid(True, linestyle="--", alpha=0.6)
@@ -253,17 +252,17 @@ class UncertaintyScore(torch.nn.Module, ABC):
         plt.show()
 
 
-class RandomScore(UncertaintyScore):
-    """Returns random uncertainty scores per sample.
+class RandomScore(ConfidenceScore):
+    """Returns random confidence scores per sample.
 
     This score assigns a random float in `[0, 1]` to each sample.
     It is useful as a baseline or for testing purposes.
-    By default, the threshold is set to `0.99`, so approximately
+    By default, the threshold is set to `0.01`, so approximately
     99% of samples are selected.
 
     See Also
     --------
-    `scores.UncertaintyScore`
+    `scores.ConfidenceScore`
     """
 
     train_required: bool = False
@@ -272,7 +271,7 @@ class RandomScore(UncertaintyScore):
 
     def __init__(self) -> None:
         super().__init__()
-        self.set_threshold(q=0.99)
+        self.set_threshold(q=0.01)
 
     @override
     def fit(self, *args, **kwargs) -> None:
@@ -284,10 +283,10 @@ class RandomScore(UncertaintyScore):
     def score(
         self, query: torch.Tensor | dict[str, torch.Tensor]
     ) -> torch.Tensor:
-        """Compute a random uncertainty score for every sample in a batch.
+        """Compute a random confidence score for every sample in a batch.
 
-        Returns random scores where low values indicate likely inliers and
-        high values indicate likely outliers.
+        Returns random scores where high values indicate likely inliers and
+        low values indicate likely outliers.
 
         Parameters
         ----------
@@ -321,9 +320,9 @@ class RandomScore(UncertaintyScore):
     def select(
         self, query: torch.Tensor | dict[str, torch.Tensor]
     ) -> dict[str, torch.Tensor]:
-        """Select samples for prediction based on their random uncertainty score.
+        """Select samples for prediction based on their random confidence score.
 
-        Samples with scores lower than the threshold are selected for prediction.
+        Samples with scores higher than the threshold are selected for prediction.
 
         Parameters
         ----------
@@ -353,8 +352,8 @@ class RandomScore(UncertaintyScore):
             self.set_threshold()
         assert self.threshold is not None
         score = self.score(query=query)
-        return {"score": score, "selected": score < self.threshold}
+        return {"score": score, "selected": score > self.threshold}
 
     @override
-    def set_threshold(self, q: float = 0.99) -> None:
+    def set_threshold(self, q: float = 0.01) -> None:
         self.threshold = torch.Tensor([q])

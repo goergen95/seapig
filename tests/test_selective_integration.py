@@ -9,15 +9,15 @@ from torch.utils.data import DataLoader, Dataset
 
 from seapig import RiskCoverageMetric
 from seapig.model import SelectiveInferenceTask
-from seapig.scores.base import UncertaintyScore
+from seapig.scores.base import ConfidenceScore
 from tests.fixtures import DummyTask
 
 
-class FlagScore(UncertaintyScore):
+class FlagScore(ConfidenceScore):
     """Select if the first element of embedding equals 1.
 
     Minimal implementation for tests: implements the abstract `fit` and
-    `score` methods from UncertaintyScore as no-ops / simple stubs so the
+    `score` methods from ConfidenceScore as no-ops / simple stubs so the
     class can be instantiated. The test's selection logic still relies on
     `select()` which inspects embeddings directly.
     """
@@ -39,8 +39,8 @@ class FlagScore(UncertaintyScore):
         X = query.get("image")
         # boolean selection
         selected = X[:, 0].to(torch.bool)
-        # numeric score (lower is better) — include in outputs for RiskCoverageMetric
-        score = (1.0 - X[:, 0].to(torch.float32)).reshape(-1)
+        # numeric score (higher is better) — include in outputs for RiskCoverageMetric
+        score = X[:, 0].to(torch.float32).reshape(-1)
         return {"selected": selected, "score": score}
 
 

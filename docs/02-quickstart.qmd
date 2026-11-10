@@ -9,7 +9,7 @@ tags: [Getting Started, Setup]
 Machine learning models for earth observation often fail in production when they 
 encounter new tiles, different sensors, seasonal changes, or unfamiliar land-cover 
 patterns. `seapig` helps you manage this uncertainty by enabling 
-**selective inference**: you can flag uncertain predictions for human review, 
+**selective inference**: you can flag low confidence predictions for human review, 
 skip them, or route them to more expensive downstream workflows.
 
 The `seapig` library provides modular building blocks to score, calibrate, and 
@@ -280,23 +280,23 @@ trainer.fit(model, train_dl, val_dl)
 
 ## Step 4: Fit and calibrate a score {#sec-step-4}
 
-Here's where `seapig` comes in. A **selection score** quantifies how uncertain 
+Here's where `seapig` comes in. A **selection score** quantifies how confident 
 the model is in each prediction. We use `CosineScore`, which measures the 
 distance between a query embedding and its nearest neighbor in the training 
-embedding space. Lower scores indicate that a sample is similar to training data
-(lower uncertainty), while higher scores indicate the model has encountered 
-something unfamiliar (higher uncertainty).
+embedding space. Higher scores indicate that a sample is similar to training data
+(high confidence), while lower scores indicate the model has encountered 
+something unfamiliar (low confidence).
 
 We fit the score on both training and validation data, so it learns what "normal" 
-and "unusual" look like. Then we set a threshold at the 80th percentile of the 
+and "unusual" look like. Then we set a threshold at the 20th percentile of the 
 validation score distribution. This means the model will flag roughly the top 
-20% most uncertain predictions:
+20% lowest confident predictions:
 
 ```{python fit-score}
 #| warning: false
 score = CosineScore(k=1)
 score.fit(model=model, loaders={"train": train_dl, "cal": val_dl})
-score.set_threshold(q=0.80)
+score.set_threshold(q=0.20)
 print(f"Threshold: {score.threshold}")
 ```
 

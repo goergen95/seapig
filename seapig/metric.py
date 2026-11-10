@@ -1,7 +1,7 @@
 """Metrics helpers for selective evaluation.
 
 This module provides two utilities used during evaluation when a model
-can abstain or return uncertainty scores:
+can abstain or return confidence scores:
 
 - `SelectiveMetric`: wraps a `torchmetrics.Metric` (or a
   `torchmetrics.MetricCollection`) and tracks the metric on three
@@ -318,7 +318,7 @@ class RiskCoverageMetric(Metric):
             Model outputs and targets. These are passed to `error_fn` to
             compute per-sample residuals.
         scores : torch.Tensor
-            Per-sample uncertainty scores (lower values indicate lower uncertainty).
+            Per-sample confidence scores (higher values indicate higher confidence).
         """
         device = preds.device
         scores = scores.to(device)

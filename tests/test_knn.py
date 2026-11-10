@@ -31,7 +31,7 @@ def test_euclidean_distance_simple_nearest() -> None:
     score._setup_index()
     # offset default 0 => returns distance to k nearest (here k=1)
     out, _ = score._distance(q, offset=0)
-    expected = torch.tensor([5.0])
+    expected = torch.tensor([-5.0])
     approx(out, expected)
 
 
@@ -59,7 +59,7 @@ def test_euclidean_k_and_stats(
     score._setup_index()
     out, _ = score._distance(q, offset=0)
     # pick two smallest distances: 5 and 5 -> squared are 25 and 25
-    two = torch.tensor([5.0, 5.0])
+    two = torch.tensor([-5.0, -5.0])
     expected = expected_fn(two)
     approx(out, expected.unsqueeze(0) if expected.dim() == 0 else expected)
 
@@ -82,12 +82,12 @@ def test_cosine_k_mean() -> None:
     refs = torch.tensor([[1.0, 0.0], [0.5, 0.5]])
     # both refs identical to query => distance 0 each -> mean 0
     q = torch.tensor([[0.0, 1.0]])
-    score = CosineScore(k=2, stat="max")
+    score = CosineScore(k=2, stat="min")
     score.ref_embeddings = refs
     score._setup_index()
     out, _ = score._distance(q, offset=0)
     out = score._stat(out)
-    assert torch.allclose(out, torch.tensor([1.0]), atol=1e-6)
+    assert torch.allclose(out, torch.tensor([-1.0]), atol=1e-6)
 
 
 def test_mahalanobis_matches_manual_calculation() -> None:
@@ -110,7 +110,7 @@ def test_mahalanobis_matches_manual_calculation() -> None:
     expected = torch.tensor(expected_list)
     expected_min = torch.min(expected).unsqueeze(0)
     out, _ = score._distance(query, offset=0)
-    approx(out, expected_min)
+    approx(out, -expected_min)
 
 
 def test_mahalanobis_singular_cov_warns() -> None:
@@ -255,8 +255,8 @@ def test_euclidean_distance_runs_through_faiss() -> None:
     distances = score.score(queries)  # shape (Q,) for k=1
 
     # compute exact distances manually
-    expected = torch.cdist(queries, refs, p=2.0)
-    expected_min = expected.min(dim=1).values
+    expected = -torch.cdist(queries, refs, p=2.0)
+    expected_min = expected.max(dim=1).values
 
     # we expect some small numerical differences due to the way distances are c
     # omputed in the index vs manually, but they should be close on average
@@ -292,7 +292,7 @@ def test_knn_search_offset_and_distances() -> None:
     # offset=1 skips the self‑match (distance 0)
     distances, indices = score.knn_search(query, offset=1)
     # expect two distances of 1.0 to the unit vectors
-    expected_distance = torch.tensor([[1.0, 1.0]])
+    expected_distance = torch.tensor([[-1.0, -1.0]])
     approx(distances, expected_distance)
     # The returned index should correspond to either of the two unit vectors
     assert indices.shape == (1, 2)

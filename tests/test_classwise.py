@@ -63,7 +63,7 @@ def make_data(single_label: bool = True):
 
 
 def test_init_non_knn_base_score():
-    class DummyScore(sp.UncertaintyScore):
+    class DummyScore(sp.ConfidenceScore):
         def fit(self, *args, **kwargs):  # pragma: no cover
             pass
 
@@ -138,7 +138,7 @@ def test_single_label_fit_and_score():
     mask = sel["selected"]
     assert mask.shape == (6,)
     for i, lbl in enumerate(y.tolist()):
-        assert mask[i] == (scores[i] < thr[lbl])
+        assert mask[i] == (scores[i] >= thr[lbl])
 
 
 @pytest.mark.parametrize(
@@ -171,7 +171,7 @@ def test_multi_label_aggregation(agg, agg_fn):
     assert sel["selected"].shape == (4,)
     overall_thr = cw.get_threshold()
     assert isinstance(overall_thr, torch.Tensor)
-    assert torch.all(sel["selected"] == (scores < overall_thr))
+    assert torch.all(sel["selected"] == (scores >= overall_thr))
 
 
 def test_fit_errors_and_mode_property():
@@ -352,7 +352,7 @@ def test_select_full_matrix_warning_and_mask():
     assert isinstance(thr_dict, dict)
     assert cw._class_labels is not None
     for i, lbl in enumerate(cw._class_labels):
-        expected = scores[:, i] < thr_dict[lbl]
+        expected = scores[:, i] >= thr_dict[lbl]
         assert torch.equal(mask[:, i], expected)
 
 
