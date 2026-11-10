@@ -11,10 +11,10 @@ Version](https://img.shields.io/conda/vn/conda-forge/seapig.svg)](https://anacon
 
 ------------------------------------------------------------------------
 
-seapig provides uncertainty-based selective inference for deep learning
+seapig provides confidence-based selective inference for deep learning
 models. Its main focus currently lies on analyzing latent
 representations. The library implements a small set of lightweight,
-composable uncertainty scores that are used to decide whether to accept
+composable confidence scores that are used to decide whether to accept
 or reject an individual query sample at prediction time. Thresholds are
 calibrated on an independent validation set. It provides a wrapper for
 torchmetrics that allows evaluating the performance of a selective
@@ -70,9 +70,9 @@ The core idea is to compute a representation for each input, score how
 similar the representation is to training representations, and reject
 inputs whose score indicates low support.
 
-### From uncertainty scores to selective inference
+### From confidence scores to selective inference
 
-All uncertainty scores produce a scalar score $s(x)$ for each query $x$.
+All confidence scores produce a scalar score $s(x)$ for each query $x$.
 Given a threshold $\lambda$, we derive a binary selection function
 indicating which samples to accept. For example, accepting samples with
 score below $\lambda$:
@@ -128,13 +128,13 @@ ref_emb, cal_emb, query_emb = (
 
 score = EuclideanScore(k=5, stat="mean")
 score.fit(ref=ref_emb, cal=cal_emb)
-score.set_threshold(q=0.90)  # keep ~90% coverage on validation set
+score.set_threshold(q=0.10)  # keep ~90% coverage on validation set
 sel = score.select(query=query_emb)
 print(sel)
 ```
 
-    {'score': tensor([6.2651, 5.5944, 6.0226, 5.8903, 6.2928, 4.8388, 5.7290, 5.3641, 5.6599,
-            5.9143]), 'selected': tensor([ True,  True,  True,  True, False,  True,  True,  True,  True,  True])}
+    {'score': tensor([-6.2651, -5.5944, -6.0226, -5.8903, -6.2928, -4.8388, -5.7290, -5.3641,
+            -5.6599, -5.9143]), 'selected': tensor([ True,  True,  True,  True, False,  True,  True,  True,  True,  True])}
 
 #### On-the-fly embedding extraction
 
@@ -170,14 +170,14 @@ model = Model()
 
 score = EuclideanScore(k=3)
 score.fit(model=model, loaders={"train": train_loader, "cal": val_loader})
-score.set_threshold(q=0.80)  # keep ~80% coverage on validation set
+score.set_threshold(q=0.20)  # keep ~80% coverage on validation set
 
 sel = score.select(model=model, loader=test_loader)
 print(sel)
 ```
 
-    {'score': tensor([5.6522, 6.6245, 5.5196, 5.1725, 5.8717, 5.6051, 5.3821, 5.2224, 5.0285,
-            5.8041]), 'selected': tensor([ True, False,  True,  True,  True,  True,  True,  True,  True,  True])}
+    {'score': tensor([-5.6522, -6.6245, -5.5196, -5.1725, -5.8717, -5.6051, -5.3821, -5.2224,
+            -5.0285, -5.8041]), 'selected': tensor([ True, False,  True,  True,  True,  True,  True,  True,  True,  True])}
 
 #### Using SelectiveInferenceTask with a lightning module
 
@@ -238,8 +238,8 @@ print(preds)
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
 
     [{'prediction': tensor([0.3412, 0.6198, 0.8258, 0.8317, 0.8443, 0.0064, 0.4464, 0.5923, 0.1485,
-            0.4144]), 'score': tensor([5.0690, 5.0864, 6.4270, 5.6630, 5.2806, 5.5488, 5.2757, 5.8282, 5.4030,
-            5.9053]), 'selected': tensor([ True,  True, False,  True,  True,  True,  True,  True,  True,  True])}]
+            0.4144]), 'score': tensor([-5.0690, -5.0864, -6.4270, -5.6630, -5.2806, -5.5488, -5.2757, -5.8282,
+            -5.4030, -5.9053]), 'selected': tensor([ True,  True, False,  True,  True,  True,  True,  True,  True,  True])}]
 
 #### Available scores
 

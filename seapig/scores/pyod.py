@@ -18,8 +18,8 @@ class PyODScore(EmbeddingScore):
     """Uncertainty scores based on detectors supplied by PyOD.
 
     Computes outlier scores using PyOD detectors where low scores indicate samples
-    similar to the training distribution (low uncertainty) and high scores indicate
-    samples deviating from the training distribution (high uncertainty).
+    similar to the training distribution (low confidence) and high scores indicate
+    samples deviating from the training distribution (high confidence).
 
     Parameters
     ----------
@@ -55,7 +55,7 @@ class PyODScore(EmbeddingScore):
         self.ident = f"{self.ident}-{detector.__class__.__name__}"
 
     def _fit(self, q: bool | float = False) -> None:
-        """Train a uncertainty score based on sample embeddings.
+        """Train a confidence score based on sample embeddings.
 
         Parameters
         ----------
@@ -69,11 +69,11 @@ class PyODScore(EmbeddingScore):
         self._apply_pca()
         self._filter_outliers(q=q)
         self.detector.fit(self.ref_embeddings.cpu().numpy())
-        self.scores = torch.Tensor(self.detector.decision_scores_)
+        self.scores = -torch.Tensor(self.detector.decision_scores_)
         self.set_trained()
 
         if self.cal_embeddings is not None:
-            self.scores = torch.Tensor(
+            self.scores = -torch.Tensor(
                 self.detector.decision_function(
                     self.cal_embeddings.cpu().numpy()
                 )
@@ -87,18 +87,18 @@ class PyODScore(EmbeddingScore):
         self.detector.fit(self.ref_embeddings.cpu().numpy())
         scores = torch.Tensor(self.detector.decision_scores_)
         threshold = torch.quantile(scores.float(), q=q)
-        index = scores < threshold
+        index = scores >= threshold
         assert isinstance(self.ref_embeddings, torch.Tensor)
         self.ref_embeddings = self.ref_embeddings[index, :]
 
     @override
     @torch.inference_mode()
     def _score(self, query: torch.Tensor) -> torch.Tensor:
-        """Compute an uncertainty score based on sample embeddings.
+        """Compute a confidence score based on sample embeddings.
 
-        Returns uncertainty scores where low values indicate samples
-        similar to the training distribution (low uncertainty) and high values indicate
-        samples deviating from the training distribution (high uncertainty).
+        Returns confidence scores where low values indicate samples
+        similar to the training distribution (low confidence) and high values indicate
+        samples deviating from the training distribution (high confidence).
 
         Parameters
         ----------
@@ -111,4 +111,4 @@ class PyODScore(EmbeddingScore):
         if self.pca is not None:
             X = self.pca.transform(X)
         score = torch.Tensor(self.detector.decision_function(X.cpu().numpy()))
-        return score
+        return -score

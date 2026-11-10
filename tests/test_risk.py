@@ -202,8 +202,7 @@ def test_perfect_score() -> None:
     """Test with perfect confidence score (score = residuals)."""
     torch.manual_seed(42)
     residuals = torch.rand(100)
-    score = residuals.clone()
-    rc = risk_coverage(score, residuals)
+    rc = risk_coverage(-residuals, residuals)
     # When score equals residuals, empirical should equal reference
     # (they both use the same ordering)
     assert torch.allclose(rc.risk, rc.reference, rtol=1e-5)

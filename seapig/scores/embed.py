@@ -1,4 +1,4 @@
-"""Abstract Base Method for embeddings based uncertainty scores."""
+"""Abstract Base Method for embeddings based confidence scores."""
 
 from abc import ABC
 from pathlib import Path
@@ -8,7 +8,7 @@ import torch
 from torch.utils.data import DataLoader
 from typing_extensions import override
 
-from seapig.scores.base import UncertaintyScore
+from seapig.scores.base import ConfidenceScore
 from seapig.scores.extractor import ModelExtractor
 from seapig.scores.utils import TensorPCA, _tensor
 from seapig.utils import get_logger
@@ -16,13 +16,13 @@ from seapig.utils import get_logger
 logger = get_logger(__name__)
 
 
-class EmbeddingScore(UncertaintyScore, ABC):
-    """Base class for embedding-based uncertainty scores.
+class EmbeddingScore(ConfidenceScore, ABC):
+    """Base class for embedding-based confidence scores.
 
-    Embedding-based scores quantify deviation from the training distribution using
-    latent-space embeddings. Low scores indicate samples similar to the training
-    distribution (likely inliers), while high scores indicate samples deviating
-    from the training distribution (likely outliers).
+    Embedding-based scores quantify similarity to the training distribution using
+    latent-space embeddings. High scores indicate samples similar to the training
+    distribution (high confidence), while low scores indicate samples deviating
+    from the training distribution (low confidence).
 
     Parameters
     ----------
@@ -38,13 +38,13 @@ class EmbeddingScore(UncertaintyScore, ABC):
     cal_embeddings : torch.Tensor or None
         Embeddings of validation/calibration samples. Optional.
     scores : torch.Tensor or None
-        Uncertainty scores of the calibration (or training) samples.
+        Confidence scores of the calibration (or training) samples.
     threshold : torch.Tensor or None
-        Rejection threshold. Samples with scores above this value are excluded.
+        Rejection threshold. Samples with scores below this value are excluded.
 
     See Also
     --------
-    `scores.UncertaintyScore`
+    `scores.ConfidenceScore`
     `scores.KNNScore`
     `scores.PCAScore`
     `scores.PyODScore`
@@ -92,7 +92,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
         prefix: str | None = None,
         q: bool | float = False,
     ) -> None:
-        """Train a uncertainty score based on sample embeddings.
+        """Train a confidence score based on sample embeddings.
 
         This method supports two usage modes:
 
@@ -181,7 +181,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
         outdir: Path | None = None,
         prefix: str | None = None,
     ) -> torch.Tensor:
-        """Compute uncertainty scores for query samples.
+        """Compute confidence scores for query samples.
 
         This method supports two usage modes:
 
@@ -223,7 +223,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
         Returns
         -------
         torch.Tensor
-            1-D tensor of shape `(N,)` with uncertainty scores.
+            1-D tensor of shape `(N,)` with confidence scores.
             Low values indicate likely inliers, high values indicate likely outliers.
         """
         tensors_mode = query is not None
@@ -256,7 +256,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
         outdir: Path | None = None,
         prefix: str | None = None,
     ) -> dict[str, torch.Tensor]:
-        """Select samples for prediction based on their uncertainty score.
+        """Select samples for prediction based on their confidence score.
 
         This method supports two usage modes:
 
@@ -266,9 +266,9 @@ class EmbeddingScore(UncertaintyScore, ABC):
 
         You must use either embeddings (X) OR model+loader, but not both.
 
-        Samples are selected based on their uncertainty score relative to a
-        threshold. Samples with scores lower than the threshold are selected,
-        while samples with scores higher than the threshold are excluded. The
+        Samples are selected based on their confidence score relative to a
+        threshold. Samples with scores higher than the threshold are selected,
+        while samples with scores lower than the threshold are excluded. The
         threshold should be calibrated beforehand (e.g., on validation samples).
 
         ```python
@@ -305,7 +305,7 @@ class EmbeddingScore(UncertaintyScore, ABC):
         Returns
         -------
         dict[str, torch.Tensor]
-            A dict with keys `'score'` (uncertainty scores) and `'selected'`
+            A dict with keys `'score'` (confidence scores) and `'selected'`
             (boolean mask where `True` means the sample is selected).
         """
         if self.train_required:
@@ -326,11 +326,11 @@ class EmbeddingScore(UncertaintyScore, ABC):
             outdir=outdir,
             prefix=prefix,
         )
-        return {"score": score, "selected": score < self.threshold}
+        return {"score": score, "selected": score >= self.threshold}
 
     @override
-    def set_threshold(self, q: float = 0.99) -> None:
-        """Set a threshold based on a quantile of the available uncertainty scores.
+    def set_threshold(self, q: float = 0.01) -> None:
+        """Set a threshold based on a quantile of the available confidence scores.
 
         Samples with scores higher than the threshold are excluded from prediction.
         If calibration embeddings were provided during `fit`, the threshold is

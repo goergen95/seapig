@@ -5,7 +5,7 @@ import torch
 from lightning import LightningModule
 
 from seapig import RiskCoverageMetric, SelectiveInferenceTask
-from seapig.scores import UncertaintyScore
+from seapig.scores import ConfidenceScore
 from seapig.scores.logits import SoftmaxScore
 from tests.fixtures import (
     BadForwardTask,
@@ -16,7 +16,7 @@ from tests.fixtures import (
 )
 
 
-class BareScore(UncertaintyScore):
+class BareScore(ConfidenceScore):
     def fit(self):
         pass  # pragma: no cover
 

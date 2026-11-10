@@ -1,4 +1,4 @@
-"""PCA based dimensionality reduction and uncertainty scoring."""
+"""PCA based dimensionality reduction and confidence scoring."""
 
 import torch
 from typing_extensions import override
@@ -8,11 +8,11 @@ from seapig.scores.utils import TensorPCA, _tensor
 
 
 class PCAScore(EmbeddingScore):
-    """Returns uncertainty scores based on PCA reconstruction errors.
+    """Returns confidence scores based on PCA reconstruction errors.
 
-    Computes reconstruction error-based uncertainty scores where low scores indicate
-    samples that can be well-reconstructed from principal components (likely inliers)
-    and high scores indicate samples with large reconstruction errors (likely outliers).
+    Computes reconstruction error-based confidence scores where high scores indicate
+    samples that can be well-reconstructed from principal components (high confidence)
+    and low scores indicate samples with large reconstruction errors (low confidence).
 
     See `https://arxiv.org/pdf/2402.02949v3` for the method description.
 
@@ -51,7 +51,7 @@ class PCAScore(EmbeddingScore):
 
     @override
     def _fit(self, q: bool | float = False) -> None:
-        """Train a uncertainty score based on sample embeddings.
+        """Train a confidence score based on sample embeddings.
 
         Parameters
         ----------
@@ -66,7 +66,7 @@ class PCAScore(EmbeddingScore):
             self._fit_pca()
             _, scores = self.pca.reconstruct(self.ref_embeddings)
             threshold = torch.quantile(scores.float(), q=q)
-            index = scores < threshold
+            index = scores >= threshold
             self.ref_embeddings = self.ref_embeddings[index, :]
 
         self._fit_pca()
@@ -81,11 +81,11 @@ class PCAScore(EmbeddingScore):
 
     @override
     def _score(self, query: torch.Tensor) -> torch.Tensor:
-        """Compute an uncertainty score based on sample embeddings.
+        """Compute a confidence score based on sample embeddings.
 
-        Returns reconstruction error scores where low values indicate samples that
-        can be well-reconstructed (low uncertainty) and high values indicate samples
-        with large reconstruction errors (high uncertainty).
+        Returns reconstruction error scores where high values indicate samples that
+        can be well-reconstructed (high confidence) and low values indicate samples
+        with large reconstruction errors (low confidence).
 
         Parameters
         ----------
@@ -96,4 +96,4 @@ class PCAScore(EmbeddingScore):
         X = _tensor(query, "embedding")
         assert X is not None
         _, error = self.pca.reconstruct(X)
-        return error
+        return -error

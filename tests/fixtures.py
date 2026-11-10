@@ -10,7 +10,7 @@ from lightning import LightningDataModule, LightningModule
 from torch.utils.data import DataLoader, Dataset
 from torchmetrics import Accuracy, MetricCollection
 
-from seapig.scores.base import UncertaintyScore
+from seapig.scores.base import ConfidenceScore
 from seapig.scores.embed import EmbeddingScore
 from seapig.scores.utils import TensorPCA
 
@@ -206,7 +206,7 @@ class SimpleL2Score(EmbeddingScore):
         return dists.min(dim=1).values
 
 
-class DummyScore(UncertaintyScore):
+class DummyScore(ConfidenceScore):
     """Minimal duck-typed score with select()."""
 
     def select(

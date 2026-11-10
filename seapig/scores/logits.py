@@ -1,4 +1,4 @@
-"""Concrete logit-based uncertainty scores."""
+"""Concrete logit-based confidence scores."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from typing_extensions import override
 
-from seapig.scores.base import UncertaintyScore
+from seapig.scores.base import ConfidenceScore
 from seapig.scores.extractor import ModelExtractor
 from seapig.scores.logits_utils import Task, TemperatureScaler, get_task
 from seapig.scores.utils import _tensor
@@ -49,8 +49,8 @@ def _shannon_entropy(p: torch.Tensor, dim: int = 1) -> torch.Tensor:
     return -(p * p.log()).sum(dim=dim)
 
 
-class LogitScore(UncertaintyScore, abc.ABC):
-    """Base class for logit-based uncertainty scores.
+class LogitScore(ConfidenceScore, abc.ABC):
+    """Base class for logit-based confidence scores.
 
     Supports multiclass, binary (single/two-logit), and multilabel tasks.
     Handles temperature fitting and input normalization for all cases.
@@ -199,7 +199,7 @@ class LogitScore(UncertaintyScore, abc.ABC):
         outdir: Path | None = None,
         prefix: str | None = None,
     ) -> torch.Tensor:
-        """Compute uncertainty scores for query logits.
+        """Compute confidence scores for query logits.
 
         This method supports two usage modes:
 
@@ -241,7 +241,7 @@ class LogitScore(UncertaintyScore, abc.ABC):
         Returns
         -------
         torch.Tensor
-            1-D tensor of shape `(N,)`. Lower values indicate lower uncertainty.
+            1-D tensor of shape `(N,)`. Higher values indicate higher confidence.
         """
         logits, _ = self._resolve(
             _tensor(query, "logit"),
@@ -261,10 +261,10 @@ class LogitScore(UncertaintyScore, abc.ABC):
         outdir: Path | None = None,
         prefix: str | None = None,
     ) -> dict[str, torch.Tensor]:
-        """Select samples for prediction based on their uncertainty score.
+        """Select samples for prediction based on their confidence score.
 
-        Samples with scores lower than the threshold are selected for prediction,
-        while samples with scores higher than the threshold are excluded.
+        Samples with scores lower than the threshold are excluded from prediction,
+        while samples with scores equal or higher than the threshold are accepted.
 
         Parameters
         ----------
@@ -287,14 +287,14 @@ class LogitScore(UncertaintyScore, abc.ABC):
         Returns
         -------
         dict[str, torch.Tensor]
-            A dict with keys `'score'` (uncertainty scores) and `'selected'`
+            A dict with keys `'score'` (confidence scores) and `'selected'`
             (boolean mask where `True` means the sample is selected).
         """
         if self.threshold is None:
             self.set_threshold()
         assert self.threshold is not None
         scores = self.score(query, model, loader, outdir, prefix)
-        return {"score": scores, "selected": scores < self.threshold}
+        return {"score": scores, "selected": scores >= self.threshold}
 
     def _resolve(
         self,
@@ -422,12 +422,12 @@ class SoftmaxScore(PointwiseLogitScore):
 
     @override
     def _categorical(self, z):
-        return -z.softmax(dim=1).amax(dim=1)
+        return z.softmax(dim=1).amax(dim=1)
 
     @override
     def _bernoulli(self, z):
         p = z.sigmoid()
-        return -torch.maximum(p, 1 - p)
+        return torch.maximum(p, 1 - p)
 
 
 class EntropyScore(PointwiseLogitScore):
@@ -437,26 +437,26 @@ class EntropyScore(PointwiseLogitScore):
 
     @override
     def _categorical(self, z):
-        return _shannon_entropy(z.softmax(dim=1), dim=1)
+        return -_shannon_entropy(z.softmax(dim=1), dim=1)
 
     @override
     def _bernoulli(self, z):
-        return _bernoulli_entropy(z.sigmoid())
+        return -_bernoulli_entropy(z.sigmoid())
 
 
 class MarginScore(PointwiseLogitScore):
-    """Negative top-two logit margin."""
+    """Top-two logit margin."""
 
     ident = "margin"
 
     @override
     def _categorical(self, z):
         top2 = z.topk(k=2, dim=1).values
-        return -(top2[:, 0] - top2[:, 1])
+        return top2[:, 0] - top2[:, 1]
 
     @override
     def _bernoulli(self, z):
-        return -z.abs()
+        return z.abs()
 
 
 class EnergyScore(PointwiseLogitScore):
@@ -467,30 +467,32 @@ class EnergyScore(PointwiseLogitScore):
 
     @override
     def _categorical(self, z):
-        return -self.T * z.logsumexp(dim=1)
+        return self.T * z.logsumexp(dim=1)
 
     @override
     def _bernoulli(self, z):
-        return -self.T * F.softplus(z)
+        return self.T * F.softplus(z)
 
 
 class MutualInformationScore(EnsembleLogitScore):
-    r"""Mutual information (BALD) uncertainty score for ensembles / MC-dropout."""
+    r"""Mutual information (BALD) confidence score for ensembles / MC-dropout."""
 
     ident = "mutual_information"
 
     @override
     def _categorical(self, z):
         p = z.softmax(dim=1)
-        return _shannon_entropy(p.mean(dim=-1), dim=1) - _shannon_entropy(
-            p, dim=1
-        ).mean(dim=-1)
+        return -(
+            _shannon_entropy(p.mean(dim=-1), dim=1)
+            - _shannon_entropy(p, dim=1).mean(dim=-1)
+        )
 
     @override
     def _bernoulli(self, z):
         p = z.sigmoid()
-        return _bernoulli_entropy(p.mean(dim=-1)) - _bernoulli_entropy(p).mean(
-            dim=-1
+        return -(
+            _bernoulli_entropy(p.mean(dim=-1))
+            - _bernoulli_entropy(p).mean(dim=-1)
         )
 
 
@@ -501,8 +503,8 @@ class PredictiveVarianceScore(EnsembleLogitScore):
 
     @override
     def _categorical(self, z):
-        return z.softmax(dim=1).var(dim=-1, unbiased=False).sum(dim=1)
+        return -z.softmax(dim=1).var(dim=-1, unbiased=False).sum(dim=1)
 
     @override
     def _bernoulli(self, z):
-        return z.sigmoid().var(dim=-1, unbiased=False)
+        return -z.sigmoid().var(dim=-1, unbiased=False)

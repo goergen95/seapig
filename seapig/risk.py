@@ -181,7 +181,7 @@ def risk_coverage(
 ) -> RiskCoverage:
     """Compute risk-coverage curves and AUCs for a selective predictor.
 
-    Given a score (uncertainty) and corresponding residuals (prediction
+    Given a confidence score and corresponding residuals (prediction
     errors), this function returns a `RiskCoverage` object containing:
 
     - empirical risk curve (model scores)
@@ -192,7 +192,7 @@ def risk_coverage(
     Parameters
     ----------
     score : `torch.Tensor`
-        Uncertainty scores. Lower values indicate lower uncertainty.
+        Confidence scores. Higher values indicate higher confidence.
         Must have the same length as `residuals`.
     residuals : `torch.Tensor`
         Prediction residuals (errors). Lower values indicate better
@@ -249,9 +249,8 @@ def risk_coverage(
     coverage_emp, threshold_emp, risk_emp = _rc_curve(score, residuals, risk)
 
     # Calculate reference risk-coverage curve (using residuals as scores)
-    risk_ref = _rc_curve(
-        torch.sort(residuals).values, residuals.sort().values, risk
-    )[2]
+    # Higher confidence corresponds to lower residuals, so we use the negative residuals as scores.
+    risk_ref = _rc_curve(-residuals, residuals, risk)[2]
 
     # Downsample if needed
     if len(coverage_emp) > n_bins:
@@ -294,9 +293,9 @@ def _rc_curve(
 
     Returns (coverage, sorted_score, risk) as `torch.Tensor` objects.
     """
-    # Sort by score ascending: lowest uncertainty (highest confidence) accepted first
+    # Sort by score descending: highest confidence accepted first
     device = score.device
-    order = torch.argsort(score, descending=False, stable=True)
+    order = torch.argsort(score, descending=True, stable=True)
     score_sorted = score[order]
     residuals_sorted = residuals[order]
 

@@ -78,7 +78,7 @@ def test_fit_with_calibration_sets_calibrated_and_scores_from_decision_function(
     assert score.is_trained()
     assert score.is_calibrated()
     assert isinstance(score.scores, torch.Tensor)
-    assert torch.allclose(score.scores, torch.tensor([5.0, 6.0]))
+    assert torch.allclose(score.scores, torch.tensor([-5.0, -6.0]))
 
 
 def test_score_uses_detector_decision_function() -> None:
@@ -99,7 +99,7 @@ def test_score_uses_detector_decision_function() -> None:
     out = score.score(q)
 
     assert isinstance(out, torch.Tensor)
-    expected = torch.tensor([3.0, 7.0])
+    expected = torch.tensor([-3.0, -7.0])
     assert torch.allclose(out, expected)
 
 
@@ -151,5 +151,4 @@ def test_score_applies_pca_before_decision_function(monkeypatch) -> None:
     data = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
     out = score.score(data)
     # after doubling, rows become [2,4] sum=6 and [6,8] sum=14
-    expected = torch.tensor([6.0, 14.0])
-    assert torch.allclose(out, expected)
+    assert torch.allclose(out, torch.tensor([-6.0, -14.0]))

@@ -1,4 +1,4 @@
-"""Generic class-wise wrapper for any per-sample uncertainty score.
+"""Generic class-wise wrapper for any per-sample confidence score.
 
 The implementation mirrors :class:`KNNClassWiseScore` but is agnostic to the
 underlying score type. It builds a separate scorer instance for each class
@@ -33,8 +33,8 @@ class ClassWiseMode(Enum):
 logger = get_logger(__name__)
 
 
-class ClassWiseScore(sp.UncertaintyScore):
-    """Base class-wise wrapper for per-class uncertainty scoring.
+class ClassWiseScore(sp.ConfidenceScore):
+    """Base class-wise wrapper for per-class confidence scoring.
 
     The wrapper supports three usage modes:
 
@@ -49,7 +49,7 @@ class ClassWiseScore(sp.UncertaintyScore):
     Parameters
     ----------
     base_score_cls:
-        The concrete `UncertaintyScore` subclass to instantiate for each class.
+        The concrete `ConfidenceScore` subclass to instantiate for each class.
     base_kwargs:
         Keyword arguments passed to each `base_score_cls` instance.
     global_pca:
@@ -62,7 +62,7 @@ class ClassWiseScore(sp.UncertaintyScore):
 
     def __init__(
         self,
-        base_score_cls: type[sp.UncertaintyScore],
+        base_score_cls: type[sp.ConfidenceScore],
         global_pca: TensorPCA | None = None,
         aggregation: str
         | Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = "mean",
@@ -77,7 +77,7 @@ class ClassWiseScore(sp.UncertaintyScore):
         self.pca = global_pca
         self.aggregation = self._resolve_aggregation(aggregation)
         self._class_labels: list[int] | None = None
-        self._scorers: dict[int, sp.UncertaintyScore] = {}
+        self._scorers: dict[int, sp.ConfidenceScore] = {}
         self._thresholds: dict[int, torch.Tensor] = {}
         self._threshold: torch.Tensor | None = None
         self._mode: ClassWiseMode | None = None
@@ -300,7 +300,7 @@ class ClassWiseScore(sp.UncertaintyScore):
         self.set_trained()
 
     @override
-    def set_threshold(self, q: float = 0.99) -> None:
+    def set_threshold(self, q: float = 0.01) -> None:
         if not self.is_trained():
             raise RuntimeError(
                 "fit() must be called before setting thresholds."
@@ -468,7 +468,7 @@ class ClassWiseScore(sp.UncertaintyScore):
         full_matrix: bool = False,
         return_label: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-        """Compute per-class uncertainty scores.
+        """Compute per-class confidence scores.
 
         Mirrors the `fit` method in accepting either pre-computed tensors or a
         `torch.nn.Module` with a `DataLoader`. The appropriate embeddings for KNN-based
@@ -620,7 +620,7 @@ class ClassWiseScore(sp.UncertaintyScore):
             assert isinstance(thr, dict)
             mask = torch.stack(
                 [
-                    _scores[:, i] < thr[lbl]
+                    _scores[:, i] >= thr[lbl]
                     for i, lbl in enumerate(self._class_labels)
                 ],
                 dim=1,
@@ -631,12 +631,12 @@ class ClassWiseScore(sp.UncertaintyScore):
             assert labels is not None
             assert isinstance(thr, dict)
             thr_vec = torch.stack([thr[int(lbl)] for lbl in labels.tolist()])
-            mask = _scores < thr_vec
+            mask = _scores >= thr_vec
         else:  # multi-label
             thres = self.get_threshold()
             assert isinstance(_scores, torch.Tensor)
             assert isinstance(thres, torch.Tensor)
-            mask = _scores < thres
+            mask = _scores >= thres
 
         return {"score": _scores, "selected": mask}
 

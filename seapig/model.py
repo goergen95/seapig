@@ -1,8 +1,8 @@
-"""Selective inference wrapper combining a LightningModule with a UncertaintyScore.
+"""Selective inference wrapper combining a LightningModule with a ConfidenceScore.
 
 This module provides SelectiveInferenceTask, a thin wrapper that runs a pre-trained
-LightningModule in inference mode, computes a uncertainty score from the
-model's embeddings using a UncertaintyScore, and returns predictions augmented with
+LightningModule in inference mode, computes a confidence score from the
+model's embeddings using a ConfidenceScore, and returns predictions augmented with
 selection results. The wrapper can also update and log selective metrics during
 testing.
 """
@@ -17,7 +17,7 @@ from torchmetrics import Metric, MetricCollection
 
 from seapig.metric import RiskCoverageMetric, SelectiveMetric
 from seapig.risk import RiskCoverage
-from seapig.scores import UncertaintyScore
+from seapig.scores import ConfidenceScore
 
 INPUT_KEYS = Literal["image", "input", "images", "inputs", "x"]
 TARGET_KEYS = Literal[
@@ -30,7 +30,7 @@ class SelectiveInferenceTask(LightningModule):
     """Wrap a trained `LightningModule` to attach selection results during inference.
 
     The wrapper calls the wrapped model in inference mode and combines its
-    predictions with selection outputs produced by a provided `UncertaintyScore`.
+    predictions with selection outputs produced by a provided `ConfidenceScore`.
 
     Examples
     --------
@@ -49,7 +49,7 @@ class SelectiveInferenceTask(LightningModule):
     def __init__(
         self,
         task: LightningModule,
-        score: UncertaintyScore,
+        score: ConfidenceScore,
         acc_test_outputs: bool = False,
         rc_metric: RiskCoverageMetric | None = None,
     ) -> None:
@@ -62,9 +62,9 @@ class SelectiveInferenceTask(LightningModule):
             a dict with predictions and any required fields for the score (e.g.
             `embedding` or `logit``). The task is deep-copied and set to eval mode
             to avoid side-effects during inference.
-        score: UncertaintyScore
+        score: ConfidenceScore
             An instance implementing `select` to compute a selection mask. It can
-            be a generic `UncertaintyScore` or one of the concrete subclasses
+            be a generic `ConfidenceScore` or one of the concrete subclasses
             `EmbeddingScore` / `LogitScore` which operate on specific model
             outputs.
         acc_test_outputs: bool, default `False``
@@ -79,8 +79,8 @@ class SelectiveInferenceTask(LightningModule):
         self.task = copy.deepcopy(task)
         self.task.eval()
 
-        assert isinstance(score, UncertaintyScore), (
-            "score must be a seapig UncertaintyScore instance"
+        assert isinstance(score, ConfidenceScore), (
+            "score must be a seapig ConfidenceScore instance"
         )
         if not hasattr(self.task, METHOD) or not callable(
             getattr(self.task, METHOD)
@@ -123,9 +123,9 @@ class SelectiveInferenceTask(LightningModule):
         -------
         dict[str, torch.Tensor]
             A dictionary containing the model's predictions merged with the
-            selection outputs produced by the configured `UncertaintyScore`.
+            selection outputs produced by the configured `ConfidenceScore`.
             The selection dictionary always includes `'score'` (the raw
-            uncertainty values) and `'selected'` (a boolean mask).
+            confidence scores) and `'selected'` (a boolean mask).
         """
         method = getattr(self.task, METHOD)
         assert callable(method)
@@ -160,7 +160,7 @@ class SelectiveInferenceTask(LightningModule):
         -----
         The method runs `self.forward` to obtain predictions together with the
         `score` and `selected` masks produced by the configured
-        `UncertaintyScore`. It then updates any attached `SelectiveMetric` and
+        `ConfidenceScore`. It then updates any attached `SelectiveMetric` and
         `RiskCoverageMetric` (if supplied) and optionally records the full
         selection dict in `self.test_outputs` when `acc_test_outputs=True`.
         Metrics are logged via Lightning's `log_dict` mechanism.

@@ -1,4 +1,4 @@
-"""KNN-based uncertainty scores."""
+"""KNN-based confidence scores."""
 
 import warnings
 from abc import ABC, abstractmethod
@@ -24,11 +24,11 @@ __all__ = [
 
 
 class KNNScore(EmbeddingScore, FAISSIndexMixin, ABC):
-    """Abstract base class for KNN distance-based uncertainty scores.
+    """Abstract base class for KNN distance-based confidence scores.
 
-    Computes distance-based uncertainty scores where low scores indicate samples
-    similar to the training distribution (low uncertainty) and high scores indicate
-    samples deviating from the training distribution (high uncertainty).
+    Computes distance-based confidence scores where high scores indicate samples
+    similar to the training distribution (high confidence) and low scores indicate
+    samples deviating from the training distribution (low confidence).
 
     Parameters
     ----------
@@ -81,7 +81,7 @@ class KNNScore(EmbeddingScore, FAISSIndexMixin, ABC):
 
     @override
     def _fit(self, q: bool | float = False) -> None:
-        """Train a uncertainty score based on sample embeddings.
+        """Train a confidence score based on sample embeddings.
 
         Parameters
         ----------
@@ -110,18 +110,18 @@ class KNNScore(EmbeddingScore, FAISSIndexMixin, ABC):
         if self.index is None:
             self._setup_index()  # temporary index
         scores, _ = self._distance(self.ref_embeddings, offset=1)
-        scores = self._stat(scores)
+        scores = self._stat(-scores)
         threshold = torch.quantile(scores.float(), q=q)
-        index = scores < threshold
+        index = scores >= threshold
         self.ref_embeddings = self.ref_embeddings[index, :]
 
     @override
     def _score(self, query: torch.Tensor) -> torch.Tensor:
-        """Compute an uncertainty score based on sample embeddings.
+        """Compute a confidence score based on sample embeddings.
 
-        Returns scores where low values indicate samples similar
-        to the training data (low uncertainty) and high values indicate samples deviating
-        from training data (high uncertainty).
+        Returns scores where high values indicate samples similar to the training
+        data (high confidence) and low values indicate samples deviating from
+        training data (low confidence).
 
         Parameters
         ----------
@@ -135,7 +135,7 @@ class KNNScore(EmbeddingScore, FAISSIndexMixin, ABC):
             X = self.pca.transform(X)
         score, _ = self._distance(query=X)
         score = self._stat(score)
-        return score.to(device=X.device)
+        return (score).to(device=X.device)
 
     @abstractmethod
     def _setup_index(self) -> None:
@@ -202,9 +202,9 @@ class KNNScore(EmbeddingScore, FAISSIndexMixin, ABC):
 class EuclideanScore(KNNScore):
     """Returns the KNN-distance based on the Euclidean distance to the nearest samples.
 
-    Computes Euclidean distance-based uncertainty scores where low scores indicate
-    samples similar to the training distribution (low uncertainty) and high scores
-    indicate samples deviating from the training distribution (high uncertainty).
+    Computes Euclidean distance-based confidence scores where high scores indicate
+    samples similar to the training distribution (high confidence) and low scores
+    indicate samples deviating from the training distribution (low confidence).
 
     Parameters
     ----------
@@ -260,7 +260,7 @@ class EuclideanScore(KNNScore):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Calculate the KNN distance of a query against a populated index."""
         squared_distances, indices = self._query_index(query, offset)
-        return (torch.sqrt(squared_distances), indices)
+        return -torch.sqrt(squared_distances), indices
 
 
 class EuclideanClassWiseScore(ClassWiseScore):
@@ -275,9 +275,9 @@ class EuclideanClassWiseScore(ClassWiseScore):
 class CosineScore(KNNScore):
     """Returns the KNN-distance based on the cosine distance to the nearest samples.
 
-    Computes cosine distance-based uncertainty scores where low scores indicate
-    samples similar to the training distribution (low uncertainty) and high scores
-    indicate samples deviating from the training distribution (high uncertainty).
+    Computes cosine distance-based confidence scores where high scores indicate
+    samples similar to the training distribution (high confidence) and low scores
+    indicate samples deviating from the training distribution (low confidence).
 
     The cosine distance is computed as `(1 - cosine_similarity)`, with a range
     of `[0, 2]` where `0` indicates identical vectors, `1` indicates orthogonal
@@ -337,7 +337,7 @@ class CosineScore(KNNScore):
         distances, indices = self._query_index(normalized, offset)
         # Convert to cosine distance
         cosine_dist = 0.5 * distances
-        return (cosine_dist, indices)
+        return -cosine_dist, indices
 
 
 class CosineClassWiseScore(ClassWiseScore):
@@ -354,9 +354,9 @@ class CosineClassWiseScore(ClassWiseScore):
 class MahalanobisScore(KNNScore):
     """Returns the Mahalanobis distance to the training samples distribution.
 
-    Computes Mahalanobis distance-based uncertainty scores where low scores indicate
-    samples similar to the training distribution (low uncertainty) and high scores
-    indicate samples deviating from the training distribution (high uncertainty).
+    Computes Mahalanobis distance-based confidence scores where high scores indicate
+    samples similar to the training distribution (high confidence) and low scores
+    indicate samples deviating from the training distribution (low confidence).
 
     The Mahalanobis distance accounts for correlations in the training data by
     whitening the embeddings with the Cholesky factor of the training covariance
@@ -426,7 +426,7 @@ class MahalanobisScore(KNNScore):
         assert self.index is not None
         transformed = query.to(dtype=self.whiten_t.dtype) @ self.whiten_t
         distances, indices = self._query_index(transformed, offset)
-        return torch.sqrt(distances), indices
+        return -torch.sqrt(distances), indices
 
 
 class MahalanobisClassWiseScore(ClassWiseScore):
