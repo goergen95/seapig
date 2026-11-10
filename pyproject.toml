@@ -89,9 +89,7 @@ exclude = ["tests*", "docs", "_extensions"]
 
 [tool.pytest.ini_options]
 filterwarnings = [
-  "ignore: builtin type .* has no __module__ attribute:DeprecationWarning",
   "ignore: The '.*_dataloader' does not have many workers.*:UserWarning",
-  "ignore: Query \\d+ returned fewer than \\d+ neighbors\\.",
   "ignore: GPU available but not used\\..*",
 ]
 
