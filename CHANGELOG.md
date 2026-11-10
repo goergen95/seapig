@@ -1,4 +1,15 @@
-# seapig v0.3.0 (dev)
+# seapig v0.4.0 (dev)
+
+## Breaking changes
+
+- we refactored the library to refere to ConfidenceScores instead of UncertaintyScores to better match the 
+  wording and customs in the selective prediction literature. This means that scores are expected to return values
+  representing confidence, e.g., a low value indicates low confidence and a high value indicates high confidence.
+  Selected samples are now the samples with a confidence score equal to or above the threshold.
+  This change means that all scores now return different values. KNN scores, for example, now return `-1 * score_value`
+  to match the confidence pattern.
+
+# seapig v0.3.0
 
 ## Features
 
