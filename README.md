@@ -103,8 +103,8 @@ depending on the output of the decision function:
 $$
 h(x) =
 \begin{cases}
-f(x), & \text{if} \; g(x)=1,\\
-\textit{abstain}, & \text{if} \; g(x)=0.
+f(x), & \text{if } g(x)=1,\\
+\textit{abstain}, & \text{if } g(x)=0.
 \end{cases}
 $$
 
