@@ -72,30 +72,41 @@ inputs whose score indicates low support.
 
 ### From confidence scores to selective inference
 
-All confidence scores produce a scalar score $s(x)$ for each query $x$.
+Our implementation is based on the original work of Chow (1957) [^1] and
+El-Yaniv and Wiener (2010) [^2], adapted for deep learning in approaches
+in Geifman and El-Yaniv (2017) [^3] and recently extended by Jäger et
+al. (2023) [^4] and Traub et al. (2024) [^5]. A confidence score
+produces a scalar value $s(x) \in \mathbb{R}^1$ for each query $x$.
 Given a threshold $\lambda$, we derive a binary selection function
-indicating which samples to accept. For example, accepting samples with
-score below $\lambda$:
+indicating which samples to accept. By convention, we accept samples
+with a confidence score equal to or higher than $\lambda$ indicated by
+the decision function $g(x)$:
 
-$$g_{\lambda}(x) = \mathbf{1}\{s(x) \le \lambda\}.$$
+$$
+g_{\lambda}(x) = \mathbf{1}\{s(x) \ge \lambda\}.
+$$
 
-We recommend calibrating $\lambda$ on an independent calibration set to
-fix a desired coverage level (fraction of accepted samples) and compute
-the correspoding empirical quantile $q$ of the calibration scores:
+We calibrate $\lambda$ on an independent calibration set to fix a
+desired coverage level (fraction of accepted samples) and compute the
+correspoding empirical quantile $q$ of the calibration scores:
 
-$$\lambda_{q} = Q_q(s_1^{cal}, s_2^{cal}, \dots, s_m^{cal}),$$
+$$
+\lambda_{q} = Q_q(s_1^{cal}, s_2^{cal}, \dots, s_m^{cal}),
+$$
 
 where $s_i^{cal}$ are the scores of the calibration samples. The
 decision function $g_{\lambda}(x)$ can then be applied at inference time
 to accept or reject predictions. We obtain a selective predictor,
 $h(x)$, that either produces an output or abstains from prediction,
-depending on the score of the input:
+depending on the output of the decision function:
 
-$$h(x) =
+$$
+h(x) =
 \begin{cases}
-f(x), & \text{if} g(x)=1,\\
-\varnothing, & \text{if } g(x)=0.
-\end{cases}$$
+f(x), & \text{if} \; g(x)=1,\\
+\textit{abstain}, & \text{if} \; g(x)=0.
+\end{cases}
+$$
 
 ### How to use seapig
 
@@ -176,8 +187,8 @@ sel = score.select(model=model, loader=test_loader)
 print(sel)
 ```
 
-    {'score': tensor([-5.6522, -6.6245, -5.5196, -5.1725, -5.8717, -5.6051, -5.3821, -5.2224,
-            -5.0285, -5.8041]), 'selected': tensor([ True, False,  True,  True,  True,  True,  True,  True,  True,  True])}
+    {'score': tensor([-4.9752, -6.4078, -5.0600, -4.8422, -5.5520, -4.6794, -4.9697, -4.5601,
+            -4.8857, -5.6617]), 'selected': tensor([ True, False,  True,  True,  True,  True,  True,  True,  True,  True])}
 
 #### Using SelectiveInferenceTask with a lightning module
 
@@ -226,8 +237,8 @@ print(preds)
 ┃<span style="font-weight: bold">        Test metric        </span>┃<span style="font-weight: bold">       DataLoader 0        </span>┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
 │<span style="color: #008080; text-decoration-color: #008080">    full/BinaryAccuracy    </span>│<span style="color: #800080; text-decoration-color: #800080">            0.5            </span>│
-│<span style="color: #008080; text-decoration-color: #008080">  rejected/BinaryAccuracy  </span>│<span style="color: #800080; text-decoration-color: #800080">            0.0            </span>│
-│<span style="color: #008080; text-decoration-color: #008080">  selected/BinaryAccuracy  </span>│<span style="color: #800080; text-decoration-color: #800080">    0.5555555820465088     </span>│
+│<span style="color: #008080; text-decoration-color: #008080">  rejected/BinaryAccuracy  </span>│<span style="color: #800080; text-decoration-color: #800080">    0.6666666865348816     </span>│
+│<span style="color: #008080; text-decoration-color: #008080">  selected/BinaryAccuracy  </span>│<span style="color: #800080; text-decoration-color: #800080">    0.4285714328289032     </span>│
 └───────────────────────────┴───────────────────────────┘
 </pre>
 
@@ -238,8 +249,8 @@ print(preds)
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre>
 
     [{'prediction': tensor([0.3412, 0.6198, 0.8258, 0.8317, 0.8443, 0.0064, 0.4464, 0.5923, 0.1485,
-            0.4144]), 'score': tensor([-5.0690, -5.0864, -6.4270, -5.6630, -5.2806, -5.5488, -5.2757, -5.8282,
-            -5.4030, -5.9053]), 'selected': tensor([ True,  True, False,  True,  True,  True,  True,  True,  True,  True])}]
+            0.4144]), 'score': tensor([-4.7936, -4.8083, -6.3397, -4.3409, -5.1468, -5.2406, -4.8781, -5.3137,
+            -5.1822, -5.3534]), 'selected': tensor([ True,  True, False,  True,  True,  True,  True,  True,  True,  True])}]
 
 #### Available scores
 
@@ -279,3 +290,25 @@ This research was funded in the course of [TRR 391 Spatio-temporal
 Statistics for the Transition of Energy and
 Transport](https://trr391.tu-dortmund.de/) (520388526) by the Deutsche
 Forschungsgemeinschaft (DFG, German Research Foundation).
+
+[^1]: Chow, C.K., 1957. An optimum character recognition system using
+    decision functions. IRE Transactions on Electronic Computers EC-6,
+    247–254. https://doi.org/10.1109/TEC.1957.5222035
+
+[^2]: El-Yaniv, R., Wiener, Y., 2010. On the Foundations of Noise-free
+    Selective Classification. Journal of Machine Learning Research 11,
+    1605–1641.
+
+[^3]: Geifman, Y., El-Yaniv, R., 2017. Selective classification for deep
+    neural networks, in: Proceedings of the 31st International
+    Conference on Neural Information Processing Systems, NIPS’17. Curran
+    Associates Inc., Red Hook, NY, USA, pp. 4885–4894.
+
+[^4]: Jaeger, P.F., Lüth, C.T., Klein, L., Bungert, T.J., 2023. A Call
+    to Reflect on Evaluation Practices for Failure Detection in Image
+    Classification. https://doi.org/10.48550/arXiv.2211.15259
+
+[^5]: Traub, J., Bungert, T.J., Lüth, C.T., Baumgartner, M., Maier-Hein,
+    K.H., Maier-Hein, L., Jäger, P.F., 2024. Overcoming Common Flaws in
+    the Evaluation of Selective Classification Systems. Advances in
+    Neural Information Processing Systems 37, 2323–2347.
