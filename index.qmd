@@ -65,16 +65,20 @@ whose score indicates low support.
 
 ### From confidence scores to selective inference
 
-All confidence scores produce a scalar score $s(x)$ for each query
+Our implementation is based on the original work of Chow (1957) [^1] and El-Yaniv
+and Wiener (2010) [^2], adapted for deep learning in approaches in Geifman and El-Yaniv 
+(2017) [^3] and recently extended by Jäger et al. (2023) [^4] and Traub et al. (2024) [^5]. 
+A confidence score produces a scalar value $s(x) \in \mathbb{R}^1$ for each query
 $x$. Given a threshold $\lambda$, we derive a binary selection function 
-indicating which samples to accept. For example, accepting
-samples with score below $\lambda$:
+indicating which samples to accept. By convention, we accept samples with 
+a confidence score equal to or higher than $\lambda$ indicated by the decision 
+function $g(x)$:
 
 $$
-g_{\lambda}(x) = \mathbf{1}\{s(x) \le \lambda\}.
+g_{\lambda}(x) = \mathbf{1}\{s(x) \ge \lambda\}.
 $$
 
-We recommend calibrating $\lambda$ on an independent calibration set to fix a 
+We calibrate $\lambda$ on an independent calibration set to fix a 
 desired coverage level (fraction of accepted samples) and compute the
 correspoding empirical quantile $q$ of the calibration scores:
 
@@ -85,13 +89,13 @@ $$
 where $s_i^{cal}$ are the scores of the calibration samples. The decision
 function $g_{\lambda}(x)$ can then be applied at inference time to accept or reject
 predictions. We obtain a selective predictor, $h(x)$, that either produces an output 
-or abstains from prediction, depending on the score of the input:
+or abstains from prediction, depending on the output of the decision function:
 
 $$
 h(x) =
 \begin{cases}
-f(x), & \text{if} g(x)=1,\\
-\varnothing, & \text{if } g(x)=0.
+f(x), & \text{if} \; g(x)=1,\\
+\textit{abstain}, & \text{if} \; g(x)=0.
 \end{cases}
 $$
 
@@ -240,3 +244,11 @@ By participating, you are expected to uphold this code.
 This research was funded in the course of [TRR 391 Spatio-temporal Statistics
 for the Transition of Energy and Transport](https://trr391.tu-dortmund.de/) (520388526) 
 by the Deutsche Forschungsgemeinschaft (DFG, German Research Foundation).
+
+
+[^1]: Chow, C.K., 1957. An optimum character recognition system using decision functions. IRE Transactions on Electronic Computers EC-6, 247–254. https://doi.org/10.1109/TEC.1957.5222035
+[^2]: El-Yaniv, R., Wiener, Y., 2010. On the Foundations of Noise-free Selective Classification. Journal of Machine Learning Research 11, 1605–1641.
+[^3]: Geifman, Y., El-Yaniv, R., 2017. Selective classification for deep neural networks, in: Proceedings of the 31st International Conference on Neural Information Processing Systems, NIPS’17. Curran Associates Inc., Red Hook, NY, USA, pp. 4885–4894.
+[^4]: Jaeger, P.F., Lüth, C.T., Klein, L., Bungert, T.J., 2023. A Call to Reflect on Evaluation Practices for Failure Detection in Image Classification. https://doi.org/10.48550/arXiv.2211.15259
+[^5]: Traub, J., Bungert, T.J., Lüth, C.T., Baumgartner, M., Maier-Hein, K.H., Maier-Hein, L., Jäger, P.F., 2024. Overcoming Common Flaws in the Evaluation of Selective Classification Systems. Advances in Neural Information Processing Systems 37, 2323–2347.
+
