@@ -181,7 +181,7 @@ model = Model()
 
 score = EuclideanScore(k=3)
 score.fit(model=model, loaders={"train": train_loader, "cal": val_loader})
-score.set_threshold(q=0.20)  # keep ~80% coverage on validation set
+score.set_threshold(q=0.10)  # keeps ~90% coverage on validation set
 
 sel = score.select(model=model, loader=test_loader)
 print(sel)
@@ -237,8 +237,8 @@ print(preds)
 ┃<span style="font-weight: bold">        Test metric        </span>┃<span style="font-weight: bold">       DataLoader 0        </span>┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
 │<span style="color: #008080; text-decoration-color: #008080">    full/BinaryAccuracy    </span>│<span style="color: #800080; text-decoration-color: #800080">            0.5            </span>│
-│<span style="color: #008080; text-decoration-color: #008080">  rejected/BinaryAccuracy  </span>│<span style="color: #800080; text-decoration-color: #800080">    0.6666666865348816     </span>│
-│<span style="color: #008080; text-decoration-color: #008080">  selected/BinaryAccuracy  </span>│<span style="color: #800080; text-decoration-color: #800080">    0.4285714328289032     </span>│
+│<span style="color: #008080; text-decoration-color: #008080">  rejected/BinaryAccuracy  </span>│<span style="color: #800080; text-decoration-color: #800080">            0.0            </span>│
+│<span style="color: #008080; text-decoration-color: #008080">  selected/BinaryAccuracy  </span>│<span style="color: #800080; text-decoration-color: #800080">    0.5555555820465088     </span>│
 └───────────────────────────┴───────────────────────────┘
 </pre>
 

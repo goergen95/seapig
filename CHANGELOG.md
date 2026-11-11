@@ -1,4 +1,4 @@
-# seapig v0.4.0 (dev)
+# seapig v0.3.1 (dev)
 
 ## Breaking changes
 
