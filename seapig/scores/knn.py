@@ -34,7 +34,7 @@ class KNNScore(EmbeddingScore, FAISSIndexMixin, ABC):
     ----------
     k : int, default 1
         Number of nearest neighbors used to compute the distance score.
-    stat : {'max', 'mean', 'median', 'min'}, default 'max'
+    stat : {'max', 'mean', 'median', 'min'}, default 'min'
         Statistic applied to aggregate distances across the k neighbors.
     pca : `TensorPCA` or None, default None
         Optional `TensorPCA` object for dimensionality reduction prior to scoring.
@@ -57,7 +57,7 @@ class KNNScore(EmbeddingScore, FAISSIndexMixin, ABC):
     def __init__(
         self,
         k: int = 1,
-        stat: str = "max",
+        stat: str = "min",
         pca: TensorPCA | None = None,
         save_index: bool | Path = False,
     ) -> None:
@@ -110,7 +110,7 @@ class KNNScore(EmbeddingScore, FAISSIndexMixin, ABC):
         if self.index is None:
             self._setup_index()  # temporary index
         scores, _ = self._distance(self.ref_embeddings, offset=1)
-        scores = self._stat(-scores)
+        scores = self._stat(scores)
         threshold = torch.quantile(scores.float(), q=q)
         index = scores >= threshold
         self.ref_embeddings = self.ref_embeddings[index, :]
@@ -210,7 +210,7 @@ class EuclideanScore(KNNScore):
     ----------
     k : int, default 1
         Number of nearest neighbors to use.
-    stat : {'max', 'mean', 'median', 'min'}, default 'max'
+    stat : {'max', 'mean', 'median', 'min'}, default 'min'
         Statistic to aggregate distances across the k neighbors.
     pca : `TensorPCA` or None, default None
         Optional `TensorPCA` object for dimensionality reduction prior to scoring.
@@ -241,7 +241,7 @@ class EuclideanScore(KNNScore):
     def __init__(
         self,
         k: int = 1,
-        stat: str = "max",
+        stat: str = "min",
         pca: TensorPCA | None = None,
         save_index: bool | Path = False,
     ) -> None:
@@ -287,7 +287,7 @@ class CosineScore(KNNScore):
     ----------
     k : int, default 1
         Number of nearest neighbors to use.
-    stat : {'max', 'mean', 'median', 'min'}, default 'max'
+    stat : {'max', 'mean', 'median', 'min'}, default 'min'
         Statistic to aggregate distances across the k neighbors.
     pca : `TensorPCA` or None, default None
         Optional `TensorPCA` object for dimensionality reduction prior to scoring.
@@ -307,7 +307,7 @@ class CosineScore(KNNScore):
     def __init__(
         self,
         k: int = 1,
-        stat: str = "max",
+        stat: str = "min",
         pca: TensorPCA | None = None,
         save_index: bool | Path = False,
     ) -> None:
@@ -366,7 +366,7 @@ class MahalanobisScore(KNNScore):
     ----------
     k : int, default 1
         Number of nearest neighbors to use.
-    stat : {'max', 'mean', 'median', 'min'}, default 'max'
+    stat : {'max', 'mean', 'median', 'min'}, default 'min'
         Statistic to aggregate distances across the k neighbors.
     pca : `TensorPCA` or None, default None
         Optional `TensorPCA` object for dimensionality reduction prior to scoring.
@@ -387,7 +387,7 @@ class MahalanobisScore(KNNScore):
     def __init__(
         self,
         k: int = 1,
-        stat: str = "max",
+        stat: str = "min",
         pca: TensorPCA | None = None,
         save_index: bool | Path = False,
     ) -> None:

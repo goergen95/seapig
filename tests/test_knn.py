@@ -323,3 +323,18 @@ def test_knnstat_all_branches(
     result = score._stat(dists)
     expected_val = expected(dists)
     torch.testing.assert_close(result[0], expected_val)
+
+
+def test_k_returns_diff():
+    ref = torch.rand(5000, 256)
+    query = torch.rand(100, 256)
+
+    s1 = EuclideanScore(k=1)
+    s2 = EuclideanScore(k=10)
+    s1.fit(ref)
+    s2.fit(ref)
+
+    s_1 = s1.score(query)
+    s_2 = s2.score(query)
+
+    assert not torch.allclose(s_1, s_2)
