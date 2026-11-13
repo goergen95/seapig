@@ -133,6 +133,7 @@ def test_q_trimming_reduces_reference_set() -> None:
     score.cal_required = False
     original_count = refs.shape[0]
     score.fit(refs, q=0.50)
+    assert score.ref_embeddings is not None
     new_count = score.ref_embeddings.shape[0]
     assert new_count < original_count
     assert new_count >= 1
@@ -174,6 +175,7 @@ def test_pca_reduces_dimension_and_is_applied() -> None:
     s_pca = EuclideanScore(k=1, pca=TensorPCA(n_components=0.90))
     s_pca.cal_required = False
     s_pca.fit(refs, q=False)
+    assert s_pca.ref_embeddings is not None
 
     original_dim = D
     reduced_dim = s_pca.ref_embeddings.shape[1]

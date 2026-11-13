@@ -114,6 +114,7 @@ def test_q_trimming_reduces_reference_set() -> None:
 
     original_count = refs.shape[0]
     score.fit(refs, q=0.50)
+    assert score.ref_embeddings is not None
     new_count = score.ref_embeddings.shape[0]
 
     assert new_count < original_count
@@ -128,6 +129,7 @@ def test_pca_predict_is_applied_before_detector_fit() -> None:
     score = PyODScore(detector=det, pca=TensorPCA(n_components=0.90))  # type: ignore[argument-type, ty:invalid-argument-type]
     score.cal_required = False
     score.fit(refs, q=False)
+    assert score.ref_embeddings is not None
     assert score.ref_embeddings.shape[1] < refs.shape[1]
 
 

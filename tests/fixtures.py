@@ -140,15 +140,15 @@ class DictDataset(Dataset):
     def __len__(self) -> int:
         return len(self.data)
 
-    def __getitem__(self, idx: int):  # type: ignore[override, ty:invalid-method-override]
-        x = self.data[idx]
+    def __getitem__(self, index: int):  # type: ignore[override, incompatible-method-override]
+        x = self.data[index]
         if self.transform is not None:
             x = self.transform(x)
         return {
             "image": x,
             "label": torch.tensor(1)
             if self.labels is None
-            else self.labels[idx],
+            else self.labels[index],
         }
 
 
@@ -212,11 +212,15 @@ class DummyScore(ConfidenceScore):
     def select(
         self, query: dict[str, torch.Tensor] | torch.Tensor
     ) -> dict[str, torch.Tensor]:
-        x = query.get("prediction")
+        x = query
+        if isinstance(query, dict):
+            x = query.get("prediction")
+        assert isinstance(x, torch.Tensor)
         b = x.shape[0]
+        device = x.device
         return {
-            "score": torch.arange(b, dtype=x.dtype, device=x.device),
-            "selected": torch.ones(b, dtype=torch.bool, device=x.device),
+            "score": torch.arange(b, dtype=x.dtype, device=device),
+            "selected": torch.ones(b, dtype=torch.bool, device=device),
         }
 
     def score(self, query: torch.Tensor) -> torch.Tensor:

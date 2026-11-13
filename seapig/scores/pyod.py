@@ -84,6 +84,7 @@ class PyODScore(EmbeddingScore):
         if not q:
             return
         assert (q >= 0.0) & (q <= 1.0)
+        assert isinstance(self.ref_embeddings, torch.Tensor)
         self.detector.fit(self.ref_embeddings.cpu().numpy())
         scores = torch.Tensor(self.detector.decision_scores_)
         threshold = torch.quantile(scores.float(), q=q)
