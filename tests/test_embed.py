@@ -40,6 +40,7 @@ def test_apply_pca_transforms_cal_embeddings() -> None:
     e.cal_embeddings = cal.clone()
     # Apply PCA which fits on ref and transforms both
     e._apply_pca()
+    assert e.pca is not None
     # After applying, ref should be transformed
     transformed_ref = e.pca.transform(ref)
     assert torch.allclose(e.ref_embeddings, transformed_ref)

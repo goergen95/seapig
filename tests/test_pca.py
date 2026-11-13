@@ -130,6 +130,7 @@ def test_q_trimming_in_pca_score_reduces_references() -> None:
     score.cal_required = False
     original = refs.shape[0]
     score.fit(refs, q=0.5)
+    assert score.ref_embeddings is not None
     assert score.ref_embeddings.shape[0] < original
 
 

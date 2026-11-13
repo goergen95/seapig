@@ -27,10 +27,10 @@ class DummyScore(sp.KNNScore):
         X: torch.Tensor | None = None,
         Y: torch.Tensor | None = None,
         **kwargs,
-    ):  # ty: ignore[invalid-method-override]
+    ):  # ty: ignore[incompatible-method-override]
         return None
 
-    def score(self, X: torch.Tensor) -> torch.Tensor:  # ty: ignore[invalid-method-override]
+    def score(self, X: torch.Tensor) -> torch.Tensor:  # ty: ignore[incompatible-method-override]
         return X.mean(dim=1)
 
     def set_threshold(self, q: float = 0.99) -> None:
@@ -40,10 +40,10 @@ class DummyScore(sp.KNNScore):
         assert self.threshold is not None
         return self.threshold
 
-    def select(self, X: torch.Tensor):  # ty: ignore[invalid-method-override]
+    def select(self, X: torch.Tensor):  # ty: ignore[incompatible-method-override]
         raise NotImplementedError
 
-    def _distance(self, query: torch.Tensor):  # ty: ignore[invalid-method-override]
+    def _distance(self, query: torch.Tensor):  # ty: ignore[incompatible-method-override]
         pass  # pragma: no cover
 
     def _setup_index(self):
@@ -127,8 +127,10 @@ def test_single_label_fit_and_score():
     cw.fit(ref={"embedding": X, "label": y})
     assert cw.mode is ClassWiseMode.SINGLE_LABEL
     scores = cw.score(query={"embedding": X, "prediction": y})
+    assert isinstance(scores, torch.Tensor)
     assert scores.shape == (6,)
     matrix = cw.score(query={"embedding": X, "prediction": y}, full_matrix=True)
+    assert isinstance(matrix, torch.Tensor)
     assert matrix.shape == (6, 3)
     cw.set_threshold(q=0.5)
     thr = cw.get_threshold()
@@ -305,6 +307,7 @@ def test_resolve_aggregation_callable():
     cw.fit(ref={"embedding": X, "label": y})
     cw.set_threshold(q=0.5)
     scores = cw.score(query={"embedding": X, "prediction": y})
+    assert isinstance(scores, torch.Tensor)
     assert scores.shape == (3,)
 
 
@@ -508,6 +511,7 @@ def test_full_matrix_scoring_and_select():
     cs = ClassWiseScore(base_score_cls=DummyScore, aggregation="mean")
     cs.fit(ref={"embedding": X, "label": y})
     full = cs.score(query={"embedding": X, "prediction": y}, full_matrix=True)
+    assert isinstance(full, torch.Tensor)
     assert full.shape == (4, 2)
     cs.set_threshold()
     thr = cs.get_threshold(full_matrix=True)

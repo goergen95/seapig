@@ -58,8 +58,8 @@ class SmallDataset(Dataset[Any]):
     def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:  # type: ignore[override, ty:invalid-method-override]
-        x, y = self.samples[idx]
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:  # type: ignore[override, incompatible-method-override]
+        x, y = self.samples[index]
         return {
             "image": torch.tensor(x, dtype=torch.float32),
             "label": torch.tensor(y, dtype=torch.long),
