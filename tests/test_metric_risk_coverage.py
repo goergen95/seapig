@@ -110,8 +110,8 @@ def test_reset_clears_curves_and_buffers():
     assert metric.get_curve() is None
     assert metric.scores.numel() == 0
     assert metric.residuals.numel() == 0
-    assert metric.residuals_mae.numel() == 0  # type: ignore[operator, ty:call-non-callable]
-    assert metric.residuals_mse.numel() == 0  # type: ignore[operator, ty:call-non-callable]
+    assert metric.residuals_mae.numel() == 0  # type: ignore[operator, ty:not-callable]
+    assert metric.residuals_mse.numel() == 0  # type: ignore[operator, ty:not-callable]
 
 
 def test_risk_coverage_metric_empty_with_metric_names():
@@ -458,8 +458,8 @@ def test_multi_metric_support_and_reset() -> None:
     # Reset clears all per‑metric buffers and the generic residual buffer.
     metric.reset()
     # The residual buffers are tensors; mypy/ty may not infer their callable methods correctly.
-    assert metric.residuals_mae.numel() == 0  # type: ignore[operator, ty:call-non-callable]
-    assert metric.residuals_mse.numel() == 0  # type: ignore[operator, ty:call-non-callable]
+    assert metric.residuals_mae.numel() == 0  # type: ignore[operator, ty:not-callable]
+    assert metric.residuals_mse.numel() == 0  # type: ignore[operator, ty:not-callable]
     assert metric.residuals.numel() == 0
 
 

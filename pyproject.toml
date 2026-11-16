@@ -127,4 +127,4 @@ python-version = "3.11"
 [tool.ty.rules]
 missing-argument = "ignore"
 missing-attribute = "ignore"
-call-top-callable = "ignore"
+call-to-function-with-unknown-signature = "ignore"
