@@ -55,6 +55,14 @@ class TensorPCA(torch.nn.Module):
     is set explicitly. Supplying only one of these values does not enable
     the RFF mapping by itself.
 
+    Whitening
+    ---------
+    With `whiten=True`, `transform` divides each principal component score by
+    the standard deviation of that component (estimated on the training data),
+    so the projected training data has identity covariance. `inverse_transform`
+    undoes the scaling, so `reconstruct` returns the same result with or
+    without whitening.
+
     Saving / loading
     ----------------
     Persist the module with the standard PyTorch state-dict API. The module
@@ -102,6 +110,7 @@ class TensorPCA(torch.nn.Module):
     s_acc: torch.Tensor
     u_q: torch.Tensor
     u_q_dot: torch.Tensor
+    u_q_scale: torch.Tensor
     _rff_w: torch.Tensor
     _rff_u: torch.Tensor
     _rff_initialized: torch.Tensor
@@ -116,6 +125,7 @@ class TensorPCA(torch.nn.Module):
         M: int | None = None,
         mode: str | None = None,
         mean_center: bool = True,
+        whiten: bool = False,
     ) -> None:
         """Initialise TensorPCA.
 
@@ -137,6 +147,10 @@ class TensorPCA(torch.nn.Module):
         mean_center: bool, default True
             Apply mean centering before fitting/transform? Set to False to omit
             mean centering.
+        whiten : bool, default False
+            If True, scale the projected components to unit variance
+            (whitened PCA). Has no effect on the fitted subspace, and
+            `reconstruct` is unchanged.
         """
         super().__init__()
 
@@ -165,8 +179,11 @@ class TensorPCA(torch.nn.Module):
 
         if not isinstance(mean_center, bool):
             raise TypeError("mean_center must be a boolean.")
+        if not isinstance(whiten, bool):
+            raise TypeError("whiten must be a boolean.")
 
         self.mean_center = mean_center
+        self.whiten = whiten
 
         # Infer mode when not explicitly provided
         inferred_mode = (
@@ -184,6 +201,7 @@ class TensorPCA(torch.nn.Module):
         self.register_buffer("s_acc", torch.tensor([], dtype=torch.float64))
         self.register_buffer("u_q", torch.tensor([], dtype=torch.float64))
         self.register_buffer("u_q_dot", torch.tensor([], dtype=torch.float64))
+        self.register_buffer("u_q_scale", torch.tensor([], dtype=torch.float64))
 
         # RFF parameters (will be created during partial_fit when needed)
         self.register_buffer("_rff_w", torch.tensor([], dtype=torch.float32))
@@ -257,6 +275,8 @@ class TensorPCA(torch.nn.Module):
         X = self._preprocess(X)
         X = X.to(self.u_q.dtype)
         X_proj = X @ self.u_q
+        if self.whiten:
+            X_proj = X_proj / self.u_q_scale
         return X_proj
 
     def inverse_transform(self, Z: torch.Tensor) -> torch.Tensor:
@@ -274,6 +294,8 @@ class TensorPCA(torch.nn.Module):
             `(N, M)` if RFF mode is used.
         """
         assert isinstance(Z, torch.Tensor)
+        if self.whiten:
+            Z = Z * self.u_q_scale
         X_rec = (self.u_q @ Z.T).T
         return X_rec
 
@@ -462,6 +484,13 @@ class TensorPCA(torch.nn.Module):
 
         self.u_q = self.u[:, : self.q]
         self.u_q_dot = self.u_q @ self.u_q.T
+        # Per-component standard deviation (used for whitening).
+        # s are eigenvalues of the scatter matrix -> divide by (n - 1).
+        var = self.s / max(self._n_samples - 1, 1)
+        finfo = torch.finfo(var.dtype)
+        # floor tiny/zero variances to avoid division by ~0 when whitening
+        floor = (finfo.eps * var.max()).clamp_min(finfo.tiny)
+        self.u_q_scale = var[: self.q].clamp_min(floor).sqrt()
 
     def _load_from_state_dict(
         self,
@@ -491,6 +520,7 @@ class TensorPCA(torch.nn.Module):
             "s_acc",
             "u_q",
             "u_q_dot",
+            "u_q_scale",
             "_rff_w",
             "_rff_u",
             "_rff_initialized",
