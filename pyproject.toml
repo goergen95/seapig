@@ -56,7 +56,7 @@ dev = [
     "pytest-cov",
     "pre-commit",
     "ruff",
-    "ty>=0.0.102",
+    "ty>=0.0.104",
     "nbmake",
     "build",
 ]
